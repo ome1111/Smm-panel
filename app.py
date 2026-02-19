@@ -1,4 +1,5 @@
 from flask import Flask, request, render_template, session, redirect, url_for
+import telebot  # <--- এই লাইনটি মিসিং ছিল!
 from telebot import types
 import os, time, logging
 from config import BOT_TOKEN, ADMIN_PASSWORD, SECRET_KEY
@@ -6,7 +7,9 @@ from loader import bot, users_col, orders_col
 import handlers
 import api
 
+# ডিবাগিং অন করা
 telebot.logger.setLevel(logging.DEBUG)
+
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
 
@@ -16,6 +19,7 @@ def index():
     <body style='background:#0f172a; color:#38bdf8; text-align:center; padding-top:100px; font-family:sans-serif;'>
         <h1>🚀 NEXUS System is Online!</h1>
         <p style='color:#4ade80;'>Server is Running Smoothly.</p>
+        <br>
         <a href='/admin' style='color:#f8fafc; text-decoration:none; font-weight:bold; background:#0ea5e9; padding:10px 20px; border-radius:8px;'>Access Admin Panel</a>
     </body>
     """, 200
