@@ -6,30 +6,20 @@ from loader import bot, users_col, orders_col
 import handlers
 import api
 
-# ডিবাগ লগ অন করা
-import telebot
 telebot.logger.setLevel(logging.DEBUG)
-
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
 
-# ==========================================
-# ১. মেইন হোমপেজ (এখন আর ওয়েব-হুক ডিলিট হবে না)
-# ==========================================
 @app.route("/")
 def index():
     return """
     <body style='background:#0f172a; color:#38bdf8; text-align:center; padding-top:100px; font-family:sans-serif;'>
-        <h1>🚀 System is Online!</h1>
-        <p style='color:#4ade80;'>Bot is Running Smoothly.</p>
-        <hr style='border: 1px solid #1e293b; width: 300px; margin: 20px auto;'>
-        <a href='/admin' style='color:#f8fafc; text-decoration:none; font-weight:bold;'>Go to Admin Panel &rarr;</a>
+        <h1>🚀 NEXUS System is Online!</h1>
+        <p style='color:#4ade80;'>Server is Running Smoothly.</p>
+        <a href='/admin' style='color:#f8fafc; text-decoration:none; font-weight:bold; background:#0ea5e9; padding:10px 20px; border-radius:8px;'>Access Admin Panel</a>
     </body>
     """, 200
 
-# ==========================================
-# ২. ওয়েব-হুক সেটআপ রুট (শুধু একবার রান করতে হবে)
-# ==========================================
 @app.route("/set_webhook")
 def setup_webhook():
     bot.remove_webhook()
@@ -41,9 +31,6 @@ def setup_webhook():
         return f"<h1>✅ Webhook Set to: {webhook_url}</h1>", 200
     return "<h1>❌ Error: RENDER_EXTERNAL_URL missing</h1>", 500
 
-# ==========================================
-# ৩. টেলিগ্রাম মেসেজ রিসিভার
-# ==========================================
 @app.route('/' + BOT_TOKEN, methods=['POST'])
 def getMessage():
     if request.headers.get('content-type') == 'application/json':
@@ -53,9 +40,6 @@ def getMessage():
         return "OK", 200
     return "Forbidden", 403
 
-# ==========================================
-# ৪. অ্যাডমিন প্যানেল লজিক
-# ==========================================
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     error = None
@@ -74,23 +58,25 @@ def logout():
 
 @app.route('/admin')
 def admin_dashboard():
-    if not session.get('logged_in'):
-        return redirect(url_for('login'))
+    if not session.get('logged_in'): return redirect(url_for('login'))
     
     try:
+        # ১০০ জন নতুন ইউজার এবং সর্বশেষ ১০০টি অর্ডার আনা
         recent_users = list(users_col.find().sort("joined", -1).limit(100))
-        total_revenue = sum(u.get('spent', 0) for u in users_col.find())
+        recent_orders = list(orders_col.find().sort("date", -1).limit(100))
+        total_rev = sum(u.get('spent', 0) for u in users_col.find())
+        
         stats = {
             'users': users_col.count_documents({}),
             'orders': orders_col.count_documents({}),
-            'revenue': round(total_revenue, 2),
+            'revenue': round(total_rev, 2),
             'api_status': api.get_balance()
         }
     except Exception as e:
         stats = {'users': 0, 'orders': 0, 'revenue': 0, 'api_status': "API Error"}
-        recent_users = []
+        recent_users, recent_orders = [], []
 
-    return render_template('admin.html', stats=stats, users=recent_users)
+    return render_template('admin.html', stats=stats, users=recent_users, orders=recent_orders)
 
 @app.route('/add_balance/<int:user_id>', methods=['POST'])
 def add_balance(user_id):
@@ -99,7 +85,10 @@ def add_balance(user_id):
         amount = float(request.form.get('amount', 0))
         if amount > 0:
             users_col.update_one({"_id": user_id}, {"$inc": {"balance": amount}})
-            bot.send_message(user_id, f"🎉 **DEPOSIT SUCCESSFUL!**\nAdmin added **${amount}**.", parse_mode="Markdown")
+            bot.send_message(user_id, f"🎉 **DEPOSIT SUCCESSFUL!**\nAdmin added **${amount}** to your balance.", parse_mode="Markdown")
+        elif amount < 0:
+            users_col.update_one({"_id": user_id}, {"$inc": {"balance": amount}})
+            bot.send_message(user_id, f"⚠️ Admin deducted **${abs(amount)}** from your balance.", parse_mode="Markdown")
     except: pass
     return redirect(url_for('admin_dashboard'))
 
@@ -111,6 +100,21 @@ def ban_user(user_id):
     except: pass
     return redirect(url_for('admin_dashboard'))
 
+@app.route('/refund_order/<oid>')
+def refund_order(oid):
+    if not session.get('logged_in'): return redirect(url_for('login'))
+    
+    # অর্ডার খুঁজে বের করে রিফান্ড লজিক অ্যাপ্লাই করা
+    try:
+        order = orders_col.find_one({"oid": int(oid)})
+        if order and order.get('status') != 'Refunded':
+            users_col.update_one({"_id": order['uid']}, {"$inc": {"balance": order['cost'], "spent": -order['cost']}})
+            orders_col.update_one({"oid": int(oid)}, {"$set": {"status": "Refunded"}})
+            # ইউজারকে মেসেজ পাঠানো
+            bot.send_message(order['uid'], f"💸 **ORDER REFUNDED!**\n━━━━━━━━━━━━━━━━━━━━\n🆔 Order ID: `{oid}`\n💰 Refunded Amount: `${order['cost']}`", parse_mode="Markdown")
+    except: pass
+    return redirect(url_for('admin_dashboard'))
+
 @app.route('/send_broadcast', methods=['POST'])
 def send_broadcast():
     if not session.get('logged_in'): return redirect(url_for('login'))
@@ -119,7 +123,7 @@ def send_broadcast():
         import threading
         def broadcast_task():
             for user in users_col.find({}):
-                try: bot.send_message(user['_id'], f"📢 **ADMIN NOTICE**\n{msg}", parse_mode="Markdown")
+                try: bot.send_message(user['_id'], f"📢 **ADMIN NOTICE**\n━━━━━━━━━━━━━━━━━━━━\n{msg}", parse_mode="Markdown")
                 except: pass
         threading.Thread(target=broadcast_task).start()
     return redirect(url_for('admin_dashboard'))
