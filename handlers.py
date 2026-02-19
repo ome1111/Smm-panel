@@ -26,6 +26,10 @@ def check_sub(chat_id):
     except: return True 
 
 # ==========================================
+@bot.message_handler(commands=['test'])
+def test_bot(message):
+    bot.reply_to(message, "✅ Bot is Alive! The webhook is working. Problem is in Database.")
+
 # ২. ওয়েলকাম ও প্রোফাইল
 # ==========================================
 @bot.message_handler(commands=['start'])
