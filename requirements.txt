@@ -1,0 +1,5 @@
+flask
+pyTelegramBotAPI
+pymongo[srv]
+requests
+gunicorn
