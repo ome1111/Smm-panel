@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEXUS - Admin Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { font-family: 'Rajdhani', sans-serif; background-color: #020617; }
+        .glass-card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.05); }
+        .stat-hover:hover { transform: translateY(-5px); border-color: #38bdf8; box-shadow: 0 10px 30px rgba(56, 189, 248, 0.1); }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #38bdf8; }
+    </style>
+</head>
+<body class="text-slate-200">
+
+    <nav class="glass-card sticky top-0 z-50 px-6 py-4 flex justify-between items-center border-b border-slate-800">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full bg-sky-500/20 flex items-center justify-center border border-sky-500/50">
+                <i class="fa-solid fa-robot text-sky-400 text-xl"></i>
+            </div>
+            <h1 class="text-2xl font-bold text-white tracking-widest">NEXUS<span class="text-sky-400">ADMIN</span></h1>
+        </div>
+        <div class="flex items-center gap-4">
+            <span class="px-3 py-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-full text-sm font-bold animate-pulse">
+                <i class="fa-solid fa-circle text-[10px] mr-1"></i> SYSTEM ONLINE
+            </span>
+            <a href="/logout" class="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors border border-red-500/30 font-bold">
+                <i class="fa-solid fa-power-off mr-1"></i> Logout
+            </a>
+        </div>
+    </nav>
+
+    <div class="max-w-7xl mx-auto px-4 py-8">
+        
+        <div class="mb-8">
+            <h2 class="text-3xl font-bold text-white mb-2">Welcome Back, Commander!</h2>
+            <p class="text-slate-400">Here is what's happening with your SMM Bot today.</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
+            <div class="glass-card rounded-2xl p-6 stat-hover transition-all duration-300 relative overflow-hidden">
+                <i class="fa-solid fa-users absolute -right-4 -bottom-4 text-8xl text-slate-800 opacity-50"></i>
+                <p class="text-slate-400 font-bold uppercase text-sm mb-1 tracking-wider">Total Users</p>
+                <h3 class="text-4xl font-black text-white">{{ stats.users }}</h3>
+            </div>
+            <div class="glass-card rounded-2xl p-6 stat-hover transition-all duration-300 relative overflow-hidden">
+                <i class="fa-solid fa-cart-shopping absolute -right-4 -bottom-4 text-8xl text-slate-800 opacity-50"></i>
+                <p class="text-slate-400 font-bold uppercase text-sm mb-1 tracking-wider">Total Orders</p>
+                <h3 class="text-4xl font-black text-sky-400">{{ stats.orders }}</h3>
+            </div>
+            <div class="glass-card rounded-2xl p-6 stat-hover transition-all duration-300 relative overflow-hidden border-b-4 border-b-emerald-500">
+                <i class="fa-solid fa-sack-dollar absolute -right-4 -bottom-4 text-8xl text-slate-800 opacity-50"></i>
+                <p class="text-slate-400 font-bold uppercase text-sm mb-1 tracking-wider">Total Revenue</p>
+                <h3 class="text-4xl font-black text-emerald-400">${{ stats.revenue }}</h3>
+            </div>
+            <div class="glass-card rounded-2xl p-6 stat-hover transition-all duration-300 relative overflow-hidden">
+                <i class="fa-solid fa-server absolute -right-4 -bottom-4 text-8xl text-slate-800 opacity-50"></i>
+                <p class="text-slate-400 font-bold uppercase text-sm mb-1 tracking-wider">Panel API Balance</p>
+                <h3 class="text-3xl font-black text-purple-400 mt-2">{{ stats.api_status }}</h3>
+            </div>
+        </div>
+
+        <div class="glass-card rounded-2xl p-6 mb-10 border border-sky-500/20 shadow-[0_0_15px_rgba(56,189,248,0.05)]">
+            <h3 class="text-xl font-bold text-white mb-4"><i class="fa-solid fa-satellite-dish text-sky-400 mr-2"></i> Global Broadcast System</h3>
+            <form action="/send_broadcast" method="POST" class="flex flex-col md:flex-row gap-4">
+                <textarea name="msg" rows="2" required placeholder="Write your announcement here... (Markdown supported)" 
+                    class="flex-1 bg-slate-900/80 border border-slate-700 rounded-xl p-4 text-white focus:outline-none focus:border-sky-500 resize-none"></textarea>
+                <button type="submit" class="bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold px-8 py-4 rounded-xl transition-all h-full shadow-[0_0_15px_rgba(56,189,248,0.3)]">
+                    <i class="fa-solid fa-paper-plane mr-2"></i> SEND NOW
+                </button>
+            </form>
+        </div>
+
+        <div class="glass-card rounded-2xl overflow-hidden border border-slate-800">
+            <div class="p-6 border-b border-slate-800 flex flex-col md:flex-row justify-between items-center gap-4 bg-slate-900/50">
+                <h3 class="text-xl font-bold text-white"><i class="fa-solid fa-users-gear text-sky-400 mr-2"></i> User Management</h3>
+                <div class="relative w-full md:w-64">
+                    <i class="fa-solid fa-search absolute left-3 top-3.5 text-slate-500"></i>
+                    <input type="text" id="searchInput" onkeyup="searchUsers()" placeholder="Search by Name or ID..." 
+                        class="w-full bg-slate-950 border border-slate-700 rounded-lg pl-10 pr-4 py-2 text-sm text-white focus:outline-none focus:border-sky-500">
+                </div>
+            </div>
+            
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse" id="userTable">
+                    <thead>
+                        <tr class="bg-slate-950/50 text-slate-400 text-xs uppercase tracking-wider">
+                            <th class="p-4 font-bold">User Info</th>
+                            <th class="p-4 font-bold">Balance</th>
+                            <th class="p-4 font-bold">Total Spent</th>
+                            <th class="p-4 font-bold text-center">Admin Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-800/50">
+                        {% for user in users %}
+                        <tr class="hover:bg-slate-800/30 transition-colors group">
+                            <td class="p-4">
+                                <div class="flex items-center gap-3">
+                                    <img src="https://ui-avatars.com/api/?name={{ user.name }}&background=0ea5e9&color=fff&bold=true" class="w-10 h-10 rounded-full shadow-lg">
+                                    <div>
+                                        <div class="font-bold text-white text-sm searchable-name">{{ user.name }}</div>
+                                        <div class="text-xs text-slate-500 font-mono">ID: <span class="searchable-id">{{ user._id }}</span></div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="p-4">
+                                <span class="px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg font-bold text-sm">
+                                    ${{ "%.3f"|format(user.balance) }}
+                                </span>
+                            </td>
+                            <td class="p-4 text-slate-400 font-medium">${{ "%.3f"|format(user.spent) }}</td>
+                            <td class="p-4">
+                                <div class="flex items-center justify-center gap-2">
+                                    <form action="/add_balance/{{ user._id }}" method="POST" class="flex items-center gap-1 bg-slate-900 rounded-lg border border-slate-700 p-1">
+                                        <span class="pl-2 text-slate-500 font-bold">$</span>
+                                        <input type="number" step="0.01" name="amount" placeholder="0.00" required
+                                            class="w-16 bg-transparent text-white text-sm px-1 py-1 focus:outline-none text-center">
+                                        <button type="submit" title="Add Funds"
+                                            class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 w-8 h-8 rounded-md flex items-center justify-center transition-colors">
+                                            <i class="fa-solid fa-plus font-bold"></i>
+                                        </button>
+                                    </form>
+                                    
+                                    <a href="/ban_user/{{ user._id }}" onclick="return confirm('Ban this user?');" title="Ban User"
+                                        class="bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white border border-red-500/30 w-10 h-10 rounded-lg flex items-center justify-center transition-all">
+                                        <i class="fa-solid fa-ban"></i>
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="p-4 bg-slate-900/50 border-t border-slate-800 text-center text-xs text-slate-500">
+                Showing top 100 recent users
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Simple search function for the table
+        function searchUsers() {
+            let input = document.getElementById('searchInput').value.toLowerCase();
+            let rows = document.querySelectorAll('#userTable tbody tr');
+            
+            rows.forEach(row => {
+                let name = row.querySelector('.searchable-name').textContent.toLowerCase();
+                let id = row.querySelector('.searchable-id').textContent.toLowerCase();
+                if (name.includes(input) || id.includes(input)) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        }
+    </script>
+</body>
+</html>
