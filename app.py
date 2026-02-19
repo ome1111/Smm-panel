@@ -6,6 +6,10 @@ from config import BOT_TOKEN, ADMIN_PASSWORD, SECRET_KEY
 from loader import bot, users_col, orders_col
 import handlers  # এটি বটের মেসেজ হ্যান্ডলারগুলোকে সচল রাখবে
 import api
+import logging
+import telebot
+telebot.logger.setLevel(logging.DEBUG)
+
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
