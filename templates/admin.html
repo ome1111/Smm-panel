@@ -28,14 +28,14 @@
     </nav>
 
     <div class="max-w-7xl mx-auto px-4 mt-6">
-        <div class="flex space-x-2 border-b border-slate-800">
-            <button onclick="switchTab('dashboard')" id="tab-dashboard" class="tab-btn active px-6 py-3 font-bold text-slate-400 hover:text-white transition-all rounded-t-lg">
+        <div class="flex space-x-2 border-b border-slate-800 overflow-x-auto">
+            <button onclick="switchTab('dashboard')" id="tab-dashboard" class="tab-btn active px-6 py-3 font-bold text-slate-400 hover:text-white transition-all rounded-t-lg whitespace-nowrap">
                 <i class="fa-solid fa-chart-pie mr-2"></i> Dashboard
             </button>
-            <button onclick="switchTab('users')" id="tab-users" class="tab-btn px-6 py-3 font-bold text-slate-400 hover:text-white transition-all rounded-t-lg">
+            <button onclick="switchTab('users')" id="tab-users" class="tab-btn px-6 py-3 font-bold text-slate-400 hover:text-white transition-all rounded-t-lg whitespace-nowrap">
                 <i class="fa-solid fa-users mr-2"></i> User Manager
             </button>
-            <button onclick="switchTab('orders')" id="tab-orders" class="tab-btn px-6 py-3 font-bold text-slate-400 hover:text-white transition-all rounded-t-lg">
+            <button onclick="switchTab('orders')" id="tab-orders" class="tab-btn px-6 py-3 font-bold text-slate-400 hover:text-white transition-all rounded-t-lg whitespace-nowrap">
                 <i class="fa-solid fa-list-check mr-2"></i> Order History
             </button>
         </div>
@@ -63,6 +63,29 @@
                 </div>
             </div>
 
+            <div class="glass-card rounded-2xl p-6 mb-8 border border-purple-500/20 shadow-[0_0_15px_rgba(168,85,247,0.05)]">
+                <h3 class="text-xl font-bold text-white mb-4"><i class="fa-solid fa-link text-purple-400 mr-2"></i> Force Join Channels Manager</h3>
+                <form action="/add_channel" method="POST" class="flex flex-col md:flex-row gap-4 mb-4">
+                    <input type="text" name="channel" required placeholder="Enter Channel Username (e.g. @MyChannel)" 
+                        class="flex-1 bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:outline-none focus:border-purple-500">
+                    <button type="submit" class="bg-purple-500 hover:bg-purple-400 text-white font-bold px-8 py-3 rounded-xl transition-all shadow-lg">
+                        <i class="fa-solid fa-plus mr-1"></i> Add Channel
+                    </button>
+                </form>
+                
+                <div class="flex flex-wrap gap-3 mt-4">
+                    {% for ch in channels %}
+                    <div class="bg-slate-800 border border-slate-700 px-4 py-2 rounded-lg flex items-center gap-3">
+                        <span class="text-sky-400 font-bold">{{ ch }}</span>
+                        <a href="/del_channel/{{ ch|replace('@', '') }}" class="text-red-400 hover:text-red-300 transition-colors" title="Remove Channel"><i class="fa-solid fa-times text-lg"></i></a>
+                    </div>
+                    {% else %}
+                    <p class="text-slate-500 text-sm">No channels added yet. Bot is open to all users.</p>
+                    {% endfor %}
+                </div>
+                <p class="text-xs text-amber-500 mt-4"><i class="fa-solid fa-triangle-exclamation"></i> Warning: Your bot MUST be an Admin in the added channels, otherwise the bot will stop working!</p>
+            </div>
+
             <div class="glass-card rounded-2xl p-6 border border-sky-500/20 shadow-[0_0_15px_rgba(56,189,248,0.05)]">
                 <h3 class="text-xl font-bold text-white mb-4"><i class="fa-solid fa-bullhorn text-sky-400 mr-2"></i> Send Global Broadcast</h3>
                 <form action="/send_broadcast" method="POST" class="flex flex-col md:flex-row gap-4">
@@ -77,19 +100,19 @@
 
         <div id="content-users" class="tab-content">
             <div class="glass-card rounded-2xl overflow-hidden border border-slate-800">
-                <div class="p-4 bg-slate-900/50 flex justify-between items-center border-b border-slate-800">
+                <div class="p-4 bg-slate-900/50 flex flex-col md:flex-row justify-between items-center gap-4 border-b border-slate-800">
                     <h3 class="text-xl font-bold text-white">All Users Database</h3>
-                    <input type="text" id="searchUser" onkeyup="searchTable('searchUser', 'userTable')" placeholder="Search ID/Name..." class="bg-slate-950 border border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-sky-500 w-64">
+                    <input type="text" id="searchUser" onkeyup="searchTable('searchUser', 'userTable')" placeholder="Search ID/Name..." class="bg-slate-950 border border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-sky-500 w-full md:w-64">
                 </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse" id="userTable">
                         <thead>
                             <tr class="bg-slate-950/50 text-slate-400 text-xs uppercase">
-                                <th class="p-4">User</th>
+                                <th class="p-4 whitespace-nowrap">User Details</th>
                                 <th class="p-4">Balance</th>
                                 <th class="p-4">Spent</th>
                                 <th class="p-4">Joined</th>
-                                <th class="p-4 text-center">Add/Deduct Balance</th>
+                                <th class="p-4 text-center whitespace-nowrap">Add / Deduct</th>
                                 <th class="p-4 text-center">Ban</th>
                             </tr>
                         </thead>
@@ -106,7 +129,7 @@
                                 <td class="p-4 text-center">
                                     <form action="/add_balance/{{ user._id }}" method="POST" class="flex items-center justify-center gap-2">
                                         <input type="number" step="0.01" name="amount" placeholder="+/- Amt" required class="w-20 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-white text-center">
-                                        <button type="submit" class="bg-sky-500/20 text-sky-400 hover:bg-sky-500 hover:text-white px-2 py-1 rounded transition-colors border border-sky-500/30">Apply</button>
+                                        <button type="submit" class="bg-sky-500/20 text-sky-400 hover:bg-sky-500 hover:text-white px-3 py-1 rounded transition-colors border border-sky-500/30">Apply</button>
                                     </form>
                                 </td>
                                 <td class="p-4 text-center">
@@ -122,17 +145,17 @@
 
         <div id="content-orders" class="tab-content">
             <div class="glass-card rounded-2xl overflow-hidden border border-slate-800">
-                <div class="p-4 bg-slate-900/50 flex justify-between items-center border-b border-slate-800">
-                    <h3 class="text-xl font-bold text-white">Latest 100 Orders</h3>
-                    <input type="text" id="searchOrder" onkeyup="searchTable('searchOrder', 'orderTable')" placeholder="Search Link/OID..." class="bg-slate-950 border border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-sky-500 w-64">
+                <div class="p-4 bg-slate-900/50 flex flex-col md:flex-row justify-between items-center gap-4 border-b border-slate-800">
+                    <h3 class="text-xl font-bold text-white">Latest Orders</h3>
+                    <input type="text" id="searchOrder" onkeyup="searchTable('searchOrder', 'orderTable')" placeholder="Search Link/OID..." class="bg-slate-950 border border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-sky-500 w-full md:w-64">
                 </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse" id="orderTable">
                         <thead>
                             <tr class="bg-slate-950/50 text-slate-400 text-xs uppercase">
-                                <th class="p-4">Order ID</th>
+                                <th class="p-4">OID</th>
                                 <th class="p-4">User ID</th>
-                                <th class="p-4">Link (Target)</th>
+                                <th class="p-4 min-w-[150px]">Link</th>
                                 <th class="p-4">Cost</th>
                                 <th class="p-4">Status</th>
                                 <th class="p-4 text-center">Action</th>
@@ -154,7 +177,7 @@
                                 </td>
                                 <td class="p-4 text-center">
                                     {% if order.status|lower != 'refunded' %}
-                                    <a href="/refund_order/{{ order.oid }}" onclick="return confirm('Refund ${{ order.cost }} to User?');" class="bg-amber-500 hover:bg-amber-400 text-slate-900 px-3 py-1 rounded font-bold transition-colors shadow-lg">
+                                    <a href="/refund_order/{{ order.oid }}" onclick="return confirm('Refund ${{ order.cost }} to User?');" class="bg-amber-500 hover:bg-amber-400 text-slate-900 px-3 py-1 rounded font-bold transition-colors shadow-lg whitespace-nowrap">
                                         Refund
                                     </a>
                                     {% else %}
@@ -173,16 +196,12 @@
 
     <script>
         function switchTab(tabId) {
-            // Hide all contents and remove active class from buttons
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-            
-            // Show selected content and add active class to button
             document.getElementById('content-' + tabId).classList.add('active');
             document.getElementById('tab-' + tabId).classList.add('active');
         }
 
-        // Universal Search Function
         function searchTable(inputId, tableId) {
             let input = document.getElementById(inputId).value.toLowerCase();
             let rows = document.querySelectorAll('#' + tableId + ' tbody tr');
