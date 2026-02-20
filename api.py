@@ -1,49 +1,32 @@
 import requests
-from config import API_KEY, API_URL
+from config import API_URL, API_KEY
 
 def get_services():
-    """প্যানেল থেকে সব সার্ভিসের লিস্ট আনা"""
     try:
-        r = requests.post(API_URL, data={'key': API_KEY, 'action': 'services'})
-        return r.json()
+        payload = {'key': API_KEY, 'action': 'services'}
+        # 🔥 timeout=10 অ্যাড করা হয়েছে
+        response = requests.post(API_URL, data=payload, timeout=10) 
+        return response.json()
     except Exception as e:
-        print(f"API Services Error: {e}")
-        return []
+        print(f"API Error: {e}")
+        return None
 
-def place_order(sid, link, qty):
-    """আসল প্যানেলে অর্ডার প্লেস করা"""
+def place_order(service_id, link, quantity):
     try:
-        payload = {
-            'key': API_KEY, 
-            'action': 'add', 
-            'service': sid, 
-            'link': link, 
-            'quantity': qty
-        }
-        r = requests.post(API_URL, data=payload)
-        return r.json()
+        payload = {'key': API_KEY, 'action': 'add', 'service': service_id, 'link': link, 'quantity': quantity}
+        # 🔥 অর্ডারের জন্য timeout=15 অ্যাড করা হয়েছে
+        response = requests.post(API_URL, data=payload, timeout=15)
+        return response.json()
+    except requests.exceptions.Timeout:
+        # মেইন সার্ভার ডাউন থাকলেও বট হ্যাং হবে না
+        return {"error": "API Connection Timeout. Main Server is currently too slow. Try again."}
     except Exception as e:
-        return {"error": f"API Connection Failed: {str(e)}"}
-
-def get_balance():
-    """আপনার প্যানেলের মেইন ব্যালেন্স চেক করা (অ্যাডমিন প্যানেলের জন্য)"""
-    try:
-        r = requests.post(API_URL, data={'key': API_KEY, 'action': 'balance'})
-        data = r.json()
-        return f"{data.get('balance', '0.00')} {data.get('currency', 'USD')}"
-    except:
-        return "N/A"
+        return {"error": str(e)}
 
 def get_order_status(order_id):
-    payload = {
-        'key': API_KEY,
-        'action': 'status',
-        'order': order_id
-    }
     try:
-        import requests
-        response = requests.post(API_URL, data=payload)
+        payload = {'key': API_KEY, 'action': 'status', 'order': order_id}
+        response = requests.post(API_URL, data=payload, timeout=10)
         return response.json()
     except:
-        return {}
-
+        return None
