@@ -121,15 +121,13 @@ def show_platforms(message):
     if not services:
         return bot.send_message(message.chat.id, "❌ **API Error:** Could not fetch services.")
 
-    # প্ল্যাটফর্ম বের করা
     platforms = set()
     for s in services:
         platforms.add(identify_platform(s['category']))
     
     markup = types.InlineKeyboardMarkup(row_width=2)
-    btns = [types.InlineKeyboardButton(text=p, callback_data=f"PLAT|{p}") for p in sorted(platforms)]
+    btns = [types.InlineKeyboardButton(text=p, callback_data=f"PLAT|{p}|0") for p in sorted(platforms)]
     
-    # 2-column grid-এ সাজানো
     for i in range(0, len(btns), 2):
         if i+1 < len(btns): markup.row(btns[i], btns[i+1])
         else: markup.row(btns[i])
@@ -139,26 +137,32 @@ def show_platforms(message):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("PLAT|"))
 def show_categories(call):
-    platform_name = call.data.split("|")[1]
+    data = call.data.split("|")
+    platform_name = data[1]
+    page = int(data[2]) if len(data) > 2 else 0
+    
     services = get_cached_services()
-    
-    # সব ইউনিক ক্যাটাগরির গ্লোবাল ইন্ডেক্স লিস্ট (যাতে বাটন লিমিট ক্রস না করে)
     all_cats = sorted(list(set(s['category'] for s in services)))
-    
-    # এই প্ল্যাটফর্মের আন্ডারে থাকা ক্যাটাগরিগুলো ফিল্টার করা
     plat_cats = [c for c in all_cats if identify_platform(c) == platform_name]
     
+    start = page * 15
+    end = start + 15
+    
     markup = types.InlineKeyboardMarkup(row_width=1)
-    for cat in plat_cats[:15]: # প্রথম ১৫টি ক্যাটাগরি দেখাবে
+    for cat in plat_cats[start:end]:
         idx = all_cats.index(cat)
-        # নাম ছোট করা
-        short_cat = cat.replace("Instagram", "").replace("Facebook", "").replace("YouTube", "").strip()
+        short_cat = cat.replace("Instagram", "").replace("Facebook", "").replace("YouTube", "").replace("Telegram", "").strip()
         if len(short_cat) < 3: short_cat = cat
         markup.add(types.InlineKeyboardButton(f"📁 {short_cat[:35]}", callback_data=f"CAT|{idx}|0"))
     
+    nav = []
+    if page > 0: nav.append(types.InlineKeyboardButton("⬅️ Prev", callback_data=f"PLAT|{platform_name}|{page-1}"))
+    if end < len(plat_cats): nav.append(types.InlineKeyboardButton("Next ➡️", callback_data=f"PLAT|{platform_name}|{page+1}"))
+    if nav: markup.row(*nav)
+    
     markup.add(types.InlineKeyboardButton("🔙 Back to Platforms", callback_data="BACK_TO_PLAT"))
     
-    bot.edit_message_text(f"📍 **Menu ➡️ {platform_name}**\n━━━━━━━━━━━━━━━━━━━━\n📂 **Select a Category:**", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+    bot.edit_message_text(f"📍 **Menu ➡️ {platform_name}**\nPage: {page+1}/{math.ceil(len(plat_cats)/15)}\n━━━━━━━━━━━━━━━━━━━━\n📂 **Select a Category:**", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data == "BACK_TO_PLAT")
 def back_to_plat(call):
@@ -191,9 +195,9 @@ def list_services(call):
     if nav: markup.row(*nav)
     
     platform_name = identify_platform(cat_name)
-    markup.add(types.InlineKeyboardButton(f"🔙 Back to {platform_name}", callback_data=f"PLAT|{platform_name}"))
+    markup.add(types.InlineKeyboardButton(f"🔙 Back to {platform_name}", callback_data=f"PLAT|{platform_name}|0"))
     
-    bot.edit_message_text(f"📍 **{platform_name} ➡️ Category**\n📦 **{cat_name}**\nPage: {page+1}/{math.ceil(len(filtered)/10)}", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+    bot.edit_message_text(f"📍 **{platform_name} ➡️ Category**\n📦 **{cat_name[:30]}...**\nPage: {page+1}/{math.ceil(len(filtered)/10)}", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
 # ==========================================
 # ৬. Info Card & Advanced Order Validation
@@ -207,7 +211,6 @@ def show_service_info(call):
     if not s: return bot.answer_callback_query(call.id, "❌ Service not found!", show_alert=True)
         
     rate = round(float(s['rate']) + (float(s['rate']) * PROFIT_MARGIN / 100), 3)
-    plat = identify_platform(s['category'])
     
     txt = (
         f"ℹ️ **SERVICE INFORMATION**\n"
@@ -225,13 +228,13 @@ def show_service_info(call):
         types.InlineKeyboardButton("🛒 Order Now", callback_data=f"START_ORD|{sid}"),
         types.InlineKeyboardButton("⭐ Fav", callback_data=f"FAV_ADD|{sid}")
     )
-    # ডাইনামিক ব্যাক বাটন
+    
     all_cats = sorted(list(set(x['category'] for x in services)))
     try: cat_idx = all_cats.index(s['category'])
     except: cat_idx = 0
     markup.add(types.InlineKeyboardButton("🔙 Back to Services", callback_data=f"CAT|{cat_idx}|0"))
     
-    bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+    bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("START_ORD|"))
 def ask_link(call):
