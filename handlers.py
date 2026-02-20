@@ -5,11 +5,17 @@ import api
 import math
 import time
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
+import google.generativeai as genai
 
 # ==========================================
-# ১. CORE SETTINGS & SPAM PROTECTION
+# ১. CORE SETTINGS, AI & SPY MODE
 # ==========================================
+# Gemini AI Setup
+GEMINI_API_KEY = "AIzaSyBPqzynaZaa9UQmPm9EvhdrI6TcM-5FqcQ"
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel('gemini-1.5-flash')
+
 API_CACHE = {'data': [], 'last_fetch': 0}
 CACHE_TTL = 300 
 BASE_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://smm-panel-g8ab.onrender.com')
@@ -18,23 +24,30 @@ BASE_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://smm-panel-g8ab.onrende
 user_actions = {}
 blocked_users = {}
 
+# Live Spy Mode Updater
+def update_spy(uid, action_text):
+    try:
+        users_col.update_one(
+            {"_id": uid}, 
+            {"$set": {"last_action": action_text, "last_active": datetime.now()}}
+        )
+    except: pass
+
 def check_spam(uid):
     if str(uid) == str(ADMIN_ID): return False 
-    
     current_time = time.time()
+    
     if uid in blocked_users:
         if current_time < blocked_users[uid]: return True
         else: del blocked_users[uid]
-
-    if uid not in user_actions:
-        user_actions[uid] = []
         
+    if uid not in user_actions: user_actions[uid] = []
     user_actions[uid].append(current_time)
     user_actions[uid] = [t for t in user_actions[uid] if current_time - t < 3]
     
     if len(user_actions[uid]) > 5:
         blocked_users[uid] = current_time + 300
-        try: bot.send_message(uid, "🛡 **ANTI-SPAM TRIGGERED!**\n━━━━━━━━━━━━━━━━━━━━\nYou clicked too fast. You have been blocked for 5 minutes to protect the server.", parse_mode="Markdown")
+        try: bot.send_message(uid, "🛡 **ANTI-SPAM TRIGGERED!**\nYou clicked too fast. You are temporarily blocked for 5 minutes.", parse_mode="Markdown")
         except: pass
         return True
     return False
@@ -42,7 +55,7 @@ def check_spam(uid):
 def get_settings():
     s = config_col.find_one({"_id": "settings"})
     if not s:
-        s = {"_id": "settings", "channels": [], "profit_margin": 20.0, "maintenance": False, "payments": [], "ref_target": 10, "ref_bonus": 5.0, "dep_commission": 5.0, "hidden_services": [], "fake_orders": 50000, "fake_users": 12000, "cat_ranking": []}
+        s = {"_id": "settings", "channels": [], "profit_margin": 20.0, "maintenance": False, "payments": [], "ref_target": 10, "ref_bonus": 5.0, "dep_commission": 5.0, "hidden_services": [], "fake_orders": 50000, "fake_users": 12000, "cat_ranking": [], "fake_post_channel": ""}
         config_col.insert_one(s)
     return s
 
@@ -55,7 +68,8 @@ def check_maintenance(chat_id):
 
 def get_cached_services():
     global API_CACHE
-    if time.time() - API_CACHE['last_fetch'] < CACHE_TTL and API_CACHE['data']: return API_CACHE['data']
+    if time.time() - API_CACHE['last_fetch'] < CACHE_TTL and API_CACHE['data']: 
+        return API_CACHE['data']
     res = api.get_services()
     if res and type(res) == list:
         API_CACHE['data'] = res
@@ -118,7 +132,7 @@ def send_force_sub(chat_id):
     markup = types.InlineKeyboardMarkup(row_width=1)
     for ch in channels: markup.add(types.InlineKeyboardButton(f"📢 Join {ch}", url=f"https://t.me/{ch.replace('@','')}"))
     markup.add(types.InlineKeyboardButton("🟢 VERIFY ACCOUNT 🟢", callback_data="CHECK_SUB"))
-    txt = "🛑 **ACCESS RESTRICTED**\n━━━━━━━━━━━━━━━━━━━━\nJoin our official channels to unlock premium features.\n\n📌 **Step 1:** Join channels.\n📌 **Step 2:** Click Verify."
+    txt = "🛑 **ACCESS RESTRICTED**\n━━━━━━━━━━━━━━━━━━━━\nJoin our official channels to unlock premium features."
     bot.send_message(chat_id, txt, reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data == "CHECK_SUB")
@@ -145,13 +159,14 @@ def sub_check_callback(call):
 
         bot.send_message(call.message.chat.id, "✅ **Access Granted!**", reply_markup=main_menu())
     else: 
-        bot.answer_callback_query(call.id, "❌ Verification Failed! Please join ALL channels first.", show_alert=True)
+        bot.answer_callback_query(call.id, "❌ Join ALL channels first!", show_alert=True)
 
 # ==========================================
 # ৪. START COMMAND & GLOBAL STATS
 # ==========================================
 @bot.message_handler(commands=['start'])
 def start(message):
+    update_spy(message.chat.id, "Clicked /start")
     if check_spam(message.chat.id) or check_maintenance(message.chat.id): return
     uid = message.chat.id
     name = message.from_user.first_name
@@ -159,7 +174,7 @@ def start(message):
     referrer = int(args[1]) if len(args) > 1 and args[1].isdigit() and int(args[1]) != uid else None
 
     if not users_col.find_one({"_id": uid}):
-        users_col.insert_one({"_id": uid, "name": name, "balance": 0.0, "spent": 0.0, "ref_by": referrer, "ref_paid": False, "ref_earnings": 0.0, "joined": datetime.now(), "favorites": []})
+        users_col.insert_one({"_id": uid, "name": name, "balance": 0.0, "spent": 0.0, "ref_by": referrer, "ref_paid": False, "ref_earnings": 0.0, "joined": datetime.now(), "favorites": [], "last_active": datetime.now(), "last_action": "Registered"})
 
     if not check_sub(uid): return send_force_sub(uid)
 
@@ -171,21 +186,20 @@ def start(message):
     bot.send_message(uid, txt, reply_markup=main_menu(), parse_mode="Markdown")
 
 # ==========================================
-# ৫. ORDERING SYSTEM & LOADING ANIMATION
+# ৫. ORDERING SYSTEM & CUSTOM EMOJIS
 # ==========================================
 @bot.message_handler(func=lambda m: m.text == "🚀 New Order")
 def show_platforms(message):
+    update_spy(message.chat.id, "Browsing Platforms")
     if check_spam(message.chat.id) or check_maintenance(message.chat.id): return
     if not check_sub(message.chat.id): return send_force_sub(message.chat.id)
     
-    # --- CYBERPUNK LOADING ANIMATION ---
     load_msg = bot.send_message(message.chat.id, "📡 **Connecting to NEXUS Core...**\n`[■□□□□□□□□□] 10%`", parse_mode="Markdown")
     time.sleep(0.3)
     bot.edit_message_text("🔐 **Fetching API Services...**\n`[■■■■■□□□□□] 50%`", message.chat.id, load_msg.message_id, parse_mode="Markdown")
     time.sleep(0.3)
     bot.edit_message_text("🚀 **System Ready!**\n`[■■■■■■■■■□] 90%`", message.chat.id, load_msg.message_id, parse_mode="Markdown")
     time.sleep(0.2)
-    # -----------------------------------
 
     services = get_cached_services()
     if not services: 
@@ -207,10 +221,13 @@ def show_categories(call):
     if check_spam(call.message.chat.id): return bot.answer_callback_query(call.id)
     data = call.data.split("|")
     platform_name, page = data[1], int(data[2]) if len(data) > 2 else 0
+    update_spy(call.message.chat.id, f"Viewing: {platform_name}")
     hidden = get_settings().get("hidden_services", [])
     
     all_cats = sorted(list(set(s['category'] for s in get_cached_services() if str(s['service']) not in hidden)))
     plat_cats = [c for c in all_cats if identify_platform(c) == platform_name]
+    
+    # Smart Ranking
     plat_cats.sort(key=lambda x: (0 if 'Telegram' in x else 1 if 'Instagram' in x else 2 if 'YouTube' in x else 3, x))
     
     start, end = page * 15, page * 15 + 15
@@ -259,8 +276,14 @@ def list_services(call):
     for s in filtered[start:end]:
         base_rate = float(s['rate']) + (float(s['rate']) * global_profit / 100)
         final_rate = round(base_rate - (base_rate * discount / 100), 3)
-        speed = "⏱ Fast" if "fast" in s['name'].lower() or "instant" in s['name'].lower() else "⏱ Normal"
-        markup.add(types.InlineKeyboardButton(f"⚡ ID:{s['service']} | ${final_rate} | {speed} | {s['name'][:18]}", callback_data=f"INFO|{s['service']}"))
+        
+        # Custom Service Emojis Based on Speed/Name
+        speed_emoji = "⚡"
+        if "instant" in s['name'].lower() or "fast" in s['name'].lower(): speed_emoji = "🚀"
+        elif "slow" in s['name'].lower(): speed_emoji = "🐢"
+        elif "drip" in s['name'].lower(): speed_emoji = "💧"
+
+        markup.add(types.InlineKeyboardButton(f"{speed_emoji} ID:{s['service']} | ${final_rate} | {s['name'][:18]}", callback_data=f"INFO|{s['service']}"))
     
     nav = []
     if page > 0: nav.append(types.InlineKeyboardButton("⬅️ Prev", callback_data=f"CAT|{cat_idx}|{page-1}"))
@@ -275,6 +298,7 @@ def list_services(call):
 def show_service_info(call):
     if check_spam(call.message.chat.id): return bot.answer_callback_query(call.id)
     sid = call.data.split("|")[1]
+    update_spy(call.message.chat.id, f"Checking ID: {sid}")
     services = get_cached_services()
     s = next((x for x in services if str(x['service']) == str(sid)), None)
     
@@ -307,10 +331,6 @@ def ask_link(call):
 
 def ask_qty(message, sid):
     link = message.text.strip()
-    s = next((x for x in get_cached_services() if str(x['service']) == str(sid)), None)
-    if s and not validate_link(identify_platform(s['category']), link):
-        return bot.send_message(message.chat.id, f"❌ **Link Warning!**\nDoes not match {identify_platform(s['category'])}. Order cancelled.", parse_mode="Markdown")
-        
     msg = bot.send_message(message.chat.id, "🔢 **Enter Quantity (Numbers only):**", parse_mode="Markdown")
     bot.register_next_step_handler(msg, order_preview, sid, link)
 
@@ -344,25 +364,38 @@ def place_final_order(call):
     draft = user.get('draft')
     if not draft: return bot.answer_callback_query(call.id, "❌ Session expired!", show_alert=True)
         
-    # --- CYBERPUNK LOADING ANIMATION ---
-    bot.edit_message_text("📡 **Connecting to NEXUS Core...**\n`[■□□□□□□□□□] 10%`", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
-    time.sleep(0.3)
-    bot.edit_message_text("🔐 **Encrypting Order Data...**\n`[■■■■■□□□□□] 50%`", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
-    time.sleep(0.3)
+    update_spy(call.message.chat.id, f"Purchased ID {draft['sid']}")
+    
+    # Simulated Delays for High-Value Orders
+    if draft['cost'] > 5.0:
+        bot.edit_message_text("⏳ **Verifying large transaction...**\n`[■■□□□□□□□□] 20%`", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+        time.sleep(1.5)
+        bot.edit_message_text("🔐 **Securing connection...**\n`[■■■■■■□□□□] 60%`", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+        time.sleep(1.5)
+    else:
+        bot.edit_message_text("📡 **Connecting to NEXUS Core...**\n`[■□□□□□□□□□] 10%`", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+        time.sleep(0.3)
+        bot.edit_message_text("🔐 **Encrypting Order Data...**\n`[■■■■■□□□□□] 50%`", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+        time.sleep(0.3)
+
     bot.edit_message_text("🚀 **Sending to Main Server...**\n`[■■■■■■■■■□] 90%`", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
     time.sleep(0.2)
-    # -----------------------------------
 
     res = api.place_order(draft['sid'], draft['link'], draft['qty'])
     
     if 'order' in res:
         users_col.update_one({"_id": call.message.chat.id}, {"$inc": {"balance": -draft['cost'], "spent": draft['cost']}, "$unset": {"draft": ""}})
-        orders_col.insert_one({"oid": res['order'], "uid": call.message.chat.id, "sid": draft['sid'], "link": draft['link'], "qty": draft['qty'], "cost": draft['cost'], "status": "pending", "date": datetime.now()})
+        orders_col.insert_one({"oid": res['order'], "uid": call.message.chat.id, "sid": draft['sid'], "link": draft['link'], "qty": draft['qty'], "cost": draft['cost'], "status": "pending", "retries": 0, "date": datetime.now()})
         
-        # INVOICE STYLE BLOCKQUOTE
         success_txt = f"> ✅ **ORDER SUCCESSFUL!**\n> ━━━━━━━━━━━━━━━━━━━━\n> 🆔 **Order ID:** `{res['order']}`\n> 💰 **Deducted:** `${draft['cost']}`\n> 📌 _Track in '📦 Orders' menu._"
         bot.edit_message_text(success_txt, call.message.chat.id, call.message.message_id, parse_mode="Markdown")
         
+        # Real Order Auto Post to Channel
+        ch = get_settings().get("fake_post_channel")
+        if ch:
+            try: bot.send_message(ch, f"🟢 **REAL ORDER PLACED!**\n━━━━━━━━━━━━━━━━━━━━\n👤 **User ID:** `***{str(call.message.chat.id)[-4:]}`\n📦 **Quantity:** {draft['qty']}\n💰 **Amount:** `${draft['cost']}`\n⚡ **Status:** Processing\n━━━━━━━━━━━━━━━━━━━━\n🚀 _Join NEXUS SMM Today!_", parse_mode="Markdown")
+            except: pass
+            
         try: bot.send_message(ADMIN_ID, f"🔔 **NEW ORDER!**\nUser: `{call.message.chat.id}`\nService ID: `{draft['sid']}`\nCost: `${draft['cost']}`")
         except: pass
     else: 
@@ -374,7 +407,7 @@ def cancel_order(call):
     bot.edit_message_text("🚫 **Order Cancelled.**", call.message.chat.id, call.message.message_id)
 
 # ==========================================
-# ৬. DEPOSIT FLOW & INVOICES
+# ৬. DEPOSIT FLOW
 # ==========================================
 def deposit_ask_amount(message):
     try:
@@ -434,12 +467,11 @@ def process_voucher(message):
     vouchers_col.update_one({"code": code}, {"$push": {"used_by": message.chat.id}})
     users_col.update_one({"_id": message.chat.id}, {"$inc": {"balance": voucher['amount']}})
     
-    # INVOICE STYLE BLOCKQUOTE
     msg = f"> 🧾 **NEXUS VOUCHER RECEIPT**\n> ━━━━━━━━━━━━━━━━━━━━\n> ✅ **Status:** CLAIMED\n> 🎁 **Code:** `{code}`\n> 💰 **Reward Added:** `${voucher['amount']}`\n> \n> _Enjoy your free funds!_"
     bot.send_message(message.chat.id, msg, parse_mode="Markdown")
 
 # ==========================================
-# ৮. UNIVERSAL BUTTONS, VIP CARD & PAGINATION
+# ৮. UNIVERSAL BUTTONS, CURRENCY & VIP CARD
 # ==========================================
 def fetch_orders_page(chat_id, page=0):
     all_orders = list(orders_col.find({"uid": chat_id}).sort("_id", -1))
@@ -459,7 +491,7 @@ def fetch_orders_page(chat_id, page=0):
                     orders_col.update_one({"oid": o['oid']}, {"$set": {"status": current_status}})
             except: pass
             
-        status_text = f"✅ {current_status.upper()}" if current_status == 'completed' else f"❌ {current_status.upper()}" if current_status in ['canceled', 'refunded'] else f"⏳ {current_status.upper()}"
+        status_text = f"✅ {current_status.upper()}" if current_status == 'completed' else f"❌ {current_status.upper()}" if current_status in ['canceled', 'refunded', 'error', 'fail'] else f"⏳ {current_status.upper()}"
         txt += f"🆔 `{o['oid']}` | 💰 `${round(o['cost'],3)}`\n🔗 {str(o.get('link', 'N/A'))[:25]}...\n🏷 Status: {status_text}\n\n"
         
     markup = types.InlineKeyboardMarkup(row_width=2)
@@ -478,16 +510,25 @@ def my_orders_pagination(call):
     txt, markup = fetch_orders_page(call.message.chat.id, page)
     bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
 
+@bot.callback_query_handler(func=lambda c: c.data.startswith("CURR|"))
+def convert_currency(call):
+    curr = call.data.split("|")[1]
+    u = users_col.find_one({"_id": call.message.chat.id})
+    bal = float(u.get('balance', 0))
+    if curr == "BDT": 
+        bot.answer_callback_query(call.id, f"৳ Your Wallet: {round(bal * 120, 2)} BDT", show_alert=True)
+    elif curr == "INR": 
+        bot.answer_callback_query(call.id, f"₹ Your Wallet: {round(bal * 83, 2)} INR", show_alert=True)
+
 @bot.message_handler(func=lambda m: m.text in ["⭐ Favorites", "👤 Profile", "🏆 Leaderboard", "📦 Orders", "💰 Deposit", "🎧 Support Ticket", "🔍 Smart Search", "🤝 Affiliate", "🎟️ Voucher"])
 def universal_buttons(message):
+    update_spy(message.chat.id, f"Clicked {message.text}")
     if check_spam(message.chat.id) or check_maintenance(message.chat.id): return
     if not check_sub(message.chat.id): return send_force_sub(message.chat.id)
     
     if message.text == "👤 Profile":
         u = users_col.find_one({"_id": message.chat.id})
         tier, _ = get_user_tier(u.get('spent', 0))
-        
-        # VIP DIGITAL PROFILE CARD DESIGN
         name_str = (message.from_user.first_name or "User")[:12]
         uid_str = str(u['_id'])
         bal_str = f"${round(u.get('balance',0), 3)}"
@@ -506,7 +547,10 @@ def universal_buttons(message):
             f"╚════════════════════════════════╝\n"
             f"```"
         )
-        bot.send_message(message.chat.id, card, parse_mode="Markdown")
+        # Local Currency Option
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(types.InlineKeyboardButton("🇧🇩 Show in BDT", callback_data="CURR|BDT"), types.InlineKeyboardButton("🇮🇳 Show in INR", callback_data="CURR|INR"))
+        bot.send_message(message.chat.id, card, reply_markup=markup, parse_mode="Markdown")
         
     elif message.text == "📦 Orders":
         bot.send_chat_action(message.chat.id, 'typing')
@@ -578,3 +622,48 @@ def add_to_favorites(call):
 def ask_refill(call):
     msg = bot.send_message(call.message.chat.id, "🔄 **Enter Order ID to refill:**", parse_mode="Markdown")
     bot.register_next_step_handler(msg, lambda m: [bot.send_message(m.chat.id, "✅ Refill Requested!"), bot.send_message(ADMIN_ID, f"🔄 **REFILL:** Order `{m.text}` by `{m.chat.id}`")])
+
+# ==========================================
+# ৯. GEMINI AI ASSISTANT & SMART KEYWORDS
+# ==========================================
+@bot.callback_query_handler(func=lambda c: c.data == "TALK_HUMAN")
+def talk_to_human(call):
+    msg = bot.send_message(call.message.chat.id, "✍️ **Write your message for the Live Admin:**")
+    bot.register_next_step_handler(msg, lambda m: [tickets_col.insert_one({"uid": m.chat.id, "msg": m.text, "status": "open", "date": datetime.now()}), bot.send_message(m.chat.id, "✅ Sent to Admin! They will reply soon.", parse_mode="Markdown")])
+
+@bot.message_handler(func=lambda m: m.text not in ["🚀 New Order", "⭐ Favorites", "🔍 Smart Search", "📦 Orders", "💰 Deposit", "🤝 Affiliate", "👤 Profile", "🎟️ Voucher", "🏆 Leaderboard", "🎧 Support Ticket"])
+def ai_smart_assistant(message):
+    update_spy(message.chat.id, f"Typed: {message.text[:20]}")
+    text = message.text.lower()
+    
+    # 9.1 Smart Keyword Detection for Buying Direct Orders
+    if any(word in text for word in ["buy", "need", "want", "views", "likes", "followers", "subscribers"]):
+        services = get_cached_services()
+        hidden = get_settings().get("hidden_services", [])
+        keywords = [word for word in text.split() if word not in ["buy", "need", "want", "some", "the", "a", "for", "my"]]
+        
+        results = []
+        for s in services:
+            if str(s['service']) in hidden: continue
+            if any(k in s['name'].lower() for k in keywords): results.append(s)
+            if len(results) >= 5: break
+            
+        if results:
+            markup = types.InlineKeyboardMarkup(row_width=1)
+            for s in results: markup.add(types.InlineKeyboardButton(f"⚡ {s['name'][:25]}", callback_data=f"INFO|{s['service']}"))
+            return bot.send_message(message.chat.id, "🤖 **Nexus AI:** I detected you want to buy something! Here are matching services:", reply_markup=markup, parse_mode="Markdown")
+
+    # 9.2 Gemini AI Support Integration
+    bot.send_chat_action(message.chat.id, 'typing')
+    try:
+        system_prompt = "You are Nexus AI, a polite and professional support assistant for the NEXUS SMM Panel. Your job is to help users. To deposit: users must click the '💰 Deposit' button. To order: click '🚀 New Order'. If an order is canceled, they get an auto-refund. Do not invent fake service prices. Keep answers short and human-like. Answer this user: "
+        prompt = system_prompt + message.text
+        
+        response = model.generate_content(prompt)
+        
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("🗣 Transfer to Live Admin", callback_data="TALK_HUMAN"))
+        bot.send_message(message.chat.id, f"🤖 **Nexus AI:**\n━━━━━━━━━━━━━━━━━━━━\n{response.text}", reply_markup=markup, parse_mode="Markdown")
+    except Exception as e:
+        # Fallback if AI fails or rate limited
+        bot.send_message(message.chat.id, "🤖 _AI is currently syncing. Please use the Support Ticket menu to contact Admin._", parse_mode="Markdown")
