@@ -1,27 +1,26 @@
 from flask import Flask, request, render_template, session, redirect, url_for
 import telebot
 from telebot import types
-import os, time, logging, random
+import os, time, logging, random, threading
 from datetime import datetime, timedelta
 from config import BOT_TOKEN, ADMIN_PASSWORD, SECRET_KEY
-from loader import bot, users_col, orders_col, config_col, tickets_col
+from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, logs_col
 import api
-import threading
 from bson.objectid import ObjectId
-import handlers # এটি বটের সব ফাংশনালিটি কানেক্ট করে
+import handlers # Bot er brain connect korar jonno
 
-# Logging Setup
 logging.basicConfig(level=logging.INFO)
 telebot.logger.setLevel(logging.DEBUG)
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
 
-# 🛠 সিস্টেম সেটিংস লোডার (ডাটাবেস থেকে)
+# ==========================================
+# ⚙️ CORE SETTINGS MANAGER
+# ==========================================
 def get_settings():
     s = config_col.find_one({"_id": "settings"})
     if not s:
-        # ডিফল্ট ভ্যালু যদি ডাটাবেসে কিছু না থাকে
         s = {
             "_id": "settings", 
             "channels": [], 
@@ -31,18 +30,89 @@ def get_settings():
             "ref_target": 10, 
             "ref_bonus": 5.0, 
             "dep_commission": 5.0, 
-            "hidden_services": []
+            "hidden_services": [],
+            "fake_orders": 50000, 
+            "fake_users": 12000,
+            "fake_post_channel": "", 
+            "fake_post_freq": 5,
+            "cat_ranking": []
         }
         config_col.insert_one(s)
     return s
 
 # ==========================================
-# ১. WEBHOOK & INDEX ROUTES
+# 🤖 BACKGROUND THREADS (Auto-Refund & Fake Post)
+# ==========================================
+
+# 1. Auto-Refund Engine (Runs every 1 hour)
+def auto_refund_task():
+    while True:
+        try:
+            pending_orders = orders_col.find({"status": {"$in": ["pending", "processing", "in progress"]}})
+            for o in pending_orders:
+                res = api.get_order_status(o['oid'])
+                if res and 'status' in res:
+                    status = str(res['status']).lower()
+                    if status in ['canceled', 'partial', 'refunded']:
+                        refund_amount = o['cost']
+                        if status == 'partial' and 'remains' in res:
+                            # Calculate partial refund
+                            try:
+                                refund_amount = (float(res['remains']) / float(o['qty'])) * o['cost']
+                            except: pass
+                        
+                        users_col.update_one({"_id": o['uid']}, {"$inc": {"balance": refund_amount, "spent": -refund_amount}})
+                        orders_col.update_one({"oid": o['oid']}, {"$set": {"status": status.capitalize()}})
+                        
+                        # Send Beautiful Invoice to User
+                        try:
+                            msg = f"🧾 **REFUND INVOICE**\n━━━━━━━━━━━━━━━━━━━━\n🆔 **Order ID:** `{o['oid']}`\n🏷 **Status:** {status.upper()}\n💰 **Refunded:** `${round(refund_amount, 3)}`\n\n_This amount has been automatically added back to your wallet._"
+                            bot.send_message(o['uid'], msg, parse_mode="Markdown")
+                        except: pass
+            time.sleep(3600) # Sleep for 1 hour
+        except Exception as e: 
+            time.sleep(60)
+
+# 2. Fake Auto-Post Engine (Runs continuously based on frequency)
+def fake_auto_post_task():
+    while True:
+        try:
+            settings = get_settings()
+            channel = settings.get("fake_post_channel", "")
+            freq = settings.get("fake_post_freq", 5) # posts per hour
+            
+            if channel and freq > 0:
+                sleep_time = 3600 / freq
+                time.sleep(sleep_time)
+                
+                # Randomly decide between Fake Order or Fake Deposit
+                is_deposit = random.choice([True, False])
+                if is_deposit:
+                    amt = random.choice([10, 25, 50, 100, 150, 200])
+                    msg = f"💸 **NEW DEPOSIT ALERT!**\n━━━━━━━━━━━━━━━━━━━━\n👤 **User:** `{random.randint(100000, 999999)}`\n💰 **Amount:** `${amt}`\n✅ **Status:** Successful\n━━━━━━━━━━━━━━━━━━━━\n🚀 _Join NEXUS SMM & Boost Your Social Media!_"
+                else:
+                    qty = random.choice([1000, 2000, 5000, 10000])
+                    platform = random.choice(["Instagram Likes", "Telegram Members", "YouTube Views", "Facebook Followers"])
+                    msg = f"📦 **NEW ORDER PLACED!**\n━━━━━━━━━━━━━━━━━━━━\n👤 **User:** `{random.randint(100000, 999999)}`\n🏷 **Service:** {platform}\n🔢 **Quantity:** {qty}\n⚡ **Speed:** Instant\n━━━━━━━━━━━━━━━━━━━━\n🚀 _Start boosting today!_"
+                
+                try: bot.send_message(channel, msg, parse_mode="Markdown")
+                except: pass
+            else:
+                time.sleep(60)
+        except:
+            time.sleep(60)
+
+# Start Background Tasks
+threading.Thread(target=auto_refund_task, daemon=True).start()
+threading.Thread(target=fake_auto_post_task, daemon=True).start()
+
+# ==========================================
+# 🌐 WEBHOOK & AUTH ROUTES
 # ==========================================
 
 @app.route("/")
 def index():
-    return "<body style='background:#020617; color:#38bdf8; text-align:center; padding-top:100px; font-family:sans-serif;'><h1>🚀 Titan System is Fully Operational</h1><p style='color:#64748b;'>NEXUS SMM Bot Engine is running perfectly.</p><br><a href='/admin' style='color:#f8fafc; text-decoration:none; font-weight:bold; background:#0ea5e9; padding:12px 24px; border-radius:10px; box-shadow: 0 4px 14px 0 rgba(14, 165, 233, 0.4);'>Access Titan Panel</a></body>", 200
+    return "<body style='background:#020617; color:#38bdf8; text-align:center; padding-top:100px; font-family:sans-serif;'><h1>🚀 Titan God System Online</h1><a href='/admin' style='color:#fff; text-decoration:none; background:#0ea5e9; padding:10px 20px; border-radius:8px;'>Admin Panel</a></body>", 200
 
 @app.route("/set_webhook")
 def setup_webhook():
@@ -52,8 +122,8 @@ def setup_webhook():
     if url:
         webhook_url = f"{url.rstrip('/')}/{BOT_TOKEN}"
         bot.set_webhook(url=webhook_url)
-        return f"<h1 style='color:green;'>✅ Webhook Success!</h1><p>Active URL: {webhook_url}</p>", 200
-    return "<h1 style='color:red;'>❌ Error: RENDER_EXTERNAL_URL is not set</h1>", 500
+        return f"<h1>✅ Webhook Success! URL: {webhook_url}</h1>", 200
+    return "<h1>❌ Error: RENDER_EXTERNAL_URL missing</h1>", 500
 
 @app.route('/' + BOT_TOKEN, methods=['POST'])
 def getMessage():
@@ -64,10 +134,6 @@ def getMessage():
         return "OK", 200
     return "Forbidden", 403
 
-# ==========================================
-# ২. AUTHENTICATION (Login/Logout)
-# ==========================================
-
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     error = None
@@ -76,7 +142,7 @@ def login():
             session['logged_in'] = True
             return redirect(url_for('admin_dashboard'))
         else:
-            error = "❌ Invalid Credentials!"
+            error = "❌ Invalid Password!"
     return render_template('login.html', error=error)
 
 @app.route('/logout')
@@ -85,7 +151,7 @@ def logout():
     return redirect(url_for('login'))
 
 # ==========================================
-# ৩. TITAN DASHBOARD (Analytics & Tables)
+# 📊 MAIN DASHBOARD ROUTE
 # ==========================================
 
 @app.route('/admin')
@@ -93,25 +159,22 @@ def admin_dashboard():
     if not session.get('logged_in'): return redirect(url_for('login'))
     
     settings = get_settings()
-    users = list(users_col.find().sort("joined", -1).limit(200))
-    orders = list(orders_col.find().sort("date", -1).limit(100))
+    users = list(users_col.find().sort("balance", -1).limit(200)) # Search by balance top users
+    orders = list(orders_col.find().sort("date", -1).limit(150))
     tickets = list(tickets_col.find({"status": "open"}).sort("date", -1))
+    vouchers = list(vouchers_col.find().sort("_id", -1))
     
     total_rev = sum(u.get('spent', 0) for u in users_col.find())
     
-    # ৭ দিনের সেলস গ্রাফ জেনারেশন
+    # 7 Days Sales Data
     dates, sales = [], []
     for i in range(6, -1, -1):
         day = (datetime.now() - timedelta(days=i))
         dates.append(day.strftime('%m-%d'))
-        
         start_day = datetime(day.year, day.month, day.day)
         end_day = start_day + timedelta(days=1)
-        
-        daily_total = sum(o.get('cost', 0) for o in orders_col.find({
-            "date": {"$gte": start_day, "$lt": end_day}
-        }))
-        sales.append(round(daily_total, 2))
+        day_total = sum(o.get('cost', 0) for o in orders_col.find({"date": {"$gte": start_day, "$lt": end_day}}))
+        sales.append(round(day_total, 2))
 
     stats = {
         'users': users_col.count_documents({}), 
@@ -121,40 +184,125 @@ def admin_dashboard():
     }
     
     return render_template('admin.html', stats=stats, users=users, orders=orders, 
-                           settings=settings, tickets=tickets, dates=dates, 
-                           sales=sales, channels=settings.get('channels', []))
+                           settings=settings, tickets=tickets, vouchers=vouchers, 
+                           dates=dates, sales=sales, channels=settings.get('channels', []))
 
 # ==========================================
-# ৪. CORE CONTROL LOGIC
+# 🛠 SYSTEM CONTROLS & MARKETING
 # ==========================================
 
 @app.route('/update_core_settings', methods=['POST'])
 def update_core_settings():
     if not session.get('logged_in'): return redirect(url_for('login'))
-    profit = float(request.form.get('profit', 20))
-    maint = True if request.form.get('maintenance') == 'on' else False
-    target = int(request.form.get('ref_target', 10))
-    bonus = float(request.form.get('ref_bonus', 5.0))
-    comm = float(request.form.get('dep_commission', 5.0))
-    
     config_col.update_one({"_id": "settings"}, {"$set": {
-        "profit_margin": profit, "maintenance": maint, 
-        "ref_target": target, "ref_bonus": bonus, "dep_commission": comm
+        "profit_margin": float(request.form.get('profit', 20)), 
+        "maintenance": True if request.form.get('maintenance') == 'on' else False, 
+        "ref_target": int(request.form.get('ref_target', 10)), 
+        "ref_bonus": float(request.form.get('ref_bonus', 5.0)), 
+        "dep_commission": float(request.form.get('dep_commission', 5.0))
     }})
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/update_fake_stats', methods=['POST'])
+def update_fake_stats():
+    if not session.get('logged_in'): return redirect(url_for('login'))
+    config_col.update_one({"_id": "settings"}, {"$set": {
+        "fake_orders": int(request.form.get('fake_orders', 50000)),
+        "fake_users": int(request.form.get('fake_users', 12000))
+    }})
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/update_fake_tool', methods=['POST'])
+def update_fake_tool():
+    if not session.get('logged_in'): return redirect(url_for('login'))
+    channel = request.form.get('channel', '').strip()
+    freq = int(request.form.get('freq', 5))
+    config_col.update_one({"_id": "settings"}, {"$set": {"fake_post_channel": channel, "fake_post_freq": freq}})
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/add_fake_spender', methods=['POST'])
 def add_fake_spender():
     if not session.get('logged_in'): return redirect(url_for('login'))
-    name = request.form.get('name', 'User').strip()
+    name = request.form.get('name', 'Premium User').strip()
     amt = float(request.form.get('amount', 50.0))
-    fake_id = random.randint(100000000, 999999999)
-    
-    users_col.insert_one({
-        "_id": fake_id, "name": f"{name} 💎", "balance": 0.0, "spent": amt, 
-        "ref_by": None, "ref_paid": False, "ref_earnings": 0.0, 
-        "joined": datetime.now(), "is_fake": True
-    })
+    fake_id = random.randint(111111111, 999999999)
+    users_col.insert_one({"_id": fake_id, "name": f"{name} 💎", "balance": 0.0, "spent": amt, "ref_by": None, "ref_paid": False, "ref_earnings": 0.0, "joined": datetime.now(), "is_fake": True})
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/add_voucher', methods=['POST'])
+def add_voucher():
+    if not session.get('logged_in'): return redirect(url_for('login'))
+    code = request.form.get('code').strip().upper()
+    amount = float(request.form.get('amount'))
+    limit = int(request.form.get('limit'))
+    if code:
+        vouchers_col.insert_one({"code": code, "amount": amount, "limit": limit, "used_by": []})
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/del_voucher/<code>')
+def del_voucher(code):
+    if not session.get('logged_in'): return redirect(url_for('login'))
+    vouchers_col.delete_one({"code": code})
+    return redirect(url_for('admin_dashboard'))
+
+# ==========================================
+# 💰 NEW DEPOSIT APPROVAL SYSTEM
+# ==========================================
+
+@app.route('/approve_dep/<int:uid>/<float:amt>/<tid>')
+def approve_dep(uid, amt, tid):
+    # This URL is clicked directly from Bot Admin Message
+    user = users_col.find_one({"_id": uid})
+    if user:
+        users_col.update_one({"_id": uid}, {"$inc": {"balance": amt}})
+        
+        # Affiliate Deposit Commission
+        if user.get('ref_by'):
+            settings = get_settings()
+            comm = amt * (settings.get('dep_commission', 5.0) / 100)
+            users_col.update_one({"_id": user['ref_by']}, {"$inc": {"balance": comm, "ref_earnings": comm}})
+            try: bot.send_message(user['ref_by'], f"🎉 **Affiliate Bonus!** You earned `${round(comm,3)}` from referral deposit.")
+            except: pass
+
+        # Send Invoice to User
+        msg = f"🧾 **DEPOSIT INVOICE**\n━━━━━━━━━━━━━━━━━━━━\n✅ **Status:** APPROVED\n💰 **Amount Added:** `${amt}`\n🆔 **TrxID:** `{tid}`\n\n_Thank you for adding funds!_"
+        try: bot.send_message(uid, msg, parse_mode="Markdown")
+        except: pass
+        
+    return "<h1 style='color:green;text-align:center;padding:50px;'>✅ Deposit Approved & User Notified!</h1>", 200
+
+@app.route('/reject_dep/<int:uid>/<tid>')
+def reject_dep(uid, tid):
+    msg = f"❌ **DEPOSIT REJECTED**\n━━━━━━━━━━━━━━━━━━━━\n🆔 **TrxID:** `{tid}`\n\n_Your deposit request was declined by the admin. Please check your TrxID or contact support._"
+    try: bot.send_message(uid, msg, parse_mode="Markdown")
+    except: pass
+    return "<h1 style='color:red;text-align:center;padding:50px;'>❌ Deposit Rejected & User Notified!</h1>", 200
+
+# ==========================================
+# ⚙️ USER & ORDER MANAGEMENT
+# ==========================================
+
+@app.route('/add_balance/<int:user_id>', methods=['POST'])
+def add_balance(user_id):
+    if not session.get('logged_in'): return redirect(url_for('login'))
+    try:
+        amount = float(request.form.get('amount', 0))
+        users_col.update_one({"_id": user_id}, {"$inc": {"balance": amount}})
+        if amount > 0:
+            msg = f"🧾 **WALLET UPDATE**\n━━━━━━━━━━━━━━━━━━━━\n✅ **Status:** FUNDS ADDED\n💰 **Amount:** `${amount}`\n\n_Admin manually added funds to your account._"
+        else:
+            msg = f"🧾 **WALLET UPDATE**\n━━━━━━━━━━━━━━━━━━━━\n⚠️ **Status:** FUNDS DEDUCTED\n💰 **Amount:** `${abs(amount)}`\n\n_Admin manually deducted funds from your account._"
+        try: bot.send_message(user_id, msg, parse_mode="Markdown")
+        except: pass
+    except: pass
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/ban_user/<int:user_id>')
+def ban_user(user_id):
+    if not session.get('logged_in'): return redirect(url_for('login'))
+    users_col.update_one({"_id": user_id}, {"$set": {"balance": -999999, "is_banned": True}})
+    try: bot.send_message(user_id, "🚫 **ACCOUNT SUSPENDED.**")
+    except: pass
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/resend_order/<oid>')
@@ -166,9 +314,37 @@ def resend_order(oid):
             res = api.place_order(order['sid'], order['link'], order['qty'])
             if 'order' in res:
                 orders_col.update_one({"oid": int(oid)}, {"$set": {"status": "Resent", "api_oid": res['order']}})
-                bot.send_message(order['uid'], f"🔄 **ORDER RESENT!**\nAdmin has manually pushed your order #{oid} again.")
+                bot.send_message(order['uid'], f"🔄 **ORDER RESTARTED!**\nAdmin manually resent Order ID: `{oid}`")
     except: pass
     return redirect(url_for('admin_dashboard'))
+
+@app.route('/refund_order/<oid>')
+def refund_order(oid):
+    if not session.get('logged_in'): return redirect(url_for('login'))
+    try:
+        order = orders_col.find_one({"oid": int(oid)})
+        if order and order.get('status') not in ['Refunded', 'Canceled']:
+            users_col.update_one({"_id": order['uid']}, {"$inc": {"balance": order['cost'], "spent": -order['cost']}})
+            orders_col.update_one({"oid": int(oid)}, {"$set": {"status": "Refunded"}})
+            
+            msg = f"🧾 **REFUND INVOICE**\n━━━━━━━━━━━━━━━━━━━━\n🆔 **Order ID:** `{oid}`\n🏷 **Status:** MANUAL REFUND\n💰 **Refunded:** `${order['cost']}`\n\n_Amount added back to wallet._"
+            try: bot.send_message(order['uid'], msg, parse_mode="Markdown")
+            except: pass
+    except: pass
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/refund_all_failed')
+def refund_all_failed():
+    if not session.get('logged_in'): return redirect(url_for('login'))
+    failed_orders = orders_col.find({"status": {"$in": ["canceled", "fail", "error"]}})
+    for o in failed_orders:
+        users_col.update_one({"_id": o['uid']}, {"$inc": {"balance": o['cost'], "spent": -o['cost']}})
+        orders_col.update_one({"oid": o['oid']}, {"$set": {"status": "Refunded"}})
+    return redirect(url_for('admin_dashboard'))
+
+# ==========================================
+# ⚙️ CHANNELS, PAYMENTS & SERVICES
+# ==========================================
 
 @app.route('/add_channel', methods=['POST'])
 def add_channel():
@@ -217,48 +393,8 @@ def reply_ticket(tid):
     try:
         t = tickets_col.find_one({"_id": ObjectId(tid)})
         if t and reply:
-            bot.send_message(t['uid'], f"🎧 **SUPPORT REPLY:**\n━━━━━━━━━━━━━━━━━━━━\n{reply}", parse_mode="Markdown")
+            bot.send_message(t['uid'], f"🎧 **SUPPORT REPLY**\n━━━━━━━━━━━━━━━━━━━━\n{reply}\n━━━━━━━━━━━━━━━━━━━━", parse_mode="Markdown")
             tickets_col.update_one({"_id": ObjectId(tid)}, {"$set": {"status": "closed", "reply": reply}})
-    except: pass
-    return redirect(url_for('admin_dashboard'))
-
-@app.route('/add_balance/<int:user_id>', methods=['POST'])
-def add_balance(user_id):
-    if not session.get('logged_in'): return redirect(url_for('login'))
-    try:
-        amount = float(request.form.get('amount', 0))
-        user = users_col.find_one({"_id": user_id})
-        if user:
-            users_col.update_one({"_id": user_id}, {"$inc": {"balance": amount}})
-            # ডিপোজিট কমিশন লজিক (যদি এডমিন ব্যালেন্স অ্যাড করে)
-            if amount > 0 and user.get('ref_by'):
-                settings = get_settings()
-                commission = amount * (settings.get('dep_commission', 5.0) / 100)
-                users_col.update_one({"_id": user['ref_by']}, {"$inc": {"balance": commission, "ref_earnings": commission}})
-                try: bot.send_message(user['ref_by'], f"💰 **Deposit Commission!** You earned **${round(commission, 3)}** from your referral's deposit.")
-                except: pass
-            
-            bot.send_message(user_id, f"{'💰' if amount > 0 else '⚠️'} **Balance {'Added' if amount > 0 else 'Deducted'}!**\nAmount: ${abs(amount)}")
-    except: pass
-    return redirect(url_for('admin_dashboard'))
-
-@app.route('/ban_user/<int:user_id>')
-def ban_user(user_id):
-    if not session.get('logged_in'): return redirect(url_for('login'))
-    users_col.update_one({"_id": user_id}, {"$set": {"balance": -999999, "is_banned": True}})
-    try: bot.send_message(user_id, "🚫 **ACCESS DENIED.** You have been banned by the administrator.")
-    except: pass
-    return redirect(url_for('admin_dashboard'))
-
-@app.route('/refund_order/<oid>')
-def refund_order(oid):
-    if not session.get('logged_in'): return redirect(url_for('login'))
-    try:
-        order = orders_col.find_one({"oid": int(oid)})
-        if order and order.get('status') != 'Refunded':
-            users_col.update_one({"_id": order['uid']}, {"$inc": {"balance": order['cost'], "spent": -order['cost']}})
-            orders_col.update_one({"oid": int(oid)}, {"$set": {"status": "Refunded"}})
-            bot.send_message(order['uid'], f"💸 **ORDER REFUNDED!**\nAmount: `${order['cost']}` has been returned to your wallet.")
     except: pass
     return redirect(url_for('admin_dashboard'))
 
@@ -270,7 +406,7 @@ def send_broadcast():
         def task():
             for u in users_col.find({"is_fake": {"$ne": True}}):
                 try: 
-                    bot.send_message(u['_id'], f"📢 **IMPORTANT NOTICE**\n━━━━━━━━━━━━━━━━━━━━\n{msg}", parse_mode="Markdown")
+                    bot.send_message(u['_id'], f"📢 **GLOBAL BROADCAST**\n━━━━━━━━━━━━━━━━━━━━\n{msg}", parse_mode="Markdown")
                     time.sleep(0.05)
                 except: pass
         threading.Thread(target=task).start()
