@@ -15,7 +15,8 @@ GEMINI_API_KEY = "AIzaSyBPqzynaZaa9UQmPm9EvhdrI6TcM-5FqcQ"
 genai.configure(api_key=GEMINI_API_KEY)
 
 # 🔥 FIX: Changed to the most stable 'gemini-pro' model
-model = genai.GenerativeModel('gemini-pro')
+model = genai.GenerativeModel('gemini-2.0-flash')
+
 
 API_CACHE = {'data': [], 'last_fetch': 0}
 CACHE_TTL = 300 
