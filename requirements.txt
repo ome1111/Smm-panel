@@ -3,5 +3,5 @@ Flask
 pymongo
 dnspython
 requests
-google-generativeai
+google-generativeai>=0.7.2
 gunicorn
