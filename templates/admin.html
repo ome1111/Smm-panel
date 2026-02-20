@@ -3,197 +3,313 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NEXUS - Titan Panel</title>
+    <title>NEXUS - Titan Admin Panel</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
     <style>
-        body { font-family: 'Rajdhani', sans-serif; background-color: #020617; }
-        .glass-card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.05); }
-        .tab-btn.active { border-bottom: 2px solid #38bdf8; color: #38bdf8; background: rgba(56, 189, 248, 0.1); }
+        body { 
+            font-family: 'Rajdhani', sans-serif; 
+            background-color: #020617; 
+            color: #e2e8f0;
+        }
+        .glass-card { 
+            background: rgba(15, 23, 42, 0.7); 
+            backdrop-filter: blur(12px); 
+            border: 1px solid rgba(56, 189, 248, 0.1); 
+            border-radius: 1.5rem;
+        }
+        .tab-btn {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+        }
+        .tab-btn.active {
+            color: #38bdf8;
+            background: rgba(56, 189, 248, 0.1);
+        }
+        .tab-btn.active::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: #38bdf8;
+            box-shadow: 0 0 10px #38bdf8;
+        }
         .tab-content { display: none; }
-        .tab-content.active { display: block; animation: fadeIn 0.3s ease; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.5); border-radius: 8px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.3); border-radius: 8px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(56, 189, 248, 0.6); }
+        .tab-content.active { display: block; animation: slideUp 0.4s ease-out; }
+        
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #0f172a; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #38bdf8; }
+
+        .search-input:focus {
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.2);
+            border-color: #38bdf8;
+        }
+        input, textarea { font-family: 'JetBrains Mono', monospace; }
     </style>
 </head>
-<body class="text-slate-200">
+<body class="antialiased custom-scrollbar">
 
-    <nav class="glass-card sticky top-0 z-50 px-6 py-4 flex justify-between items-center border-b border-slate-800">
-        <h1 class="text-2xl font-bold text-white tracking-widest">NEXUS<span class="text-sky-400">TITAN</span></h1>
-        <a href="/logout" class="px-4 py-2 bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white rounded-lg transition-colors font-bold">Logout <i class="fa-solid fa-right-from-bracket ml-1"></i></a>
+    <nav class="glass-card sticky top-0 z-50 mx-4 mt-4 px-6 py-4 flex justify-between items-center border-b border-slate-800">
+        <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 bg-sky-500 rounded-xl flex items-center justify-center shadow-lg shadow-sky-500/20">
+                <i class="fa-solid fa-shield-halved text-slate-900 text-xl"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-black text-white leading-none tracking-tighter">NEXUS <span class="text-sky-400">TITAN</span></h1>
+                <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Admin Control Center</p>
+            </div>
+        </div>
+        <div class="flex items-center space-x-4">
+            <span class="hidden md:block text-xs font-bold text-slate-400 bg-slate-800/50 px-3 py-1 rounded-full border border-slate-700">Server: Stable 🟢</span>
+            <a href="/logout" class="px-5 py-2 bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white rounded-xl font-bold transition-all text-sm border border-red-500/20">
+                Logout <i class="fa-solid fa-power-off ml-2"></i>
+            </a>
+        </div>
     </nav>
 
-    <div class="max-w-7xl mx-auto px-4 mt-6">
-        <div class="flex space-x-2 border-b border-slate-800 overflow-x-auto pb-2 custom-scrollbar">
-            <button onclick="switchTab('dashboard')" id="tab-dashboard" class="tab-btn active px-6 py-2 font-bold whitespace-nowrap"><i class="fa-solid fa-chart-pie mr-2"></i> Dashboard</button>
-            <button onclick="switchTab('settings')" id="tab-settings" class="tab-btn px-6 py-2 font-bold whitespace-nowrap"><i class="fa-solid fa-gears mr-2"></i> Settings & Payments</button>
-            <button onclick="switchTab('tickets')" id="tab-tickets" class="tab-btn px-6 py-2 font-bold whitespace-nowrap"><i class="fa-solid fa-envelope mr-2"></i> Live Inbox <span class="bg-red-500 text-white text-xs px-2 py-1 rounded-full ml-1">{{ tickets|length }}</span></button>
-            <button onclick="switchTab('users')" id="tab-users" class="tab-btn px-6 py-2 font-bold whitespace-nowrap"><i class="fa-solid fa-users mr-2"></i> Users Database</button>
-            <button onclick="switchTab('orders')" id="tab-orders" class="tab-btn px-6 py-2 font-bold whitespace-nowrap"><i class="fa-solid fa-list mr-2"></i> Orders History</button>
+    <div class="max-w-7xl mx-auto px-4 mt-8">
+        <div class="flex space-x-1 bg-slate-900/50 p-1 rounded-2xl border border-slate-800 overflow-x-auto custom-scrollbar">
+            <button onclick="switchTab('dashboard')" id="tab-dashboard" class="tab-btn active flex-1 flex items-center justify-center px-6 py-3 rounded-xl font-bold whitespace-nowrap"><i class="fa-solid fa-chart-line mr-2"></i> Analytics</button>
+            <button onclick="switchTab('settings')" id="tab-settings" class="tab-btn flex-1 flex items-center justify-center px-6 py-3 rounded-xl font-bold whitespace-nowrap"><i class="fa-solid fa-sliders mr-2"></i> Settings</button>
+            <button onclick="switchTab('marketing')" id="tab-marketing" class="tab-btn flex-1 flex items-center justify-center px-6 py-3 rounded-xl font-bold whitespace-nowrap"><i class="fa-solid fa-rocket mr-2"></i> Growth</button>
+            <button onclick="switchTab('tickets')" id="tab-tickets" class="tab-btn flex-1 flex items-center justify-center px-6 py-3 rounded-xl font-bold whitespace-nowrap"><i class="fa-solid fa-headset mr-2"></i> Tickets <span class="ml-2 bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full">{{ tickets|length }}</span></button>
+            <button onclick="switchTab('users')" id="tab-users" class="tab-btn flex-1 flex items-center justify-center px-6 py-3 rounded-xl font-bold whitespace-nowrap"><i class="fa-solid fa-user-group mr-2"></i> Users</button>
+            <button onclick="switchTab('orders')" id="tab-orders" class="tab-btn flex-1 flex items-center justify-center px-6 py-3 rounded-xl font-bold whitespace-nowrap"><i class="fa-solid fa-box-open mr-2"></i> Orders</button>
         </div>
     </div>
 
-    <div class="max-w-7xl mx-auto px-4 py-6">
+    <main class="max-w-7xl mx-auto px-4 py-8">
 
         <div id="content-dashboard" class="tab-content active">
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                <div class="glass-card rounded-2xl p-6 text-center border-t-4 border-t-sky-500 shadow-lg">
-                    <p class="text-slate-400 font-bold uppercase text-sm mb-1 tracking-wider">Total Users</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <div class="glass-card p-6 border-l-4 border-sky-500 shadow-xl">
+                    <p class="text-slate-500 font-bold text-xs uppercase mb-1">Total Network Users</p>
                     <h3 class="text-4xl font-black text-white">{{ stats.users }}</h3>
                 </div>
-                <div class="glass-card rounded-2xl p-6 text-center border-t-4 border-t-emerald-500 shadow-lg">
-                    <p class="text-slate-400 font-bold uppercase text-sm mb-1 tracking-wider">Total Sales</p>
+                <div class="glass-card p-6 border-l-4 border-emerald-500 shadow-xl">
+                    <p class="text-slate-500 font-bold text-xs uppercase mb-1">Total Revenue</p>
                     <h3 class="text-4xl font-black text-emerald-400">${{ stats.revenue }}</h3>
                 </div>
-                <div class="glass-card rounded-2xl p-6 text-center border-t-4 border-t-amber-500 shadow-lg">
-                    <p class="text-slate-400 font-bold uppercase text-sm mb-1 tracking-wider">API Balance</p>
-                    <h3 class="text-3xl font-black text-amber-400 mt-2">{{ stats.api_status }}</h3>
+                <div class="glass-card p-6 border-l-4 border-amber-500 shadow-xl">
+                    <p class="text-slate-500 font-bold text-xs uppercase mb-1">API Wallet</p>
+                    <h3 class="text-3xl font-black text-amber-400">{{ stats.api_status }}</h3>
                 </div>
-                <div class="glass-card rounded-2xl p-6 text-center border-t-4 border-t-purple-500 shadow-lg">
-                    <p class="text-slate-400 font-bold uppercase text-sm mb-1 tracking-wider">Maintenance</p>
-                    <h3 class="text-2xl font-black mt-2 {{ 'text-red-500' if settings.maintenance else 'text-emerald-500' }}">{{ 'ON (Locked)' if settings.maintenance else 'OFF (Active)' }}</h3>
+                <div class="glass-card p-6 border-l-4 border-red-500 shadow-xl">
+                    <p class="text-slate-500 font-bold text-xs uppercase mb-1">Status</p>
+                    <h3 class="text-2xl font-black {{ 'text-red-500' if settings.maintenance else 'text-emerald-500' }}">
+                        {{ 'MAINTENANCE' if settings.maintenance else 'LIVE & ACTIVE' }}
+                    </h3>
                 </div>
             </div>
 
-            <div class="glass-card rounded-2xl p-6 mb-8 shadow-lg border border-sky-500/20">
-                <h3 class="text-xl font-bold mb-4 text-white"><i class="fa-solid fa-chart-line mr-2 text-sky-400"></i> Last 7 Days Sales Revenue</h3>
-                <canvas id="salesChart" height="80"></canvas>
-            </div>
-
-            <div class="glass-card rounded-2xl p-6 border border-sky-500/20 shadow-[0_0_15px_rgba(56,189,248,0.05)]">
-                <h3 class="text-xl font-bold text-white mb-4"><i class="fa-solid fa-bullhorn text-sky-400 mr-2"></i> Send Global Broadcast</h3>
-                <form action="/send_broadcast" method="POST" class="flex flex-col md:flex-row gap-4">
-                    <textarea name="msg" rows="2" required placeholder="Write your message here... (e.g. Special Offer Today!)" 
-                        class="flex-1 bg-slate-900 border border-slate-700 rounded-xl p-4 text-white focus:outline-none focus:border-sky-500 resize-none"></textarea>
-                    <button type="submit" class="bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold px-8 py-4 rounded-xl transition-all shadow-[0_0_15px_rgba(56,189,248,0.3)]">
-                        SEND NOW
-                    </button>
-                </form>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-2 glass-card p-8 border border-sky-500/10 shadow-2xl">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-xl font-black text-white uppercase tracking-tighter">Growth Analytics</h3>
+                        <span class="text-xs font-bold text-sky-400 bg-sky-500/10 px-3 py-1 rounded-lg">Last 7 Days</span>
+                    </div>
+                    <canvas id="salesChart" height="150"></canvas>
+                </div>
+                <div class="glass-card p-8 flex flex-col justify-center items-center text-center">
+                    <div class="w-20 h-20 bg-sky-500/10 rounded-full flex items-center justify-center mb-4 border border-sky-500/30">
+                        <i class="fa-solid fa-bullhorn text-sky-400 text-3xl"></i>
+                    </div>
+                    <h3 class="text-xl font-black text-white mb-2">Global Broadcast</h3>
+                    <p class="text-sm text-slate-500 mb-6 font-medium">Send a direct notification to all registered bot users instantly.</p>
+                    <form action="/send_broadcast" method="POST" class="w-full space-y-3">
+                        <textarea name="msg" rows="3" required placeholder="Type your announcement here..." class="w-full bg-slate-900/50 border border-slate-800 rounded-xl p-4 text-white text-sm focus:outline-none focus:border-sky-500 transition-all"></textarea>
+                        <button type="submit" class="w-full bg-sky-500 hover:bg-sky-400 text-slate-900 font-black py-3 rounded-xl shadow-lg shadow-sky-500/20 transition-all uppercase tracking-widest">Blast Message</button>
+                    </form>
+                </div>
             </div>
         </div>
 
         <div id="content-settings" class="tab-content">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div class="glass-card p-6 rounded-2xl border border-sky-500/20 shadow-lg">
-                    <h3 class="text-xl font-bold mb-4 text-sky-400"><i class="fa-solid fa-sliders mr-2"></i> Core Configurations</h3>
-                    <form action="/update_core_settings" method="POST" class="space-y-4">
-                        <div>
-                            <label class="block text-sm text-slate-400 mb-1">Global Profit Margin (%)</label>
-                            <input type="number" step="0.1" name="profit" value="{{ settings.profit_margin }}" class="w-full bg-slate-900 border border-slate-700 p-3 rounded-lg text-white focus:border-sky-500 outline-none">
-                        </div>
-                        <div class="flex gap-4">
-                            <div class="flex-1">
-                                <label class="block text-sm text-slate-400 mb-1">Referral Target (Users)</label>
-                                <input type="number" name="ref_target" value="{{ settings.ref_target }}" class="w-full bg-slate-900 border border-slate-700 p-3 rounded-lg text-white focus:border-sky-500 outline-none">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div class="glass-card p-8 shadow-2xl">
+                    <div class="flex items-center space-x-3 mb-8">
+                        <i class="fa-solid fa-screwdriver-wrench text-sky-400 text-2xl"></i>
+                        <h3 class="text-2xl font-black text-white uppercase">Core Parameters</h3>
+                    </div>
+                    <form action="/update_core_settings" method="POST" class="space-y-6">
+                        <div class="grid grid-cols-2 gap-6">
+                            <div class="space-y-2">
+                                <label class="text-xs font-black text-slate-500 uppercase tracking-widest">Global Profit (%)</label>
+                                <input type="number" step="0.1" name="profit" value="{{ settings.profit_margin }}" class="w-full bg-slate-900 border border-slate-800 p-4 rounded-xl text-white font-bold focus:border-sky-500 outline-none">
                             </div>
-                            <div class="flex-1">
-                                <label class="block text-sm text-slate-400 mb-1">Milestone Bonus ($)</label>
-                                <input type="number" step="0.01" name="ref_bonus" value="{{ settings.ref_bonus }}" class="w-full bg-slate-900 border border-slate-700 p-3 rounded-lg text-white focus:border-sky-500 outline-none">
+                            <div class="space-y-2">
+                                <label class="text-xs font-black text-slate-500 uppercase tracking-widest">Deposit Bonus (%)</label>
+                                <input type="number" step="0.1" name="dep_commission" value="{{ settings.dep_commission }}" class="w-full bg-slate-900 border border-slate-800 p-4 rounded-xl text-white font-bold focus:border-sky-500 outline-none">
                             </div>
                         </div>
-                        <div class="flex items-center gap-3 bg-red-500/10 p-4 rounded-lg border border-red-500/20 mt-2">
-                            <input type="checkbox" name="maintenance" id="maint" class="w-5 h-5 accent-red-500" {% if settings.maintenance %}checked{% endif %}>
-                            <label for="maint" class="text-red-400 font-bold cursor-pointer">Enable Maintenance Mode (Locks Bot)</label>
+                        <div class="grid grid-cols-2 gap-6">
+                            <div class="space-y-2">
+                                <label class="text-xs font-black text-slate-500 uppercase tracking-widest">Ref. Target</label>
+                                <input type="number" name="ref_target" value="{{ settings.ref_target }}" class="w-full bg-slate-900 border border-slate-800 p-4 rounded-xl text-white font-bold focus:border-sky-500 outline-none">
+                            </div>
+                            <div class="space-y-2">
+                                <label class="text-xs font-black text-slate-500 uppercase tracking-widest">Milestone ($)</label>
+                                <input type="number" step="0.01" name="ref_bonus" value="{{ settings.ref_bonus }}" class="w-full bg-slate-900 border border-slate-800 p-4 rounded-xl text-white font-bold focus:border-sky-500 outline-none">
+                            </div>
                         </div>
-                        <button type="submit" class="w-full bg-sky-500 text-slate-900 font-bold p-3 rounded-lg hover:bg-sky-400 transition-all shadow-lg mt-2">Save Core Settings</button>
+                        <div class="bg-red-500/5 p-5 rounded-2xl border border-red-500/10 flex items-center justify-between">
+                            <div>
+                                <h4 class="text-red-400 font-black text-sm uppercase">Maintenance Mode</h4>
+                                <p class="text-[10px] text-slate-500 font-bold">Lock all users out of the bot during updates.</p>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" name="maintenance" class="sr-only peer" {% if settings.maintenance %}checked{% endif %}>
+                                <div class="w-14 h-7 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-1 after:left-1 after:bg-slate-400 after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-500"></div>
+                            </label>
+                        </div>
+                        <button type="submit" class="w-full bg-white text-slate-900 font-black py-4 rounded-xl hover:bg-sky-400 transition-all uppercase tracking-widest">Update Configuration</button>
                     </form>
                 </div>
 
-                <div class="glass-card p-6 rounded-2xl border border-emerald-500/20 shadow-lg">
-                    <h3 class="text-xl font-bold mb-4 text-emerald-400"><i class="fa-solid fa-wallet mr-2"></i> Payment Methods Manager</h3>
-                    <form action="/add_payment" method="POST" class="flex flex-col gap-3 mb-4">
-                        <div class="flex gap-2">
-                            <input type="text" name="name" placeholder="Name (e.g. bKash)" required class="w-1/3 bg-slate-900 border border-slate-700 p-3 rounded-lg text-sm text-white focus:border-emerald-500 outline-none">
-                            <input type="text" name="details" placeholder="Number/Details" required class="flex-1 bg-slate-900 border border-slate-700 p-3 rounded-lg text-sm text-white focus:border-emerald-500 outline-none">
-                            <input type="number" step="0.01" name="rate" placeholder="Rate" value="120" required class="w-1/4 bg-slate-900 border border-slate-700 p-3 rounded-lg text-sm text-white focus:border-emerald-500 outline-none">
+                <div class="glass-card p-8 shadow-2xl">
+                    <div class="flex items-center space-x-3 mb-8">
+                        <i class="fa-solid fa-wallet text-emerald-400 text-2xl"></i>
+                        <h3 class="text-2xl font-black text-white uppercase">Finance Gateways</h3>
+                    </div>
+                    <form action="/add_payment" method="POST" class="space-y-4 mb-8">
+                        <div class="grid grid-cols-2 gap-3">
+                            <input type="text" name="name" placeholder="Gateway Name" required class="bg-slate-900 border border-slate-800 p-4 rounded-xl text-sm font-bold text-white focus:border-emerald-500 outline-none">
+                            <input type="number" step="0.01" name="rate" placeholder="Rate (BDT/$)" value="120" required class="bg-slate-900 border border-slate-800 p-4 rounded-xl text-sm font-bold text-white focus:border-emerald-500 outline-none">
                         </div>
-                        <button type="submit" class="w-full bg-emerald-500 text-slate-900 font-bold p-3 rounded-lg hover:bg-emerald-400 transition-all shadow-lg">Add Payment Method</button>
+                        <input type="text" name="details" placeholder="Account Number/Details" required class="w-full bg-slate-900 border border-slate-800 p-4 rounded-xl text-sm font-bold text-white focus:border-emerald-500 outline-none">
+                        <button type="submit" class="w-full bg-emerald-500 text-slate-900 font-black py-4 rounded-xl hover:bg-emerald-400 transition-all uppercase tracking-widest">Link Gateway</button>
                     </form>
-                    <div class="space-y-2 mt-4 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
+                    <div class="space-y-3 max-h-[250px] overflow-y-auto custom-scrollbar pr-2">
                         {% for p in settings.payments %}
-                        <div class="bg-slate-800 p-3 rounded-lg flex justify-between items-center border border-slate-700 hover:border-emerald-500/50 transition-colors">
-                            <div><strong class="text-white">{{ p.name }}</strong> ({{ p.rate }} BDT/$)<br><span class="text-xs text-slate-400">{{ p.details }}</span></div>
-                            <a href="/del_payment/{{ p.name }}" class="bg-red-500/10 text-red-400 p-2 rounded hover:bg-red-500 hover:text-white transition-colors"><i class="fa-solid fa-trash"></i></a>
+                        <div class="flex justify-between items-center p-4 bg-slate-900/50 rounded-2xl border border-slate-800 group">
+                            <div>
+                                <span class="text-emerald-400 font-black text-sm">{{ p.name }}</span>
+                                <p class="text-[10px] text-slate-500 font-mono">{{ p.details }} ({{ p.rate }}৳)</p>
+                            </div>
+                            <a href="/del_payment/{{ p.name }}" class="p-2 text-slate-600 hover:text-red-400 transition-colors"><i class="fa-solid fa-trash-can"></i></a>
                         </div>
-                        {% else %} 
-                        <p class="text-slate-500 text-sm text-center py-4 bg-slate-800/50 rounded-lg">No payment methods added yet.</p> 
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="content-marketing" class="tab-content">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div class="glass-card p-8 border-t-4 border-fuchsia-600">
+                    <div class="flex items-center space-x-3 mb-4">
+                        <i class="fa-solid fa-ghost text-fuchsia-400 text-2xl"></i>
+                        <h3 class="text-2xl font-black text-white">LEADERBOARD HACK</h3>
+                    </div>
+                    <p class="text-sm text-slate-500 mb-8 leading-relaxed font-medium">ইনজেক্ট করুন ফেক ইউজারদের লিডারবোর্ডে। এতে সাধারণ ইউজাররা মনে করবে বটে অনেক হাই-ভ্যালু কাস্টমার কাজ করছে, যা আপনার সেলিং ট্রাস্ট বাড়িয়ে দেবে ১০০ গুণ।</p>
+                    <form action="/add_fake_spender" method="POST" class="space-y-4">
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-black text-slate-600 uppercase tracking-widest ml-1">Fake Username</label>
+                            <input type="text" name="name" placeholder="e.g. Abdullah_King" required class="w-full bg-slate-900 border border-slate-800 p-4 rounded-2xl text-white font-bold focus:border-fuchsia-500 outline-none">
+                        </div>
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-black text-slate-600 uppercase tracking-widest ml-1">Fake Total Spend ($)</label>
+                            <input type="number" step="0.01" name="amount" placeholder="e.g. 250.75" required class="w-full bg-slate-900 border border-slate-800 p-4 rounded-2xl text-white font-bold focus:border-fuchsia-500 outline-none">
+                        </div>
+                        <button type="submit" class="w-full bg-gradient-to-r from-fuchsia-600 to-purple-600 text-white font-black py-4 rounded-2xl shadow-lg shadow-fuchsia-500/20 uppercase tracking-widest">Inject Fake Spender</button>
+                    </form>
+                </div>
+
+                <div class="glass-card p-8 border-t-4 border-blue-600">
+                    <div class="flex items-center space-x-3 mb-4">
+                        <i class="fa-solid fa-unlock-keyhole text-blue-400 text-2xl"></i>
+                        <h3 class="text-2xl font-black text-white">FORCE SUBSCRIBE</h3>
+                    </div>
+                    <p class="text-sm text-slate-500 mb-8 leading-relaxed font-medium">আপনার অফিসিয়াল চ্যানেলগুলো এখানে যোগ করুন। ইউজারদের বট ব্যবহারের আগে অবশ্যই এই চ্যানেলগুলোতে জয়েন থাকতে হবে।</p>
+                    <form action="/add_channel" method="POST" class="flex gap-3 mb-6">
+                        <input type="text" name="channel" required placeholder="@ChannelUsername" class="flex-1 bg-slate-900 border border-slate-800 p-4 rounded-2xl text-white font-bold focus:border-blue-500 outline-none">
+                        <button type="submit" class="bg-blue-600 text-white font-black px-8 rounded-2xl">Add</button>
+                    </form>
+                    <div class="flex flex-wrap gap-2">
+                        {% for ch in channels %}
+                        <div class="flex items-center space-x-2 bg-blue-500/10 border border-blue-500/20 px-4 py-2 rounded-full">
+                            <span class="text-blue-400 font-bold text-sm">{{ ch }}</span>
+                            <a href="/del_channel/{{ ch|replace('@', '') }}" class="text-slate-500 hover:text-red-400 transition-colors"><i class="fa-solid fa-circle-xmark"></i></a>
+                        </div>
                         {% endfor %}
                     </div>
                 </div>
 
-                <div class="glass-card p-6 rounded-2xl border border-purple-500/20 shadow-lg">
-                    <h3 class="text-xl font-bold mb-4 text-purple-400"><i class="fa-solid fa-eye-slash mr-2"></i> Hide Bad Services</h3>
-                    <form action="/toggle_service" method="POST" class="flex gap-4">
+                <div class="md:col-span-2 glass-card p-8 border-t-4 border-purple-600">
+                    <div class="flex items-center space-x-3 mb-6">
+                        <i class="fa-solid fa-mask text-purple-400 text-2xl"></i>
+                        <h3 class="text-2xl font-black text-white uppercase">Privacy Control (Hide Services)</h3>
+                    </div>
+                    <form action="/toggle_service" method="POST" class="flex flex-col sm:flex-row gap-4">
                         <input type="hidden" name="action" value="hide">
-                        <input type="text" name="sid" placeholder="Service ID" required class="flex-1 bg-slate-900 border border-slate-700 p-3 rounded-lg text-white focus:border-purple-500 outline-none">
-                        <button type="submit" class="bg-purple-500 hover:bg-purple-400 text-white px-6 py-3 rounded-lg font-bold transition-all shadow-lg">Hide</button>
+                        <input type="text" name="sid" placeholder="Enter Service ID to Hide" required class="flex-1 bg-slate-900 border border-slate-800 p-4 rounded-2xl text-white font-bold outline-none focus:border-purple-500">
+                        <button type="submit" class="bg-purple-600 text-white font-black px-10 py-4 rounded-2xl uppercase tracking-widest shadow-lg shadow-purple-500/20">Blacklist Service</button>
                     </form>
-                    <div class="flex flex-wrap gap-2 mt-4 bg-slate-900/50 p-4 rounded-xl min-h-[60px] max-h-[150px] overflow-y-auto custom-scrollbar">
+                    <div class="mt-6 flex flex-wrap gap-3">
                         {% for sid in settings.hidden_services %}
                         <form action="/toggle_service" method="POST" class="inline">
-                            <input type="hidden" name="action" value="unhide"><input type="hidden" name="sid" value="{{ sid }}">
-                            <button type="submit" class="bg-red-500/20 text-red-400 border border-red-500/30 px-3 py-1.5 rounded-lg text-sm hover:bg-red-500 hover:text-white transition-colors flex items-center gap-2">
-                                ID: {{ sid }} <i class="fa-solid fa-times"></i>
+                            <input type="hidden" name="action" value="unhide">
+                            <input type="hidden" name="sid" value="{{ sid }}">
+                            <button type="submit" class="flex items-center space-x-2 bg-slate-800/80 hover:bg-red-500/20 border border-slate-700 hover:border-red-500/50 px-4 py-2 rounded-xl transition-all group">
+                                <span class="text-purple-400 font-bold">SID: {{ sid }}</span>
+                                <i class="fa-solid fa-eye text-[10px] text-slate-500 group-hover:text-red-400"></i>
                             </button>
                         </form>
-                        {% else %}
-                        <p class="text-slate-500 text-sm w-full text-center">No hidden services.</p>
                         {% endfor %}
                     </div>
                 </div>
-
-                <div class="glass-card p-6 rounded-2xl border border-blue-500/20 shadow-lg">
-                    <h3 class="text-xl font-bold mb-4 text-blue-400"><i class="fa-solid fa-link mr-2"></i> Force Join Channels</h3>
-                    <form action="/add_channel" method="POST" class="flex gap-4 mb-4">
-                        <input type="text" name="channel" required placeholder="Channel Username (e.g. @MyChannel)" class="flex-1 bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:outline-none focus:border-blue-500">
-                        <button type="submit" class="bg-blue-500 hover:bg-blue-400 text-white font-bold px-6 py-3 rounded-xl transition-all shadow-lg">
-                            <i class="fa-solid fa-plus mr-1"></i> Add
-                        </button>
-                    </form>
-                    
-                    <div class="flex flex-wrap gap-3 mt-4 bg-slate-900/50 p-4 rounded-xl min-h-[60px] max-h-[150px] overflow-y-auto custom-scrollbar">
-                        {% for ch in channels %}
-                        <div class="bg-slate-800 border border-slate-700 px-4 py-2 rounded-lg flex items-center gap-3">
-                            <span class="text-sky-400 font-bold">{{ ch }}</span>
-                            <a href="/del_channel/{{ ch|replace('@', '') }}" class="text-red-400 hover:text-red-300 transition-colors" title="Remove Channel"><i class="fa-solid fa-times text-lg"></i></a>
-                        </div>
-                        {% else %}
-                        <p class="text-slate-500 text-sm w-full text-center">No channels added yet.</p>
-                        {% endfor %}
-                    </div>
-                    <p class="text-xs text-amber-500 mt-4"><i class="fa-solid fa-triangle-exclamation"></i> Warning: Your bot MUST be an Admin in these channels!</p>
-                </div>
-
             </div>
         </div>
 
         <div id="content-tickets" class="tab-content">
-            <div class="glass-card rounded-2xl p-6 border border-amber-500/20 shadow-lg">
-                <h3 class="text-xl font-bold mb-6 text-amber-400"><i class="fa-solid fa-envelope mr-2"></i> Pending Support Tickets</h3>
-                <div class="space-y-4 max-h-[600px] overflow-y-auto custom-scrollbar pr-2">
-                    {% for t in tickets %}
-                    <div class="bg-slate-900 p-5 rounded-xl border border-slate-700 hover:border-amber-500/30 transition-colors">
-                        <div class="flex justify-between items-center text-sm text-slate-400 mb-3 border-b border-slate-800 pb-2">
-                            <span class="font-bold text-sky-400"><i class="fa-solid fa-user mr-1"></i> User ID: {{ t.uid }}</span>
-                            <span><i class="fa-solid fa-clock mr-1"></i> {{ t.date.strftime('%Y-%m-%d %H:%M') if t.date else 'Unknown' }}</span>
+            <div class="glass-card p-8 border border-amber-500/10 shadow-2xl">
+                <div class="flex justify-between items-center mb-10">
+                    <h3 class="text-3xl font-black text-white uppercase italic"><i class="fa-solid fa-comment-dots text-amber-500 mr-3"></i> Support Inbox</h3>
+                    <div class="flex space-x-4">
+                        <div class="px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl">
+                            <span class="text-xs font-bold text-slate-500 uppercase">Open Tickets:</span>
+                            <span class="ml-2 text-amber-500 font-black">{{ tickets|length }}</span>
                         </div>
-                        <p class="text-white mb-4 text-lg border-l-4 border-amber-500 pl-4 py-1">"{{ t.msg }}"</p>
-                        <form action="/reply_ticket/{{ t._id }}" method="POST" class="flex gap-2">
-                            <input type="text" name="reply" placeholder="Type your reply here..." required class="flex-1 bg-slate-950 border border-slate-700 p-3 rounded-lg text-white focus:border-amber-500 outline-none">
-                            <button type="submit" class="bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold px-6 py-3 rounded-lg transition-all shadow-lg flex items-center gap-2">
-                                <i class="fa-solid fa-paper-plane"></i> Reply & Close
-                            </button>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 gap-6 max-h-[700px] overflow-y-auto custom-scrollbar pr-4">
+                    {% for t in tickets %}
+                    <div class="bg-slate-900/40 p-6 rounded-3xl border border-slate-800 relative group overflow-hidden">
+                        <div class="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 blur-3xl rounded-full"></div>
+                        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4 border-b border-slate-800/50 pb-4">
+                            <div class="flex items-center space-x-3">
+                                <div class="w-12 h-12 bg-slate-800 rounded-2xl flex items-center justify-center font-black text-sky-400">UID</div>
+                                <div>
+                                    <h4 class="text-white font-black text-lg">User ID: {{ t.uid }}</h4>
+                                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{{ t.date.strftime('%Y-%m-%d | %H:%M') if t.date else 'NEW TICKET' }}</p>
+                                </div>
+                            </div>
+                            <span class="px-4 py-1.5 bg-amber-500/10 text-amber-500 text-[10px] font-black rounded-full border border-amber-500/20 uppercase tracking-widest">Awaiting Reply</span>
+                        </div>
+                        <div class="bg-slate-950/50 p-5 rounded-2xl mb-6 border border-slate-800/30">
+                            <p class="text-slate-300 font-medium italic leading-relaxed">"{{ t.msg }}"</p>
+                        </div>
+                        <form action="/reply_ticket/{{ t._id }}" method="POST" class="flex gap-3">
+                            <input type="text" name="reply" placeholder="Write your professional response..." required class="flex-1 bg-slate-900 border border-slate-800 p-4 rounded-2xl text-white text-sm font-medium focus:outline-none focus:border-amber-500 transition-all">
+                            <button type="submit" class="bg-amber-500 hover:bg-amber-400 text-slate-900 font-black px-10 rounded-2xl shadow-lg shadow-amber-500/10 transition-all uppercase tracking-widest">Reply</button>
                         </form>
                     </div>
-                    {% else %} 
-                    <div class="text-center py-12 bg-slate-900/50 rounded-xl border border-slate-800">
-                        <i class="fa-solid fa-check-circle text-4xl text-emerald-500 mb-3"></i>
-                        <p class="text-slate-400 text-lg">No open tickets. You are all caught up!</p> 
+                    {% else %}
+                    <div class="text-center py-20 bg-slate-900/20 rounded-3xl border border-dashed border-slate-800">
+                        <i class="fa-solid fa-check-double text-5xl text-slate-800 mb-4"></i>
+                        <p class="text-slate-600 font-bold uppercase tracking-widest">Inbox is clear. No pending tickets.</p>
                     </div>
                     {% endfor %}
                 </div>
@@ -201,41 +317,51 @@
         </div>
 
         <div id="content-users" class="tab-content">
-            <div class="glass-card rounded-2xl overflow-hidden border border-slate-800 shadow-lg">
-                <div class="p-4 bg-slate-900/80 flex flex-col md:flex-row justify-between items-center gap-4 border-b border-slate-800">
-                    <h3 class="text-xl font-bold text-white"><i class="fa-solid fa-users mr-2 text-sky-400"></i> All Users Database</h3>
-                    <input type="text" id="searchUser" onkeyup="searchTable('searchUser', 'userTable')" placeholder="Search ID/Name..." class="bg-slate-950 border border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-sky-500 w-full md:w-64">
+            <div class="glass-card overflow-hidden shadow-2xl border border-slate-800">
+                <div class="p-8 bg-slate-900/80 flex flex-col md:flex-row justify-between items-center gap-4 border-b border-slate-800">
+                    <div>
+                        <h3 class="text-2xl font-black text-white uppercase tracking-tight">Active Accounts</h3>
+                        <p class="text-[10px] text-slate-500 font-bold uppercase">Manage balance and status of all bot users</p>
+                    </div>
+                    <div class="relative w-full md:w-96">
+                        <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"></i>
+                        <input type="text" id="searchUser" onkeyup="searchTable('searchUser', 'userTable')" placeholder="Search by ID or Username..." class="w-full bg-slate-950 border border-slate-800 rounded-2xl pl-12 pr-4 py-3 text-sm text-white focus:outline-none focus:border-sky-500 search-input transition-all">
+                    </div>
                 </div>
-                <div class="overflow-x-auto max-h-[600px] overflow-y-auto custom-scrollbar">
+                <div class="overflow-x-auto max-h-[600px] custom-scrollbar">
                     <table class="w-full text-left border-collapse" id="userTable">
-                        <thead class="sticky top-0 bg-slate-950 z-10">
-                            <tr class="text-slate-400 text-xs uppercase tracking-wider">
-                                <th class="p-4 whitespace-nowrap">User Details</th>
-                                <th class="p-4">Balance</th>
-                                <th class="p-4">Spent</th>
-                                <th class="p-4">Joined</th>
-                                <th class="p-4 text-center whitespace-nowrap">Add / Deduct</th>
-                                <th class="p-4 text-center">Ban</th>
+                        <thead class="sticky top-0 bg-slate-950 z-20">
+                            <tr class="text-slate-500 text-[10px] uppercase font-black tracking-widest">
+                                <th class="p-6">User Identification</th>
+                                <th class="p-6">Current Wallet</th>
+                                <th class="p-6">Cumulative Spend</th>
+                                <th class="p-6 text-center">Modify Balance</th>
+                                <th class="p-6 text-center">Status</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-slate-800/50">
+                        <tbody class="divide-y divide-slate-800/40">
                             {% for user in users %}
-                            <tr class="hover:bg-slate-800/50 transition-colors">
-                                <td class="p-4">
+                            <tr class="hover:bg-slate-800/30 transition-colors">
+                                <td class="p-6">
                                     <div class="font-bold text-white searchable">{{ user.name }}</div>
-                                    <div class="text-xs text-slate-500 searchable">ID: {{ user._id }}</div>
+                                    <div class="text-[10px] font-mono text-slate-500 searchable">{{ user._id }}</div>
                                 </td>
-                                <td class="p-4 font-bold text-emerald-400">${{ "%.3f"|format(user.balance) }}</td>
-                                <td class="p-4 text-slate-400">${{ "%.3f"|format(user.spent) }}</td>
-                                <td class="p-4 text-xs text-slate-500">{{ user.joined.strftime('%Y-%m-%d') if user.joined else 'N/A' }}</td>
-                                <td class="p-4 text-center">
-                                    <form action="/add_balance/{{ user._id }}" method="POST" class="flex items-center justify-center gap-2">
-                                        <input type="number" step="0.01" name="amount" placeholder="+/- Amt" required class="w-24 bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-sm text-white text-center focus:border-sky-500 outline-none">
-                                        <button type="submit" class="bg-sky-500/20 text-sky-400 hover:bg-sky-500 hover:text-white px-3 py-1.5 rounded transition-colors border border-sky-500/30">Apply</button>
+                                <td class="p-6">
+                                    <span class="text-emerald-400 font-black text-lg">${{ "%.3f"|format(user.balance) }}</span>
+                                </td>
+                                <td class="p-6">
+                                    <span class="text-slate-400 font-bold text-sm">${{ "%.3f"|format(user.spent) }}</span>
+                                </td>
+                                <td class="p-6">
+                                    <form action="/add_balance/{{ user._id }}" method="POST" class="flex justify-center items-center gap-2">
+                                        <input type="number" step="0.01" name="amount" placeholder="0.00" required class="w-24 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none">
+                                        <button type="submit" class="bg-sky-500 text-slate-900 px-4 py-2 rounded-xl text-[10px] font-black uppercase">Apply</button>
                                     </form>
                                 </td>
-                                <td class="p-4 text-center">
-                                    <a href="/ban_user/{{ user._id }}" onclick="return confirm('Are you sure you want to ban this user?');" class="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white px-4 py-1.5 rounded border border-red-500/30 transition-colors inline-block"><i class="fa-solid fa-ban"></i></a>
+                                <td class="p-6 text-center">
+                                    <a href="/ban_user/{{ user._id }}" onclick="return confirm('Ban this user?');" class="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all border border-red-500/20">
+                                        <i class="fa-solid fa-user-slash"></i>
+                                    </a>
                                 </td>
                             </tr>
                             {% endfor %}
@@ -246,45 +372,56 @@
         </div>
 
         <div id="content-orders" class="tab-content">
-            <div class="glass-card rounded-2xl overflow-hidden border border-slate-800 shadow-lg">
-                <div class="p-4 bg-slate-900/80 flex flex-col md:flex-row justify-between items-center gap-4 border-b border-slate-800">
-                    <h3 class="text-xl font-bold text-white"><i class="fa-solid fa-list-check mr-2 text-emerald-400"></i> Latest Orders History</h3>
-                    <input type="text" id="searchOrder" onkeyup="searchTable('searchOrder', 'orderTable')" placeholder="Search Link/OID..." class="bg-slate-950 border border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-emerald-500 w-full md:w-64">
+            <div class="glass-card overflow-hidden shadow-2xl border border-slate-800">
+                <div class="p-8 bg-slate-900/80 flex flex-col md:flex-row justify-between items-center gap-4 border-b border-slate-800">
+                    <h3 class="text-2xl font-black text-white uppercase italic">Transaction & Order Logs</h3>
+                    <input type="text" id="searchOrder" onkeyup="searchTable('searchOrder', 'orderTable')" placeholder="Search by Link or OID..." class="w-full md:w-96 bg-slate-950 border border-slate-800 rounded-2xl px-6 py-3 text-sm text-white focus:outline-none focus:border-emerald-500 search-input transition-all">
                 </div>
-                <div class="overflow-x-auto max-h-[600px] overflow-y-auto custom-scrollbar">
-                    <table class="w-full text-left border-collapse" id="orderTable">
-                        <thead class="sticky top-0 bg-slate-950 z-10">
-                            <tr class="text-slate-400 text-xs uppercase tracking-wider">
-                                <th class="p-4">OID</th>
-                                <th class="p-4">User ID</th>
-                                <th class="p-4 min-w-[200px]">Link / Target</th>
-                                <th class="p-4">Cost</th>
-                                <th class="p-4 text-center">Status</th>
-                                <th class="p-4 text-center">Action</th>
+                <div class="overflow-x-auto max-h-[600px] custom-scrollbar">
+                    <table class="w-full text-left" id="orderTable">
+                        <thead class="sticky top-0 bg-slate-950 z-20">
+                            <tr class="text-slate-500 text-[10px] uppercase font-black tracking-widest border-b border-slate-800">
+                                <th class="p-6">Order ID</th>
+                                <th class="p-6">Client UID</th>
+                                <th class="p-6">Target Link</th>
+                                <th class="p-6">Cost</th>
+                                <th class="p-6 text-center">Live Status</th>
+                                <th class="p-6 text-center">System Actions</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-slate-800/50 text-sm">
+                        <tbody class="divide-y divide-slate-800/40 text-xs">
                             {% for order in orders %}
-                            <tr class="hover:bg-slate-800/50 transition-colors">
-                                <td class="p-4 font-bold text-white searchable">#{{ order.oid }}</td>
-                                <td class="p-4 text-sky-400 searchable">{{ order.uid }}</td>
-                                <td class="p-4 text-slate-400 truncate max-w-[250px] searchable" title="{{ order.link }}">{{ order.link }}</td>
-                                <td class="p-4 text-emerald-400 font-bold">${{ "%.3f"|format(order.cost) }}</td>
-                                <td class="p-4 text-center">
+                            <tr class="hover:bg-slate-800/30 transition-colors">
+                                <td class="p-6 font-mono font-bold text-sky-400 searchable">#{{ order.oid }}</td>
+                                <td class="p-6 text-slate-400 font-bold searchable">{{ order.uid }}</td>
+                                <td class="p-6 max-w-[180px]">
+                                    <div class="truncate text-slate-500 hover:text-white transition-colors searchable">{{ order.link }}</div>
+                                </td>
+                                <td class="p-6">
+                                    <span class="text-emerald-400 font-black text-sm">${{ "%.3f"|format(order.cost) }}</span>
+                                </td>
+                                <td class="p-6 text-center">
                                     {% if order.status|lower == 'refunded' %}
-                                        <span class="bg-red-500/10 text-red-400 px-3 py-1 rounded-full text-xs font-bold border border-red-500/20"><i class="fa-solid fa-rotate-left mr-1"></i> REFUNDED</span>
+                                    <span class="bg-red-500/10 text-red-500 px-3 py-1 rounded-full border border-red-500/20 font-black">REFUNDED</span>
+                                    {% elif order.status|lower == 'completed' %}
+                                    <span class="bg-emerald-500/10 text-emerald-500 px-3 py-1 rounded-full border border-emerald-500/20 font-black">COMPLETED</span>
                                     {% else %}
-                                        <span class="bg-amber-500/10 text-amber-400 px-3 py-1 rounded-full text-xs font-bold border border-amber-500/20">{{ order.status|upper }}</span>
+                                    <span class="bg-amber-500/10 text-amber-400 px-3 py-1 rounded-full border border-amber-500/20 font-black">{{ order.status|upper }}</span>
                                     {% endif %}
                                 </td>
-                                <td class="p-4 text-center">
-                                    {% if order.status|lower != 'refunded' %}
-                                    <a href="/refund_order/{{ order.oid }}" onclick="return confirm('Refund ${{ order.cost }} to User?');" class="bg-amber-500/10 hover:bg-amber-500 text-amber-500 hover:text-slate-900 border border-amber-500/30 px-4 py-1.5 rounded-lg font-bold transition-all whitespace-nowrap inline-block">
-                                        Refund
-                                    </a>
-                                    {% else %}
-                                    <span class="text-slate-600 font-bold"><i class="fa-solid fa-check"></i> Done</span>
-                                    {% endif %}
+                                <td class="p-6 text-center">
+                                    <div class="flex justify-center items-center gap-2">
+                                        {% if order.status|lower != 'refunded' %}
+                                        <a href="/resend_order/{{ order.oid }}" onclick="return confirm('Resend this order via API?');" class="p-2.5 bg-sky-500/10 text-sky-400 border border-sky-500/20 rounded-xl hover:bg-sky-500 hover:text-white transition-all" title="Resend to API">
+                                            <i class="fa-solid fa-rotate-right"></i>
+                                        </a>
+                                        <a href="/refund_order/{{ order.oid }}" onclick="return confirm('Refund ${{ order.cost }} to User?');" class="p-2.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded-xl hover:bg-red-500 hover:text-white transition-all" title="Full Refund">
+                                            <i class="fa-solid fa-money-bill-transfer"></i>
+                                        </a>
+                                        {% else %}
+                                        <span class="text-slate-700 italic font-bold">Processed</span>
+                                        {% endif %}
+                                    </div>
                                 </td>
                             </tr>
                             {% endfor %}
@@ -294,20 +431,28 @@
             </div>
         </div>
 
-    </div>
+    </main>
+
+    <footer class="max-w-7xl mx-auto px-4 py-8 mt-12 border-t border-slate-800 text-center">
+        <p class="text-slate-600 font-bold text-[10px] uppercase tracking-[0.3em]">
+            Titan Admin Architecture &copy; 2026 NEXUS SMM System | Secure SSL Encryption Active
+        </p>
+    </footer>
 
     <script>
+        // Tab Management
         function switchTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
             document.getElementById('content-' + tabId).classList.add('active');
             document.getElementById('tab-' + tabId).classList.add('active');
+            localStorage.setItem('activeTab', tabId);
         }
 
+        // Search Implementation
         function searchTable(inputId, tableId) {
             let input = document.getElementById(inputId).value.toLowerCase();
             let rows = document.querySelectorAll('#' + tableId + ' tbody tr');
-            
             rows.forEach(row => {
                 let searchableTexts = row.querySelectorAll('.searchable');
                 let found = false;
@@ -318,44 +463,50 @@
             });
         }
 
-        // Initialize Sales Graph
+        // Persistence: Load last tab
         document.addEventListener("DOMContentLoaded", function() {
+            const savedTab = localStorage.getItem('activeTab') || 'dashboard';
+            switchTab(savedTab);
+
+            // Chart initialization
             const ctx = document.getElementById('salesChart').getContext('2d');
+            const gradient = ctx.createLinearGradient(0, 0, 0, 400);
+            gradient.addColorStop(0, 'rgba(56, 189, 248, 0.4)');
+            gradient.addColorStop(1, 'rgba(56, 189, 248, 0)');
+
             new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: {{ dates | tojson | safe }},
                     datasets: [{
-                        label: 'Sales Revenue ($)',
+                        label: 'Daily Sales ($)',
                         data: {{ sales | tojson | safe }},
                         borderColor: '#38bdf8',
-                        backgroundColor: 'rgba(56, 189, 248, 0.15)',
-                        borderWidth: 3, 
-                        fill: true, 
-                        tension: 0.4,
-                        pointBackgroundColor: '#020617',
+                        borderWidth: 4,
+                        backgroundColor: gradient,
+                        fill: true,
+                        tension: 0.45,
+                        pointBackgroundColor: '#fff',
                         pointBorderColor: '#38bdf8',
-                        pointBorderWidth: 2,
-                        pointRadius: 4
+                        pointRadius: 5,
+                        pointHoverRadius: 8
                     }]
                 },
-                options: { 
+                options: {
                     responsive: true,
-                    scales: { 
-                        y: { 
-                            beginAtZero: true, 
-                            grid: { color: 'rgba(255,255,255,0.05)' },
-                            ticks: { color: '#94a3b8' }
-                        }, 
-                        x: { 
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: 'rgba(255, 255, 255, 0.03)', borderDash: [5, 5] },
+                            ticks: { color: '#64748b', font: { weight: 'bold' } }
+                        },
+                        x: {
                             grid: { display: false },
-                            ticks: { color: '#94a3b8' }
-                        } 
-                    }, 
-                    plugins: { 
-                        legend: { display: false },
-                        tooltip: { backgroundColor: '#0f172a', titleColor: '#38bdf8', bodyColor: '#fff', borderColor: '#1e293b', borderWidth: 1 }
-                    } 
+                            ticks: { color: '#64748b', font: { weight: 'bold' } }
+                        }
+                    }
                 }
             });
         });
