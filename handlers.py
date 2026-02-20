@@ -1,5 +1,5 @@
 from telebot import types
-from loader import bot, users_col, orders_col, config_col
+from loader import bot, users_col, orders_col, config_col, tickets_col
 from config import *
 import api
 import math
@@ -7,10 +7,25 @@ import time
 from datetime import datetime, timedelta
 
 # ==========================================
-# ১. API Caching System
+# ১. Core Settings & Cache System
 # ==========================================
 API_CACHE = {'data': [], 'last_fetch': 0}
 CACHE_TTL = 300 
+
+def get_settings():
+    s = config_col.find_one({"_id": "settings"})
+    if not s:
+        s = {"_id": "settings", "channels": [], "profit_margin": 20.0, "maintenance": False, 
+             "payments": [], "ref_target": 10, "ref_bonus": 5.0, "hidden_services": []}
+        config_col.insert_one(s)
+    return s
+
+def check_maintenance(chat_id):
+    settings = get_settings()
+    if settings.get('maintenance', False) and str(chat_id) != str(ADMIN_ID):
+        bot.send_message(chat_id, "🛠 **SYSTEM MAINTENANCE**\n━━━━━━━━━━━━━━━━━━━━\nThe bot is currently undergoing maintenance. Please try again later.", parse_mode="Markdown")
+        return True
+    return False
 
 def get_cached_services():
     global API_CACHE
@@ -21,6 +36,24 @@ def get_cached_services():
         API_CACHE['data'] = res
         API_CACHE['last_fetch'] = time.time()
     return API_CACHE['data']
+
+# ==========================================
+# ২. Titan Features (VIP & Smart Link)
+# ==========================================
+def get_user_tier(spent):
+    if spent >= 50: return "🥇 Gold VIP", 5 # 5% Discount
+    elif spent >= 10: return "🥈 Silver VIP", 2 # 2% Discount
+    else: return "🥉 Bronze", 0 # 0% Discount
+
+def validate_link(platform, link):
+    p = platform.lower()
+    l = link.lower()
+    if 'youtube' in p and 'youtu' not in l: return False
+    if 'facebook' in p and ('facebook' not in l and 'fb.' not in l): return False
+    if 'instagram' in p and 'instagram' not in l: return False
+    if 'tiktok' in p and 'tiktok' not in l: return False
+    if 'twitter' in p and ('twitter' not in l and 'x.com' not in l): return False
+    return True
 
 def identify_platform(cat_name):
     cat = cat_name.lower()
@@ -34,24 +67,21 @@ def identify_platform(cat_name):
     if 'website' in cat or 'traffic' in cat: return "🌍 Web Traffic"
     return "🌐 Other Services"
 
+# ==========================================
+# ৩. UI Helpers & Force Sub
+# ==========================================
 def main_menu():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.add("🚀 New Order", "⭐ Favorites")
     markup.add("🔍 Search by ID", "👤 Profile")
     markup.add("💰 Deposit", "📦 Orders")
     markup.add("🎁 Daily Bonus", "🏆 Leaderboard")
-    markup.add("🎧 Support")
+    markup.add("🎧 Support Ticket")
     return markup
 
-# ==========================================
-# ২. Modern Force Sub & Smart Referral
-# ==========================================
-def get_channels():
-    settings = config_col.find_one({"_id": "settings"})
-    return settings.get("channels", []) if settings else []
-
 def check_sub(chat_id):
-    channels = get_channels()
+    settings = get_settings()
+    channels = settings.get("channels", [])
     if not channels: return True
     for ch in channels:
         try:
@@ -61,99 +91,83 @@ def check_sub(chat_id):
     return True
 
 def send_force_sub(chat_id):
-    channels = get_channels()
+    settings = get_settings()
+    channels = settings.get("channels", [])
     markup = types.InlineKeyboardMarkup(row_width=1)
-    
-    # মডার্ন বাটন ডিজাইন
     for ch in channels:
         markup.add(types.InlineKeyboardButton(f"📢 Join {ch}", url=f"https://t.me/{ch.replace('@','')}"))
     markup.add(types.InlineKeyboardButton("🟢 VERIFY MY ACCOUNT 🟢", callback_data="CHECK_SUB"))
     
-    # প্রিমিয়াম English UI
-    txt = (
-        "🛑 **ACCESS RESTRICTED**\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        "Welcome to **NEXUS SMM**! To use our bot and unlock all premium features, you must join our official channels.\n\n"
-        "📌 **Step 1:** Click the buttons below to join.\n"
-        "📌 **Step 2:** Click **Verify** to activate your account.\n"
-        "━━━━━━━━━━━━━━━━━━━━"
-    )
+    txt = "🛑 **ACCESS RESTRICTED**\n━━━━━━━━━━━━━━━━━━━━\nWelcome to **NEXUS SMM**! To use our bot and unlock all premium features, you must join our official channels.\n\n📌 **Step 1:** Click the buttons below to join.\n📌 **Step 2:** Click **Verify** to activate your account.\n━━━━━━━━━━━━━━━━━━━━"
     bot.send_message(chat_id, txt, reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data == "CHECK_SUB")
 def sub_check_callback(call):
     if check_sub(call.message.chat.id):
         bot.delete_message(call.message.chat.id, call.message.message_id)
-        
-        # স্মার্ট রেফারেল লজিক (ভেরিফাই করলেই টাকা পাবে)
         u = users_col.find_one({"_id": call.message.chat.id})
+        
+        # Referral System + Milestones
         if u and u.get('ref_by') and not u.get('ref_paid', True):
             users_col.update_one({"_id": call.message.chat.id}, {"$set": {"ref_paid": True}})
-            users_col.update_one({"_id": u['ref_by']}, {"$inc": {"balance": REF_BONUS}})
-            try: bot.send_message(u['ref_by'], f"🎊 **Referral Bonus!** Your friend verified their account. You earned **${REF_BONUS}**!")
+            referrer = u['ref_by']
+            users_col.update_one({"_id": referrer}, {"$inc": {"balance": REF_BONUS}})
+            try: bot.send_message(referrer, f"🎊 **Referral Verified!** You earned **${REF_BONUS}**!")
             except: pass
+            
+            # Milestone Check
+            settings = get_settings()
+            ref_count = users_col.count_documents({"ref_by": referrer, "ref_paid": True})
+            target = settings.get("ref_target", 10)
+            bonus = settings.get("ref_bonus", 5.0)
+            if ref_count > 0 and ref_count % target == 0:
+                users_col.update_one({"_id": referrer}, {"$inc": {"balance": bonus}})
+                try: bot.send_message(referrer, f"🏆 **MILESTONE REACHED!**\nYou invited {ref_count} active users and got an extra **${bonus}** bonus!")
+                except: pass
 
         bot.send_message(call.message.chat.id, "✅ **Access Granted! Welcome to the system.**", reply_markup=main_menu())
-        
-        txt = (
-            f"┏━━━━━━━◥◣◆◢◤━━━━━━━┓\n"
-            f"   👋 **WELCOME TO NEXUS SMM**\n"
-            f"┗━━━━━━━◥◣◆◢◤━━━━━━━┛\n\n"
-            f"💠 **Elite Services at Best Rates**\n"
-            f"✨ **Fastest Delivery Guarantee**\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"🆔 **USER ID:** `{call.message.chat.id}`"
-        )
+        txt = f"┏━━━━━━━◥◣◆◢◤━━━━━━━┓\n   👋 **WELCOME TO NEXUS SMM**\n┗━━━━━━━◥◣◆◢◤━━━━━━━┛\n\n💠 **Elite Services at Best Rates**\n✨ **Fastest Delivery Guarantee**\n━━━━━━━━━━━━━━━━━━━━\n🆔 **USER ID:** `{call.message.chat.id}`"
         bot.send_message(call.message.chat.id, txt, reply_markup=main_menu(), parse_mode="Markdown")
     else:
         bot.answer_callback_query(call.id, "❌ Verification Failed! Please join ALL channels first.", show_alert=True)
 
 # ==========================================
-# ৩. Start, Test & Registration
+# ৪. Start Command
 # ==========================================
-@bot.message_handler(commands=['test'])
-def test_bot(message):
-    bot.reply_to(message, "✅ System is Online and Secure!")
-
 @bot.message_handler(commands=['start'])
 def start(message):
+    if check_maintenance(message.chat.id): return
     uid = message.chat.id
     name = message.from_user.first_name
-    
     args = message.text.split()
     referrer = None
-    if len(args) > 1 and args[1].isdigit() and int(args[1]) != uid:
-        referrer = int(args[1])
+    if len(args) > 1 and args[1].isdigit() and int(args[1]) != uid: referrer = int(args[1])
 
     user = users_col.find_one({"_id": uid})
     if not user:
-        users_col.insert_one({
-            "_id": uid, "name": name, "balance": 0.0, "spent": 0.0, 
-            "ref_by": referrer, "ref_paid": False, 
-            "joined": datetime.now(), "last_bonus": None, "favorites": []
-        })
+        users_col.insert_one({"_id": uid, "name": name, "balance": 0.0, "spent": 0.0, "ref_by": referrer, "ref_paid": False, "joined": datetime.now(), "last_bonus": None, "favorites": []})
 
-    if not check_sub(uid):
-        return send_force_sub(uid)
+    if not check_sub(uid): return send_force_sub(uid)
 
     txt = f"┏━━━━━━━◥◣◆◢◤━━━━━━━┓\n   👋 **WELCOME TO NEXUS SMM**\n┗━━━━━━━◥◣◆◢◤━━━━━━━┛\n\n💠 **Elite Services at Best Rates**\n✨ **Fastest Delivery Guarantee**\n━━━━━━━━━━━━━━━━━━━━\n🆔 **USER ID:** `{uid}`"
     bot.send_message(uid, txt, reply_markup=main_menu(), parse_mode="Markdown")
 
 # ==========================================
-# ৪. Order System (Protected by Check_Sub)
+# ৫. Category & Service Routing
 # ==========================================
 @bot.message_handler(func=lambda m: m.text == "🚀 New Order")
 def show_platforms(message):
+    if check_maintenance(message.chat.id): return
     if not check_sub(message.chat.id): return send_force_sub(message.chat.id)
     services = get_cached_services()
     if not services: return bot.send_message(message.chat.id, "❌ API Error")
 
-    platforms = set()
-    for s in services: platforms.add(identify_platform(s['category']))
+    settings = get_settings()
+    hidden = settings.get("hidden_services", [])
+    platforms = set(identify_platform(s['category']) for s in services if str(s['service']) not in hidden)
     
     markup = types.InlineKeyboardMarkup(row_width=2)
     btns = [types.InlineKeyboardButton(text=p, callback_data=f"PLAT|{p}|0") for p in sorted(platforms)]
-    
     for i in range(0, len(btns), 2):
         if i+1 < len(btns): markup.row(btns[i], btns[i+1])
         else: markup.row(btns[i])
@@ -162,13 +176,17 @@ def show_platforms(message):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("PLAT|"))
 def show_categories(call):
+    if check_maintenance(call.message.chat.id): return
     if not check_sub(call.message.chat.id): return send_force_sub(call.message.chat.id)
     data = call.data.split("|")
     platform_name = data[1]
     page = int(data[2]) if len(data) > 2 else 0
     
     services = get_cached_services()
-    all_cats = sorted(list(set(s['category'] for s in services)))
+    settings = get_settings()
+    hidden = settings.get("hidden_services", [])
+    
+    all_cats = sorted(list(set(s['category'] for s in services if str(s['service']) not in hidden)))
     plat_cats = [c for c in all_cats if identify_platform(c) == platform_name]
     
     start = page * 15
@@ -195,24 +213,32 @@ def back_to_plat(call):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("CAT|"))
 def list_services(call):
-    if not check_sub(call.message.chat.id): return send_force_sub(call.message.chat.id)
     data = call.data.split("|")
     cat_idx = int(data[1])
     page = int(data[2])
     
     services = get_cached_services()
-    all_cats = sorted(list(set(s['category'] for s in services)))
+    settings = get_settings()
+    hidden = settings.get("hidden_services", [])
+    
+    all_cats = sorted(list(set(s['category'] for s in services if str(s['service']) not in hidden)))
     if cat_idx >= len(all_cats): return
     cat_name = all_cats[cat_idx]
     
-    filtered = [s for s in services if s['category'] == cat_name]
+    filtered = [s for s in services if s['category'] == cat_name and str(s['service']) not in hidden]
     start = page * 10
     end = start + 10
     
+    # VIP Pricing Calculation
+    user = users_col.find_one({"_id": call.message.chat.id})
+    _, discount = get_user_tier(user.get('spent', 0))
+    global_profit = settings.get("profit_margin", 20.0)
+    
     markup = types.InlineKeyboardMarkup(row_width=1)
     for s in filtered[start:end]:
-        rate = round(float(s['rate']) + (float(s['rate']) * PROFIT_MARGIN / 100), 3)
-        markup.add(types.InlineKeyboardButton(f"⚡ ID:{s['service']} | ${rate} | {s['name'][:25]}", callback_data=f"INFO|{s['service']}"))
+        base_rate = float(s['rate']) + (float(s['rate']) * global_profit / 100)
+        final_rate = round(base_rate - (base_rate * discount / 100), 3)
+        markup.add(types.InlineKeyboardButton(f"⚡ ID:{s['service']} | ${final_rate} | {s['name'][:25]}", callback_data=f"INFO|{s['service']}"))
     
     nav = []
     if page > 0: nav.append(types.InlineKeyboardButton("⬅️ Prev", callback_data=f"CAT|{cat_idx}|{page-1}"))
@@ -221,24 +247,31 @@ def list_services(call):
     
     platform_name = identify_platform(cat_name)
     markup.add(types.InlineKeyboardButton(f"🔙 Back to {platform_name}", callback_data=f"PLAT|{platform_name}|0"))
-    
     bot.edit_message_text(f"📍 **{platform_name} ➡️ Category**\n📦 **{cat_name[:30]}...**\nPage: {page+1}/{math.ceil(len(filtered)/10)}", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
+# ==========================================
+# ৬. Info Card & Smart Validation Order
+# ==========================================
 @bot.callback_query_handler(func=lambda c: c.data.startswith("INFO|"))
 def show_service_info(call):
-    if not check_sub(call.message.chat.id): return send_force_sub(call.message.chat.id)
     sid = call.data.split("|")[1]
     services = get_cached_services()
     s = next((x for x in services if str(x['service']) == str(sid)), None)
-    if not s: return bot.answer_callback_query(call.id, "❌ Not found!", show_alert=True)
+    if not s: return bot.answer_callback_query(call.id, "❌ Not found or hidden by Admin!", show_alert=True)
         
-    rate = round(float(s['rate']) + (float(s['rate']) * PROFIT_MARGIN / 100), 3)
-    txt = f"ℹ️ **SERVICE INFORMATION**\n━━━━━━━━━━━━━━━━━━━━\n🏷 **Name:** {s['name']}\n🆔 **ID:** `{sid}`\n💰 **Price:** `${rate}` / 1000\n📉 **Min:** {s['min']} | 📈 **Max:** {s['max']}\n━━━━━━━━━━━━━━━━━━━━\n⚠️ **Note:** Make sure account is public."
+    user = users_col.find_one({"_id": call.message.chat.id})
+    tier_name, discount = get_user_tier(user.get('spent', 0))
+    settings = get_settings()
+    global_profit = settings.get("profit_margin", 20.0)
+    
+    base_rate = float(s['rate']) + (float(s['rate']) * global_profit / 100)
+    final_rate = round(base_rate - (base_rate * discount / 100), 3)
+    
+    txt = f"ℹ️ **SERVICE INFORMATION**\n━━━━━━━━━━━━━━━━━━━━\n🏷 **Name:** {s['name']}\n🆔 **ID:** `{sid}`\n💰 **Your Price:** `${final_rate}` / 1000\n✨ **Your Tier:** {tier_name}\n📉 **Min:** {s['min']} | 📈 **Max:** {s['max']}\n━━━━━━━━━━━━━━━━━━━━\n⚠️ **Note:** Make sure account is public."
     
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(types.InlineKeyboardButton("🛒 Order Now", callback_data=f"START_ORD|{sid}"), types.InlineKeyboardButton("⭐ Fav", callback_data=f"FAV_ADD|{sid}"))
-    
-    all_cats = sorted(list(set(x['category'] for x in services)))
+    all_cats = sorted(list(set(x['category'] for x in services if str(x['service']) not in settings.get("hidden_services", []))))
     try: cat_idx = all_cats.index(s['category'])
     except: cat_idx = 0
     markup.add(types.InlineKeyboardButton("🔙 Back to Services", callback_data=f"CAT|{cat_idx}|0"))
@@ -246,13 +279,19 @@ def show_service_info(call):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("START_ORD|"))
 def ask_link(call):
-    if not check_sub(call.message.chat.id): return send_force_sub(call.message.chat.id)
     sid = call.data.split("|")[1]
     msg = bot.send_message(call.message.chat.id, "🔗 **Paste the Target Link:**", parse_mode="Markdown")
     bot.register_next_step_handler(msg, ask_qty, sid)
 
 def ask_qty(message, sid):
     link = message.text
+    services = get_cached_services()
+    s = next((x for x in services if str(x['service']) == str(sid)), None)
+    
+    # Smart Link Validator Check
+    if s and not validate_link(identify_platform(s['category']), link):
+        return bot.send_message(message.chat.id, f"❌ **Link Warning!**\nIt looks like this link is not for {identify_platform(s['category'])}. Please check and try again.")
+        
     msg = bot.send_message(message.chat.id, "🔢 **Enter Quantity (Numbers only):**", parse_mode="Markdown")
     bot.register_next_step_handler(msg, order_preview, sid, link)
 
@@ -264,9 +303,13 @@ def order_preview(message, sid, link):
         if not s: return bot.send_message(message.chat.id, "❌ Error finding service.")
         if qty < int(s['min']) or qty > int(s['max']): return bot.send_message(message.chat.id, f"❌ Invalid Quantity! Min: {s['min']}, Max: {s['max']}")
 
-        rate = round(float(s['rate']) + (float(s['rate']) * PROFIT_MARGIN / 100), 4)
-        cost = round((rate / 1000) * qty, 3)
         user = users_col.find_one({"_id": message.chat.id})
+        _, discount = get_user_tier(user.get('spent', 0))
+        global_profit = get_settings().get("profit_margin", 20.0)
+        
+        base_rate = float(s['rate']) + (float(s['rate']) * global_profit / 100)
+        final_rate = base_rate - (base_rate * discount / 100)
+        cost = round((final_rate / 1000) * qty, 3)
         
         if user['balance'] < cost: return bot.send_message(message.chat.id, f"❌ **Insufficient Balance!** You need `${cost}`")
 
@@ -290,7 +333,7 @@ def place_final_order(call):
         users_col.update_one({"_id": call.message.chat.id}, {"$inc": {"balance": -draft['cost'], "spent": draft['cost']}, "$unset": {"draft": ""}})
         orders_col.insert_one({"oid": res['order'], "uid": call.message.chat.id, "sid": draft['sid'], "link": draft['link'], "qty": draft['qty'], "cost": draft['cost'], "status": "pending", "date": datetime.now()})
         bot.edit_message_text(f"✅ **ORDER SUCCESSFUL!**\n🆔 Order ID: `{res['order']}`\n💰 Deducted: `${draft['cost']}`", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
-        try: bot.send_message(ADMIN_ID, f"🔔 **New Order!**\nUser: `{call.message.chat.id}`\nAmount: `${draft['cost']}`")
+        try: bot.send_message(ADMIN_ID, f"🔔 **New Order!**\nAmount: `${draft['cost']}`")
         except: pass
     else: bot.edit_message_text(f"❌ **Failed:** {res.get('error')}", call.message.chat.id, call.message.message_id)
 
@@ -300,7 +343,7 @@ def cancel_order(call):
     bot.edit_message_text("🚫 **Order Cancelled.**", call.message.chat.id, call.message.message_id)
 
 # ==========================================
-# ৫. Universal Buttons & Extras
+# ৭. Universal Buttons (Profile, Inbox, Deposit, Refill)
 # ==========================================
 @bot.callback_query_handler(func=lambda c: c.data.startswith("FAV_ADD|"))
 def add_to_favorites(call):
@@ -308,63 +351,100 @@ def add_to_favorites(call):
     users_col.update_one({"_id": call.message.chat.id}, {"$addToSet": {"favorites": sid}})
     bot.answer_callback_query(call.id, "⭐ Added to Favorites!", show_alert=True)
 
-@bot.message_handler(func=lambda m: m.text == "⭐ Favorites")
-def show_favorites(message):
-    if not check_sub(message.chat.id): return send_force_sub(message.chat.id)
-    user = users_col.find_one({"_id": message.chat.id})
-    favs = user.get("favorites", [])
-    if not favs: return bot.send_message(message.chat.id, "📭 You have no favorite services.")
-        
-    services = get_cached_services()
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    for sid in favs:
-        s = next((x for x in services if str(x['service']) == str(sid)), None)
-        if s: 
-            rate = round(float(s['rate']) + (float(s['rate']) * PROFIT_MARGIN / 100), 3)
-            markup.add(types.InlineKeyboardButton(f"⭐ ID:{s['service']} | ${rate}", callback_data=f"INFO|{s['service']}"))
-    bot.send_message(message.chat.id, "⭐ **Your Favorite Services:**", reply_markup=markup, parse_mode="Markdown")
-
-@bot.message_handler(func=lambda m: m.text in ["👤 Profile", "🎁 Daily Bonus", "🏆 Leaderboard", "📦 Orders", "💰 Deposit", "🎧 Support", "🔍 Search by ID"])
+@bot.message_handler(func=lambda m: m.text in ["⭐ Favorites", "👤 Profile", "🎁 Daily Bonus", "🏆 Leaderboard", "📦 Orders", "💰 Deposit", "🎧 Support Ticket", "🔍 Search by ID"])
 def universal_buttons(message):
+    if check_maintenance(message.chat.id): return
     if not check_sub(message.chat.id): return send_force_sub(message.chat.id)
     
     if message.text == "👤 Profile":
         u = users_col.find_one({"_id": message.chat.id})
-        if u: bot.send_message(message.chat.id, f"👤 **USER ACCOUNT**\n━━━━━━━━━━━━━━━━━━━━\n🆔 **ID:** `{u['_id']}`\n💳 **Balance:** `${round(u.get('balance',0), 3)}`\n💸 **Total Spent:** `${round(u.get('spent',0), 3)}`\n━━━━━━━━━━━━━━━━━━━━\n🎁 **Ref Link:**\n`t.me/{bot.get_me().username}?start={u['_id']}`", parse_mode="Markdown")
+        tier, _ = get_user_tier(u.get('spent', 0))
+        bot.send_message(message.chat.id, f"👤 **USER ACCOUNT**\n━━━━━━━━━━━━━━━━━━━━\n🆔 **ID:** `{u['_id']}`\n💳 **Balance:** `${round(u.get('balance',0), 3)}`\n💸 **Total Spent:** `${round(u.get('spent',0), 3)}`\n👑 **VIP Tier:** {tier}\n━━━━━━━━━━━━━━━━━━━━\n🎁 **Ref Link:**\n`t.me/{bot.get_me().username}?start={u['_id']}`", parse_mode="Markdown")
     
-    elif message.text == "🎁 Daily Bonus":
-        u = users_col.find_one({"_id": message.chat.id})
-        if u.get('last_bonus') and datetime.now() < u['last_bonus'] + timedelta(days=1): return bot.send_message(message.chat.id, "⏳ Come back tomorrow for next bonus.")
-        users_col.update_one({"_id": message.chat.id}, {"$inc": {"balance": DAILY_BONUS}, "$set": {"last_bonus": datetime.now()}})
-        bot.send_message(message.chat.id, f"🎁 You claimed **${DAILY_BONUS}** bonus!")
-        
     elif message.text == "💰 Deposit":
+        settings = get_settings()
+        payments = settings.get("payments", [])
+        if not payments:
+            return bot.send_message(message.chat.id, "❌ No payment methods available right now.")
+        
+        txt = "💰 **DEPOSIT FUNDS**\n━━━━━━━━━━━━━━━━━━━━\n"
+        for p in payments:
+            txt += f"🏦 **{p['name']}**\n👉 Details: `{p['details']}`\n💵 Rate: $1 = {p['rate']} BDT\n\n"
+        txt += "━━━━━━━━━━━━━━━━━━━━\nSend money to the details above, then click the button below to submit your TrxID."
+        
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("📤 Submit TrxID", callback_data="TRX"))
-        bot.send_message(message.chat.id, f"💰 **DEPOSIT**\n━━━━━━━━━━━━━━━━━━━━\n💵 **Rate:** $1 = {EXCHANGE_RATE} BDT\n🏦 **bKash/Nagad:** `{PAYMENT_NUMBER}`\n━━━━━━━━━━━━━━━━━━━━\nSend money and click below.", reply_markup=markup, parse_mode="Markdown")
+        bot.send_message(message.chat.id, txt, reply_markup=markup, parse_mode="Markdown")
         
-    elif message.text == "🎧 Support":
-        bot.send_message(message.chat.id, f"🎧 Contact Admin: {SUPPORT_USER}")
+    elif message.text == "🎧 Support Ticket":
+        msg = bot.send_message(message.chat.id, "🎧 **Describe your issue or write your message:**", parse_mode="Markdown")
+        bot.register_next_step_handler(msg, process_ticket)
         
     elif message.text == "📦 Orders":
-        history = orders_col.find({"uid": message.chat.id}).sort("_id", -1).limit(5)
+        history = list(orders_col.find({"uid": message.chat.id}).sort("_id", -1).limit(5))
+        if not history: return bot.send_message(message.chat.id, "📭 No recent orders found.")
+        
         txt = "📦 **YOUR RECENT ORDERS**\n━━━━━━━━━━━━━━━━━━━━\n"
-        for o in history: txt += f"🆔 `{o['oid']}` | 💰 `${round(o['cost'],3)}` | 🏷 {str(o.get('status','N/A')).upper()}\n"
-        bot.send_message(message.chat.id, txt, parse_mode="Markdown")
+        for o in history: 
+            txt += f"🆔 `{o['oid']}` | 💰 `${round(o['cost'],3)}` | 🏷 {str(o.get('status','N/A')).upper()}\n"
+        
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("🔄 Request Refill", callback_data="ASK_REFILL"))
+        bot.send_message(message.chat.id, txt, reply_markup=markup, parse_mode="Markdown")
+
+    elif message.text == "🎁 Daily Bonus":
+        u = users_col.find_one({"_id": message.chat.id})
+        if u.get('last_bonus') and datetime.now() < u['last_bonus'] + timedelta(days=1): 
+            return bot.send_message(message.chat.id, "⏳ Come back tomorrow for the next bonus.")
+        users_col.update_one({"_id": message.chat.id}, {"$inc": {"balance": DAILY_BONUS}, "$set": {"last_bonus": datetime.now()}})
+        bot.send_message(message.chat.id, f"🎁 You claimed **${DAILY_BONUS}** bonus!")
 
     elif message.text == "🏆 Leaderboard":
         top = users_col.find().sort("spent", -1).limit(5)
-        txt = "🏆 **TOP SPENDERS**\n━━━━━━━━━━━━━━━━━━━━\n"
-        for i, u in enumerate(top): txt += f"{i+1}. {u['name']} - `${round(u.get('spent',0), 2)}`\n"
+        txt = "🏆 **TOP 5 SPENDERS**\n━━━━━━━━━━━━━━━━━━━━\n"
+        for i, u in enumerate(top): 
+            tier, _ = get_user_tier(u.get('spent', 0))
+            txt += f"{i+1}. {u['name']} - `${round(u.get('spent',0), 2)}` ({tier})\n"
         bot.send_message(message.chat.id, txt, parse_mode="Markdown")
+
+    elif message.text == "⭐ Favorites":
+        user = users_col.find_one({"_id": message.chat.id})
+        favs = user.get("favorites", [])
+        if not favs: return bot.send_message(message.chat.id, "📭 You have no favorite services.")
+        
+        services = get_cached_services()
+        _, discount = get_user_tier(user.get('spent', 0))
+        global_profit = get_settings().get("profit_margin", 20.0)
+        
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        for sid in favs:
+            s = next((x for x in services if str(x['service']) == str(sid)), None)
+            if s: 
+                base = float(s['rate']) + (float(s['rate']) * global_profit / 100)
+                final = round(base - (base * discount / 100), 3)
+                markup.add(types.InlineKeyboardButton(f"⭐ ID:{s['service']} | ${final}", callback_data=f"INFO|{s['service']}"))
+        bot.send_message(message.chat.id, "⭐ **Your Favorite Services:**", reply_markup=markup, parse_mode="Markdown")
 
     elif message.text == "🔍 Search by ID":
         msg = bot.send_message(message.chat.id, "🔍 **Enter Service ID:**", parse_mode="Markdown")
         bot.register_next_step_handler(msg, process_search)
 
+# ==========================================
+# ৮. Form Handlers (Tickets, TrxID, Search, Refill)
+# ==========================================
+def process_ticket(message):
+    tickets_col.insert_one({"uid": message.chat.id, "msg": message.text, "status": "open", "date": datetime.now()})
+    bot.send_message(message.chat.id, "✅ **Ticket Submitted!** Admin will reply to you soon.")
+    try: bot.send_message(ADMIN_ID, f"🔔 **NEW SUPPORT TICKET!**\nUser: `{message.chat.id}`\nMsg: {message.text}")
+    except: pass
+
 def process_search(message):
     sid = message.text.strip()
     services = get_cached_services()
+    settings = get_settings()
+    hidden = settings.get("hidden_services", [])
+    if sid in hidden: return bot.send_message(message.chat.id, "❌ Service is currently disabled.")
+    
     s = next((x for x in services if str(x['service']) == str(sid)), None)
     if s:
         markup = types.InlineKeyboardMarkup()
@@ -374,5 +454,17 @@ def process_search(message):
 
 @bot.callback_query_handler(func=lambda c: c.data == "TRX")
 def trx_in(call):
-    msg = bot.send_message(call.message.chat.id, "✍️ **Enter TrxID & Amount (e.g. TX123 500):**")
-    bot.register_next_step_handler(msg, lambda m: [bot.send_message(m.chat.id, "✅ Request Submitted! Admin will verify soon."), bot.send_message(ADMIN_ID, f"🔔 **DEPOSIT!**\nUser: `{m.chat.id}`\nMsg: {m.text}")])
+    msg = bot.send_message(call.message.chat.id, "✍️ **Enter your TrxID and Amount (e.g. TX123 500 BDT):**", parse_mode="Markdown")
+    bot.register_next_step_handler(msg, lambda m: [bot.send_message(m.chat.id, "✅ Request Submitted! Admin will verify soon."), bot.send_message(ADMIN_ID, f"🔔 **DEPOSIT ALERT!**\nUser: `{m.chat.id}`\nMsg: {m.text}")])
+
+@bot.callback_query_handler(func=lambda c: c.data == "ASK_REFILL")
+def ask_refill(call):
+    msg = bot.send_message(call.message.chat.id, "🔄 **Enter the Order ID you want to refill:**\n(Must be a refillable service)", parse_mode="Markdown")
+    bot.register_next_step_handler(msg, process_refill)
+
+def process_refill(message):
+    oid = message.text.strip()
+    # Sending manual refill request to admin for processing
+    bot.send_message(message.chat.id, f"✅ **Refill Requested for Order #{oid}.**\nWe will process it if the service has a refill guarantee.")
+    try: bot.send_message(ADMIN_ID, f"🔄 **REFILL REQUEST**\nUser: `{message.chat.id}`\nOrder ID: `{oid}`")
+    except: pass
