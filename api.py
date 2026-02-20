@@ -33,3 +33,17 @@ def get_balance():
         return f"{data.get('balance', '0.00')} {data.get('currency', 'USD')}"
     except:
         return "N/A"
+
+def get_order_status(order_id):
+    payload = {
+        'key': API_KEY,
+        'action': 'status',
+        'order': order_id
+    }
+    try:
+        import requests
+        response = requests.post(API_URL, data=payload)
+        return response.json()
+    except:
+        return {}
+
