@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from config import BOT_TOKEN, ADMIN_PASSWORD, SECRET_KEY
 from loader import bot, users_col, orders_col, config_col, tickets_col
 import api
+import handlers 
 import threading
 from bson.objectid import ObjectId
 
