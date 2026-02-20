@@ -19,7 +19,7 @@ user_actions = {}
 blocked_users = {}
 
 def check_spam(uid):
-    if str(uid) == str(ADMIN_ID): return False # Admin is immune
+    if str(uid) == str(ADMIN_ID): return False 
     
     current_time = time.time()
     if uid in blocked_users:
@@ -30,10 +30,8 @@ def check_spam(uid):
         user_actions[uid] = []
         
     user_actions[uid].append(current_time)
-    # Keep only actions from the last 3 seconds
     user_actions[uid] = [t for t in user_actions[uid] if current_time - t < 3]
     
-    # If more than 5 actions in 3 seconds -> Block for 5 minutes
     if len(user_actions[uid]) > 5:
         blocked_users[uid] = current_time + 300
         try: bot.send_message(uid, "🛡 **ANTI-SPAM TRIGGERED!**\n━━━━━━━━━━━━━━━━━━━━\nYou clicked too fast. You have been blocked for 5 minutes to protect the server.", parse_mode="Markdown")
@@ -173,15 +171,25 @@ def start(message):
     bot.send_message(uid, txt, reply_markup=main_menu(), parse_mode="Markdown")
 
 # ==========================================
-# ৫. ORDERING SYSTEM & SMART RANKING
+# ৫. ORDERING SYSTEM & LOADING ANIMATION
 # ==========================================
 @bot.message_handler(func=lambda m: m.text == "🚀 New Order")
 def show_platforms(message):
     if check_spam(message.chat.id) or check_maintenance(message.chat.id): return
     if not check_sub(message.chat.id): return send_force_sub(message.chat.id)
     
+    # --- CYBERPUNK LOADING ANIMATION ---
+    load_msg = bot.send_message(message.chat.id, "📡 **Connecting to NEXUS Core...**\n`[■□□□□□□□□□] 10%`", parse_mode="Markdown")
+    time.sleep(0.3)
+    bot.edit_message_text("🔐 **Fetching API Services...**\n`[■■■■■□□□□□] 50%`", message.chat.id, load_msg.message_id, parse_mode="Markdown")
+    time.sleep(0.3)
+    bot.edit_message_text("🚀 **System Ready!**\n`[■■■■■■■■■□] 90%`", message.chat.id, load_msg.message_id, parse_mode="Markdown")
+    time.sleep(0.2)
+    # -----------------------------------
+
     services = get_cached_services()
-    if not services: return bot.send_message(message.chat.id, "❌ API Maintenance. Try later.")
+    if not services: 
+        return bot.edit_message_text("❌ **API Maintenance. Try later.**", message.chat.id, load_msg.message_id, parse_mode="Markdown")
 
     hidden = get_settings().get("hidden_services", [])
     platforms = set(identify_platform(s['category']) for s in services if str(s['service']) not in hidden)
@@ -191,7 +199,8 @@ def show_platforms(message):
     for i in range(0, len(btns), 2):
         if i+1 < len(btns): markup.row(btns[i], btns[i+1])
         else: markup.row(btns[i])
-    bot.send_message(message.chat.id, "🟢 **Live API Status:** Active\n━━━━━━━━━━━━━━━━━━━━\n📂 **Select a Platform:**", reply_markup=markup, parse_mode="Markdown")
+        
+    bot.edit_message_text("🟢 **Live API Status:** Active\n━━━━━━━━━━━━━━━━━━━━\n📂 **Select a Platform:**", message.chat.id, load_msg.message_id, reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("PLAT|"))
 def show_categories(call):
@@ -202,8 +211,6 @@ def show_categories(call):
     
     all_cats = sorted(list(set(s['category'] for s in get_cached_services() if str(s['service']) not in hidden)))
     plat_cats = [c for c in all_cats if identify_platform(c) == platform_name]
-    
-    # Smart Ranking Logic: Push Telegram/Instagram/YouTube to top
     plat_cats.sort(key=lambda x: (0 if 'Telegram' in x else 1 if 'Instagram' in x else 2 if 'YouTube' in x else 3, x))
     
     start, end = page * 15, page * 15 + 15
@@ -225,7 +232,9 @@ def show_categories(call):
 def back_to_plat(call):
     if check_spam(call.message.chat.id): return bot.answer_callback_query(call.id)
     bot.delete_message(call.message.chat.id, call.message.message_id)
-    show_platforms(call.message)
+    message = call.message
+    message.text = "🚀 New Order"
+    show_platforms(message)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("CAT|"))
 def list_services(call):
@@ -273,8 +282,7 @@ def show_service_info(call):
         
     user = users_col.find_one({"_id": call.message.chat.id})
     tier_name, discount = get_user_tier(user.get('spent', 0))
-    settings = get_settings()
-    global_profit = settings.get("profit_margin", 20.0)
+    global_profit = get_settings().get("profit_margin", 20.0)
     
     base_rate = float(s['rate']) + (float(s['rate']) * global_profit / 100)
     final_rate = round(base_rate - (base_rate * discount / 100), 3)
@@ -284,7 +292,7 @@ def show_service_info(call):
     
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(types.InlineKeyboardButton("🛒 Order Now", callback_data=f"START_ORD|{sid}"), types.InlineKeyboardButton("⭐ Fav", callback_data=f"FAV_ADD|{sid}"))
-    all_cats = sorted(list(set(x['category'] for x in services if str(x['service']) not in settings.get("hidden_services", []))))
+    all_cats = sorted(list(set(x['category'] for x in services if str(x['service']) not in get_settings().get("hidden_services", []))))
     try: cat_idx = all_cats.index(s['category'])
     except: cat_idx = 0
     markup.add(types.InlineKeyboardButton("🔙 Back to Services", callback_data=f"CAT|{cat_idx}|0"))
@@ -336,16 +344,29 @@ def place_final_order(call):
     draft = user.get('draft')
     if not draft: return bot.answer_callback_query(call.id, "❌ Session expired!", show_alert=True)
         
-    bot.edit_message_text("⏳ **Connecting to Main API...**", call.message.chat.id, call.message.message_id)
+    # --- CYBERPUNK LOADING ANIMATION ---
+    bot.edit_message_text("📡 **Connecting to NEXUS Core...**\n`[■□□□□□□□□□] 10%`", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+    time.sleep(0.3)
+    bot.edit_message_text("🔐 **Encrypting Order Data...**\n`[■■■■■□□□□□] 50%`", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+    time.sleep(0.3)
+    bot.edit_message_text("🚀 **Sending to Main Server...**\n`[■■■■■■■■■□] 90%`", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+    time.sleep(0.2)
+    # -----------------------------------
+
     res = api.place_order(draft['sid'], draft['link'], draft['qty'])
     
     if 'order' in res:
         users_col.update_one({"_id": call.message.chat.id}, {"$inc": {"balance": -draft['cost'], "spent": draft['cost']}, "$unset": {"draft": ""}})
         orders_col.insert_one({"oid": res['order'], "uid": call.message.chat.id, "sid": draft['sid'], "link": draft['link'], "qty": draft['qty'], "cost": draft['cost'], "status": "pending", "date": datetime.now()})
-        bot.edit_message_text(f"✅ **ORDER SUCCESSFUL!**\n━━━━━━━━━━━━━━━━━━━━\n🆔 Order ID: `{res['order']}`\n💰 Deducted: `${draft['cost']}`\n📌 Track in '📦 Orders' menu.", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+        
+        # INVOICE STYLE BLOCKQUOTE
+        success_txt = f"> ✅ **ORDER SUCCESSFUL!**\n> ━━━━━━━━━━━━━━━━━━━━\n> 🆔 **Order ID:** `{res['order']}`\n> 💰 **Deducted:** `${draft['cost']}`\n> 📌 _Track in '📦 Orders' menu._"
+        bot.edit_message_text(success_txt, call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+        
         try: bot.send_message(ADMIN_ID, f"🔔 **NEW ORDER!**\nUser: `{call.message.chat.id}`\nService ID: `{draft['sid']}`\nCost: `${draft['cost']}`")
         except: pass
-    else: bot.edit_message_text(f"❌ **Failed:** {res.get('error')}", call.message.chat.id, call.message.message_id)
+    else: 
+        bot.edit_message_text(f"❌ **Failed:** {res.get('error')}", call.message.chat.id, call.message.message_id)
 
 @bot.callback_query_handler(func=lambda c: c.data == "CANCEL_ORDER")
 def cancel_order(call):
@@ -353,7 +374,7 @@ def cancel_order(call):
     bot.edit_message_text("🚫 **Order Cancelled.**", call.message.chat.id, call.message.message_id)
 
 # ==========================================
-# ৬. ADVANCED DEPOSIT FLOW (Amount -> Method -> Admin)
+# ৬. DEPOSIT FLOW & INVOICES
 # ==========================================
 def deposit_ask_amount(message):
     try:
@@ -392,15 +413,10 @@ def process_deposit_trx(message, amt, method_name):
     tid = message.text.strip()
     bot.send_message(message.chat.id, "✅ **Request Submitted!**\nAdmin will verify your TrxID and approve the deposit shortly.", parse_mode="Markdown")
     
-    # Send formatted invoice request to Admin
     admin_txt = f"🔔 **NEW DEPOSIT REQUEST**\n━━━━━━━━━━━━━━━━━━━━\n👤 User: `{message.chat.id}`\n🏦 Method: **{method_name}**\n💰 Amount: **${amt}**\n🧾 TrxID: `{tid}`\n━━━━━━━━━━━━━━━━━━━━"
-    
     markup = types.InlineKeyboardMarkup(row_width=2)
     app_url = BASE_URL.rstrip('/')
-    markup.add(
-        types.InlineKeyboardButton("✅ APPROVE", url=f"{app_url}/approve_dep/{message.chat.id}/{amt}/{tid}"),
-        types.InlineKeyboardButton("❌ REJECT", url=f"{app_url}/reject_dep/{message.chat.id}/{tid}")
-    )
+    markup.add(types.InlineKeyboardButton("✅ APPROVE", url=f"{app_url}/approve_dep/{message.chat.id}/{amt}/{tid}"), types.InlineKeyboardButton("❌ REJECT", url=f"{app_url}/reject_dep/{message.chat.id}/{tid}"))
     try: bot.send_message(ADMIN_ID, admin_txt, reply_markup=markup, parse_mode="Markdown")
     except: pass
 
@@ -415,15 +431,15 @@ def process_voucher(message):
     if len(voucher.get('used_by', [])) >= voucher['limit']: return bot.send_message(message.chat.id, "❌ Voucher Limit Reached!")
     if message.chat.id in voucher.get('used_by', []): return bot.send_message(message.chat.id, "❌ You have already claimed this voucher.")
     
-    # Claim Logic
     vouchers_col.update_one({"code": code}, {"$push": {"used_by": message.chat.id}})
     users_col.update_one({"_id": message.chat.id}, {"$inc": {"balance": voucher['amount']}})
     
-    msg = f"🎉 **VOUCHER CLAIMED!**\n━━━━━━━━━━━━━━━━━━━━\n🎁 Code: `{code}`\n💰 Reward: `${voucher['amount']}` added to wallet!"
+    # INVOICE STYLE BLOCKQUOTE
+    msg = f"> 🧾 **NEXUS VOUCHER RECEIPT**\n> ━━━━━━━━━━━━━━━━━━━━\n> ✅ **Status:** CLAIMED\n> 🎁 **Code:** `{code}`\n> 💰 **Reward Added:** `${voucher['amount']}`\n> \n> _Enjoy your free funds!_"
     bot.send_message(message.chat.id, msg, parse_mode="Markdown")
 
 # ==========================================
-# ৮. UNIVERSAL BUTTONS & PAGINATION
+# ৮. UNIVERSAL BUTTONS, VIP CARD & PAGINATION
 # ==========================================
 def fetch_orders_page(chat_id, page=0):
     all_orders = list(orders_col.find({"uid": chat_id}).sort("_id", -1))
@@ -470,7 +486,27 @@ def universal_buttons(message):
     if message.text == "👤 Profile":
         u = users_col.find_one({"_id": message.chat.id})
         tier, _ = get_user_tier(u.get('spent', 0))
-        bot.send_message(message.chat.id, f"👤 **PROFILE ACCOUNT**\n━━━━━━━━━━━━━━━━━━━━\n🆔 **ID:** `{u['_id']}`\n💳 **Balance:** `${round(u.get('balance',0), 3)}`\n💸 **Total Spent:** `${round(u.get('spent',0), 3)}`\n👑 **VIP Tier:** {tier}\n━━━━━━━━━━━━━━━━━━━━", parse_mode="Markdown")
+        
+        # VIP DIGITAL PROFILE CARD DESIGN
+        name_str = (message.from_user.first_name or "User")[:12]
+        uid_str = str(u['_id'])
+        bal_str = f"${round(u.get('balance',0), 3)}"
+        spent_str = f"${round(u.get('spent',0), 3)}"
+        
+        card = (
+            f"```text\n"
+            f"╔════════════════════════════════╗\n"
+            f"║  🌟 NEXUS TITAN VIP CARD       ║\n"
+            f"╠════════════════════════════════╣\n"
+            f"║  👤 Name: {name_str.ljust(19)}║\n"
+            f"║  🆔 UID: {uid_str.ljust(20)}║\n"
+            f"║  💳 Balance: {bal_str.ljust(16)}║\n"
+            f"║  💸 Spent: {spent_str.ljust(18)}║\n"
+            f"║  👑 Tier: {tier.ljust(19)}║\n"
+            f"╚════════════════════════════════╝\n"
+            f"```"
+        )
+        bot.send_message(message.chat.id, card, parse_mode="Markdown")
         
     elif message.text == "📦 Orders":
         bot.send_chat_action(message.chat.id, 'typing')
