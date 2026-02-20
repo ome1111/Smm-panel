@@ -5,28 +5,25 @@ import api
 import math
 import time
 import os
+import threading
 from datetime import datetime
 from google import genai
 
 # ==========================================
-# ১. CORE SETTINGS, AI & CURRENCY ENGINE 💱
+# ১. CORE SETTINGS, AI & CURRENCY ENGINE
 # ==========================================
 GEMINI_API_KEY = "AIzaSyBPqzynaZaa9UQmPm9EvhdrI6TcM-5FqcQ"
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-
-API_CACHE = {'data': [], 'last_fetch': 0}
-CACHE_TTL = 300 
 BASE_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://smm-panel-g8ab.onrender.com')
 
 user_actions, blocked_users = {}, {}
 
-# 🔥 DYNAMIC CURRENCY ENGINE (NEW)
+# DYNAMIC CURRENCY ENGINE
 CURRENCY_RATES = {"BDT": 120, "INR": 83, "USD": 1}
 CURRENCY_SYMBOLS = {"BDT": "৳", "INR": "₹", "USD": "$"}
 
 def fmt_curr(usd_amount, curr_code="BDT"):
-    """Convert and format USD to user's local currency"""
     rate = CURRENCY_RATES.get(curr_code, 120)
     sym = CURRENCY_SYMBOLS.get(curr_code, "৳")
     val = float(usd_amount) * rate
@@ -60,28 +57,43 @@ def get_settings():
         config_col.insert_one(s)
     return s
 
-def check_maintenance(chat_id):
-    if get_settings().get('maintenance', False) and str(chat_id) != str(ADMIN_ID):
-        bot.send_message(chat_id, "🛠 **SYSTEM UPDATE**\n━━━━━━━━━━━━━━━━━━━━\nThe bot is undergoing a massive upgrade. Please try again later.", parse_mode="Markdown")
-        return True
-    return False
+# ==========================================
+# ২. ZERO-LAG BACKGROUND CACHE (NEW ENGINE 🔥)
+# ==========================================
+def fetch_and_save_services_background():
+    """Hidden background task to fetch API without blocking users"""
+    try:
+        res = api.get_services()
+        if res and isinstance(res, list):
+            config_col.update_one(
+                {"_id": "api_services"},
+                {"$set": {"data": res, "last_updated": time.time()}},
+                upsert=True
+            )
+    except Exception as e:
+        print(f"Background Fetch Error: {e}")
 
 def get_cached_services():
-    global API_CACHE
-    if time.time() - API_CACHE['last_fetch'] < CACHE_TTL and API_CACHE['data']: return API_CACHE['data']
-    res = api.get_services()
-    if res and type(res) == list:
-        API_CACHE['data'] = res
-        API_CACHE['last_fetch'] = time.time()
-    return API_CACHE['data']
+    """Instantly loads services from DB. Updates in background if old."""
+    db_cache = config_col.find_one({"_id": "api_services"})
+    current_time = time.time()
+
+    # If first time ever (No DB cache yet), force fetch
+    if not db_cache or not db_cache.get("data"):
+        fetch_and_save_services_background()
+        db_cache = config_col.find_one({"_id": "api_services"})
+        return db_cache.get("data", []) if db_cache else []
+
+    # If cache is older than 10 mins (600 seconds), start background update thread
+    if current_time - db_cache.get("last_updated", 0) > 600:
+        threading.Thread(target=fetch_and_save_services_background).start()
+
+    # Instantly return existing data (Zero wait time for user)
+    return db_cache.get("data", [])
 
 # ==========================================
-# ২. UI ENGINE (CRASH-PROOF & FAST) ⚡
+# ৩. UI ENGINE
 # ==========================================
-def play_loading(chat_id, t1, t2, t3):
-    msg = bot.send_message(chat_id, f"⚡ **{t3}...**", parse_mode="Markdown")
-    return msg.message_id
-
 def identify_platform(cat_name):
     c = cat_name.lower()
     if 'instagram' in c or 'ig' in c: return "📸 Instagram"
@@ -129,19 +141,18 @@ def check_sub(chat_id):
     return True
 
 # ==========================================
-# ৩. REGISTRATION & VERIFICATION
+# ৪. REGISTRATION & VERIFICATION
 # ==========================================
 @bot.message_handler(commands=['start'])
 def start(message):
     update_spy(message.chat.id, "Bot Started")
-    if check_spam(message.chat.id) or check_maintenance(message.chat.id): return
+    if check_spam(message.chat.id): return
     uid = message.chat.id
     
     args = message.text.split()
     referrer = int(args[1]) if len(args) > 1 and args[1].isdigit() and int(args[1]) != uid else None
 
     if not users_col.find_one({"_id": uid}):
-        # 🔥 Added "currency": "BDT" as default for new users
         users_col.insert_one({"_id": uid, "name": message.from_user.first_name, "balance": 0.0, "spent": 0.0, "currency": "BDT", "ref_by": referrer, "ref_paid": False, "ref_earnings": 0.0, "joined": datetime.now(), "favorites": [], "last_active": datetime.now(), "last_action": "Registered"})
     
     if not check_sub(uid):
@@ -161,15 +172,15 @@ def sub_check_callback(call):
     else: bot.send_message(call.message.chat.id, "❌ **Please join all channels first!**")
 
 # ==========================================
-# ৪. ADVANCED ORDERING SYSTEM
+# ৫. FAST ORDERING SYSTEM (NO FREEZE)
 # ==========================================
 @bot.message_handler(func=lambda m: m.text == "🚀 New Order")
 def show_platforms(message):
     update_spy(message.chat.id, "Browsing Platforms")
-    if check_spam(message.chat.id) or check_maintenance(message.chat.id) or not check_sub(message.chat.id): return
+    if check_spam(message.chat.id) or not check_sub(message.chat.id): return
     
     services = get_cached_services()
-    if not services: return bot.send_message(message.chat.id, "❌ **API Offline.**", parse_mode="Markdown")
+    if not services: return bot.send_message(message.chat.id, "❌ **API Syncing... Please try again in 1 minute.**", parse_mode="Markdown")
 
     platforms = sorted(list(set(identify_platform(s['category']) for s in services if str(s['service']) not in get_settings().get("hidden_services", []))))
     markup = types.InlineKeyboardMarkup(row_width=2)
@@ -216,13 +227,13 @@ def list_services(call):
     start, end = page * 10, page * 10 + 10
     
     user = users_col.find_one({"_id": call.message.chat.id})
-    curr = user.get("currency", "BDT") # 🔥 Get User Currency
+    curr = user.get("currency", "BDT")
     _, discount = get_user_tier(user.get('spent', 0))
     
     markup = types.InlineKeyboardMarkup(row_width=1)
     for s in filtered[start:end]:
         rate_usd = (float(s['rate']) * 1.2) * (1 - discount/100)
-        rate_str = fmt_curr(rate_usd, curr) # 🔥 Dynamic Price Display
+        rate_str = fmt_curr(rate_usd, curr)
         fancy_name = clean_service_name(s['name'])
         markup.add(types.InlineKeyboardButton(f"ID:{s['service']} | {rate_str} | {fancy_name}", callback_data=f"INFO|{s['service']}"))
     
@@ -251,7 +262,7 @@ def show_service_info(call):
         _, discount = get_user_tier(user.get('spent', 0))
         
         rate_usd = (float(s['rate']) * 1.2) * (1 - discount/100)
-        rate_str = fmt_curr(rate_usd, curr) # 🔥 Dynamic Price Info
+        rate_str = fmt_curr(rate_usd, curr)
         
         speed = "🚀 Speed: 10K - 50K / Day" if "fast" in s['name'].lower() or "instant" in s['name'].lower() else "🐢 Speed: 1K - 5K / Day"
         start_time = "⏱️ Start Time: 0-30 Minutes" if "instant" in s['name'].lower() else "⏱️ Start Time: 1-6 Hours"
@@ -304,10 +315,9 @@ def order_preview(message, sid, link):
             return bot.send_message(message.chat.id, f"❌ Invalid Quantity! Allowed: {s['min']} - {s['max']}")
 
         user = users_col.find_one({"_id": message.chat.id})
-        curr = user.get("currency", "BDT") # 🔥 Load User Currency
+        curr = user.get("currency", "BDT")
         _, discount = get_user_tier(user.get('spent', 0))
         
-        # Calculate in USD for Database
         cost_usd = ((float(s['rate']) * 1.2) * (1 - discount/100) / 1000) * qty
         curr_bal_usd = user['balance']
         after_bal_usd = curr_bal_usd - cost_usd
@@ -315,10 +325,8 @@ def order_preview(message, sid, link):
         if curr_bal_usd < cost_usd: 
             return bot.send_message(message.chat.id, f"❌ **Insufficient Balance!**\nNeed `{fmt_curr(cost_usd, curr)}`, you have `{fmt_curr(curr_bal_usd, curr)}`.", parse_mode="Markdown")
 
-        # Save draft in USD
         users_col.update_one({"_id": message.chat.id}, {"$set": {"draft": {"sid": sid, "link": link, "qty": qty, "cost": cost_usd}}})
         
-        # 🔥 Dynamic Order Preview Display
         txt = f"⚠️ **ORDER PREVIEW**\n━━━━━━━━━━━━━━━━━━━━\n🆔 **Service ID:** `{sid}`\n🔗 **Link:** {link}\n🔢 **Quantity:** {qty}\n━━━━━━━━━━━━━━━━━━━━\n💵 **Current Wallet:** `{fmt_curr(curr_bal_usd, curr)}`\n🛒 **Order Cost:** `- {fmt_curr(cost_usd, curr)}`\n🟢 **Balance After:** `{fmt_curr(after_bal_usd, curr)}`\n━━━━━━━━━━━━━━━━━━━━\nConfirm your order?"
         
         markup = types.InlineKeyboardMarkup(row_width=2).add(types.InlineKeyboardButton("✅ CONFIRM", callback_data="CONFIRM_ORDER"), types.InlineKeyboardButton("❌ CANCEL", callback_data="CANCEL_ORDER"))
@@ -338,11 +346,10 @@ def place_final_order(call):
     bot.edit_message_text(f"⏳ **Processing Secure Payment...**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
 
     res = api.place_order(draft['sid'], draft['link'], draft['qty'])
-    if 'order' in res:
+    if res and 'order' in res:
         users_col.update_one({"_id": call.message.chat.id}, {"$inc": {"balance": -draft['cost'], "spent": draft['cost']}, "$unset": {"draft": ""}})
         orders_col.insert_one({"oid": res['order'], "uid": call.message.chat.id, "sid": draft['sid'], "link": draft['link'], "qty": draft['qty'], "cost": draft['cost'], "status": "pending", "date": datetime.now()})
         
-        # 🔥 Dynamic Success Message
         success_txt = f"🎉 **ORDER PLACED SUCCESSFULLY!**\n━━━━━━━━━━━━━━━━━━━━\n🆔 **Order ID:** `{res['order']}`\n💸 **Paid:** `{fmt_curr(draft['cost'], curr)}`\n\n_Track status in '📦 Orders' menu._"
         bot.edit_message_text(success_txt, call.message.chat.id, call.message.message_id, parse_mode="Markdown")
         
@@ -350,8 +357,9 @@ def place_final_order(call):
         if ch:
             try: bot.send_message(ch, f"🟢 **REAL ORDER PLACED!**\n👤 **User:** `***{str(call.message.chat.id)[-4:]}`\n📦 **Quantity:** {draft['qty']}\n💰 **Amount:** `{fmt_curr(draft['cost'], curr)}`", parse_mode="Markdown")
             except: pass
-    else: 
-        bot.edit_message_text(f"❌ **API Error:** {res.get('error')}\n_Your money is safe._", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+    else:
+        err_msg = res.get('error') if res and 'error' in res else "API Connection Timeout. Main Server is down."
+        bot.edit_message_text(f"❌ **Error:** {err_msg}\n_Your money is safe._", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data == "CANCEL_ORDER")
 def cancel_order(call):
@@ -360,7 +368,7 @@ def cancel_order(call):
     bot.edit_message_text("🚫 **Order Cancelled by user.**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
 
 # ==========================================
-# ৫. UNIVERSAL BUTTONS & CURRENCY CHANGER
+# ৬. UNIVERSAL BUTTONS
 # ==========================================
 def fetch_orders_page(chat_id, page=0):
     user = users_col.find_one({"_id": chat_id})
@@ -381,7 +389,6 @@ def fetch_orders_page(chat_id, page=0):
                     orders_col.update_one({"oid": o['oid']}, {"$set": {"status": current_status}})
             except: pass
         status_text = f"✅ {current_status.upper()}" if current_status == 'completed' else f"❌ {current_status.upper()}" if current_status in ['canceled', 'refunded', 'error', 'fail'] else f"⏳ {current_status.upper()}"
-        # 🔥 Dynamic Order Logs
         txt += f"🆔 `{o['oid']}` | 💰 `{fmt_curr(o['cost'], curr)}`\n🔗 {str(o.get('link', 'N/A'))[:25]}...\n🏷 Status: {status_text}\n\n"
         
     markup = types.InlineKeyboardMarkup(row_width=2)
@@ -429,14 +436,13 @@ def process_smart_search(message):
 @bot.message_handler(func=lambda m: m.text in ["⭐ Favorites", "👤 Profile", "🏆 Leaderboard", "📦 Orders", "💰 Deposit", "🎧 Support Ticket", "🔍 Smart Search", "🤝 Affiliate", "🎟️ Voucher"])
 def universal_buttons(message):
     update_spy(message.chat.id, f"Clicked {message.text}")
-    if check_spam(message.chat.id) or check_maintenance(message.chat.id) or not check_sub(message.chat.id): return
+    if check_spam(message.chat.id) or not check_sub(message.chat.id): return
     
     u = users_col.find_one({"_id": message.chat.id})
     curr = u.get("currency", "BDT") if u else "BDT"
 
     if message.text == "👤 Profile":
         tier, _ = get_user_tier(u.get('spent', 0))
-        # 🔥 NEW CURRENCY SELECTOR IN PROFILE
         markup = types.InlineKeyboardMarkup(row_width=3)
         markup.add(
             types.InlineKeyboardButton("🟢 BDT" if curr=="BDT" else "BDT", callback_data="SET_CURR|BDT"),
@@ -452,7 +458,6 @@ def universal_buttons(message):
         bot.send_message(message.chat.id, txt, reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
         
     elif message.text == "💰 Deposit":
-        # 🔥 Dynamic Deposit Input
         msg = bot.send_message(message.chat.id, f"💵 **Enter Deposit Amount ({curr}):**\n_(e.g. 100, 500)_", parse_mode="Markdown")
         bot.register_next_step_handler(msg, process_amt, curr)
         
@@ -489,7 +494,6 @@ def universal_buttons(message):
             if s: markup.add(types.InlineKeyboardButton(f"⭐ ID:{s['service']} | {s['name'][:25]}", callback_data=f"INFO|{s['service']}"))
         bot.send_message(message.chat.id, "⭐ **Your Favorites:**", reply_markup=markup, parse_mode="Markdown")
 
-# 🔥 SAVE CURRENCY CHOICE TO DATABASE
 @bot.callback_query_handler(func=lambda c: c.data.startswith("SET_CURR|"))
 def set_currency(call):
     bot.answer_callback_query(call.id)
@@ -500,14 +504,12 @@ def set_currency(call):
 def process_amt(message, curr_code):
     try:
         amt_local = float(message.text)
-        # Convert local input back to USD for secure backend processing
         rate = CURRENCY_RATES.get(curr_code, 1)
         amt_usd = amt_local / rate
         
         payments = get_settings().get("payments", [])
         markup = types.InlineKeyboardMarkup()
         for p in payments: 
-            # Show the final amount they need to send based on gateway rate
             pay_amt = round(amt_usd * float(p['rate']), 2)
             markup.add(types.InlineKeyboardButton(f"🏦 {p['name']} (Pay {pay_amt} BDT)", callback_data=f"PAY|{amt_usd}|{p['name']}"))
         bot.send_message(message.chat.id, "💳 **Select Gateway:**", reply_markup=markup, parse_mode="Markdown")
@@ -543,7 +545,7 @@ def ask_refill(call):
     bot.register_next_step_handler(msg, lambda m: [bot.send_message(m.chat.id, "✅ Refill Requested!"), bot.send_message(ADMIN_ID, f"🔄 **REFILL:** Order `{m.text}` by `{m.chat.id}`")])
 
 # ==========================================
-# ৬. GEMINI 2.0 FLASH AI SUPPORT 🤖
+# ৭. GEMINI 2.0 FLASH AI SUPPORT 🤖
 # ==========================================
 @bot.callback_query_handler(func=lambda c: c.data == "TALK_HUMAN")
 def talk_to_human(call):
@@ -567,7 +569,7 @@ def ai_handler(message):
     bot.send_chat_action(message.chat.id, 'typing')
     try:
         prompt = f"Role: Nexus SMM Support. User asks: {message.text}. Rule: Be short, friendly and native Bengali/English."
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(model='gemini-2.0-flash', contents=prompt)
         markup = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("🗣 Contact Admin", callback_data="TALK_HUMAN"))
         bot.send_message(message.chat.id, f"🤖 **Nexus AI:**\n━━━━━━━━━━━━━━━━━━━━\n{response.text}", reply_markup=markup, parse_mode="Markdown")
     except Exception as e:
