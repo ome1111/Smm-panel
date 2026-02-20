@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NEXUS - Master Panel</title>
+    <title>NEXUS - Titan Panel</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -19,25 +20,17 @@
 <body class="text-slate-200">
 
     <nav class="glass-card sticky top-0 z-50 px-6 py-4 flex justify-between items-center border-b border-slate-800">
-        <div class="flex items-center gap-3">
-            <h1 class="text-2xl font-bold text-white tracking-widest">NEXUS<span class="text-sky-400">ADMIN</span></h1>
-        </div>
-        <div class="flex items-center gap-4">
-            <a href="/logout" class="px-4 py-2 bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white rounded-lg transition-colors border border-red-500/30 font-bold">Logout</a>
-        </div>
+        <h1 class="text-2xl font-bold text-white tracking-widest">NEXUS<span class="text-sky-400">TITAN</span></h1>
+        <a href="/logout" class="px-4 py-2 bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white rounded-lg transition-colors font-bold">Logout</a>
     </nav>
 
     <div class="max-w-7xl mx-auto px-4 mt-6">
-        <div class="flex space-x-2 border-b border-slate-800 overflow-x-auto">
-            <button onclick="switchTab('dashboard')" id="tab-dashboard" class="tab-btn active px-6 py-3 font-bold text-slate-400 hover:text-white transition-all rounded-t-lg whitespace-nowrap">
-                <i class="fa-solid fa-chart-pie mr-2"></i> Dashboard
-            </button>
-            <button onclick="switchTab('users')" id="tab-users" class="tab-btn px-6 py-3 font-bold text-slate-400 hover:text-white transition-all rounded-t-lg whitespace-nowrap">
-                <i class="fa-solid fa-users mr-2"></i> User Manager
-            </button>
-            <button onclick="switchTab('orders')" id="tab-orders" class="tab-btn px-6 py-3 font-bold text-slate-400 hover:text-white transition-all rounded-t-lg whitespace-nowrap">
-                <i class="fa-solid fa-list-check mr-2"></i> Order History
-            </button>
+        <div class="flex space-x-2 border-b border-slate-800 overflow-x-auto pb-2">
+            <button onclick="switchTab('dashboard')" id="tab-dashboard" class="tab-btn active px-6 py-2 font-bold whitespace-nowrap"><i class="fa-solid fa-chart-pie mr-2"></i> Home</button>
+            <button onclick="switchTab('settings')" id="tab-settings" class="tab-btn px-6 py-2 font-bold whitespace-nowrap"><i class="fa-solid fa-gears mr-2"></i> Settings & Payments</button>
+            <button onclick="switchTab('tickets')" id="tab-tickets" class="tab-btn px-6 py-2 font-bold whitespace-nowrap"><i class="fa-solid fa-envelope mr-2"></i> Live Inbox <span class="bg-red-500 text-white text-xs px-2 py-1 rounded-full ml-1">{{ tickets|length }}</span></button>
+            <button onclick="switchTab('users')" id="tab-users" class="tab-btn px-6 py-2 font-bold whitespace-nowrap"><i class="fa-solid fa-users mr-2"></i> Users</button>
+            <button onclick="switchTab('orders')" id="tab-orders" class="tab-btn px-6 py-2 font-bold whitespace-nowrap"><i class="fa-solid fa-list mr-2"></i> Orders</button>
         </div>
     </div>
 
@@ -49,41 +42,23 @@
                     <p class="text-slate-400 font-bold uppercase text-sm mb-1 tracking-wider">Total Users</p>
                     <h3 class="text-4xl font-black text-white">{{ stats.users }}</h3>
                 </div>
-                <div class="glass-card rounded-2xl p-6 text-center border-t-4 border-t-purple-500 shadow-lg">
-                    <p class="text-slate-400 font-bold uppercase text-sm mb-1 tracking-wider">Total Orders</p>
-                    <h3 class="text-4xl font-black text-white">{{ stats.orders }}</h3>
-                </div>
                 <div class="glass-card rounded-2xl p-6 text-center border-t-4 border-t-emerald-500 shadow-lg">
-                    <p class="text-slate-400 font-bold uppercase text-sm mb-1 tracking-wider">Total Sales (Spent)</p>
+                    <p class="text-slate-400 font-bold uppercase text-sm mb-1 tracking-wider">Total Sales</p>
                     <h3 class="text-4xl font-black text-emerald-400">${{ stats.revenue }}</h3>
                 </div>
                 <div class="glass-card rounded-2xl p-6 text-center border-t-4 border-t-amber-500 shadow-lg">
-                    <p class="text-slate-400 font-bold uppercase text-sm mb-1 tracking-wider">Panel API Balance</p>
+                    <p class="text-slate-400 font-bold uppercase text-sm mb-1 tracking-wider">API Balance</p>
                     <h3 class="text-3xl font-black text-amber-400 mt-2">{{ stats.api_status }}</h3>
+                </div>
+                <div class="glass-card rounded-2xl p-6 text-center border-t-4 border-t-purple-500 shadow-lg">
+                    <p class="text-slate-400 font-bold uppercase text-sm mb-1 tracking-wider">Maintenance</p>
+                    <h3 class="text-2xl font-black mt-2 {{ 'text-red-500' if settings.maintenance else 'text-emerald-500' }}">{{ 'ON (Locked)' if settings.maintenance else 'OFF (Active)' }}</h3>
                 </div>
             </div>
 
-            <div class="glass-card rounded-2xl p-6 mb-8 border border-purple-500/20 shadow-[0_0_15px_rgba(168,85,247,0.05)]">
-                <h3 class="text-xl font-bold text-white mb-4"><i class="fa-solid fa-link text-purple-400 mr-2"></i> Force Join Channels Manager</h3>
-                <form action="/add_channel" method="POST" class="flex flex-col md:flex-row gap-4 mb-4">
-                    <input type="text" name="channel" required placeholder="Enter Channel Username (e.g. @MyChannel)" 
-                        class="flex-1 bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:outline-none focus:border-purple-500">
-                    <button type="submit" class="bg-purple-500 hover:bg-purple-400 text-white font-bold px-8 py-3 rounded-xl transition-all shadow-lg">
-                        <i class="fa-solid fa-plus mr-1"></i> Add Channel
-                    </button>
-                </form>
-                
-                <div class="flex flex-wrap gap-3 mt-4">
-                    {% for ch in channels %}
-                    <div class="bg-slate-800 border border-slate-700 px-4 py-2 rounded-lg flex items-center gap-3">
-                        <span class="text-sky-400 font-bold">{{ ch }}</span>
-                        <a href="/del_channel/{{ ch|replace('@', '') }}" class="text-red-400 hover:text-red-300 transition-colors" title="Remove Channel"><i class="fa-solid fa-times text-lg"></i></a>
-                    </div>
-                    {% else %}
-                    <p class="text-slate-500 text-sm">No channels added yet. Bot is open to all users.</p>
-                    {% endfor %}
-                </div>
-                <p class="text-xs text-amber-500 mt-4"><i class="fa-solid fa-triangle-exclamation"></i> Warning: Your bot MUST be an Admin in the added channels, otherwise the bot will stop working!</p>
+            <div class="glass-card rounded-2xl p-6 mb-8 shadow-lg border border-sky-500/20">
+                <h3 class="text-xl font-bold mb-4 text-white"><i class="fa-solid fa-chart-line mr-2 text-sky-400"></i> Last 7 Days Sales Revenue</h3>
+                <canvas id="salesChart" height="80"></canvas>
             </div>
 
             <div class="glass-card rounded-2xl p-6 border border-sky-500/20 shadow-[0_0_15px_rgba(56,189,248,0.05)]">
@@ -98,16 +73,117 @@
             </div>
         </div>
 
+        <div id="content-settings" class="tab-content">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="glass-card p-6 rounded-2xl border border-sky-500/20 shadow-lg">
+                    <h3 class="text-xl font-bold mb-4 text-sky-400"><i class="fa-solid fa-sliders mr-2"></i> Core Configurations</h3>
+                    <form action="/update_core_settings" method="POST" class="space-y-4">
+                        <div>
+                            <label class="block text-sm text-slate-400 mb-1">Global Profit Margin (%)</label>
+                            <input type="number" step="0.1" name="profit" value="{{ settings.profit_margin }}" class="w-full bg-slate-900 border border-slate-700 p-3 rounded-lg text-white focus:border-sky-500 outline-none">
+                        </div>
+                        <div class="flex gap-4">
+                            <div class="flex-1">
+                                <label class="block text-sm text-slate-400 mb-1">Referral Target (Users)</label>
+                                <input type="number" name="ref_target" value="{{ settings.ref_target }}" class="w-full bg-slate-900 border border-slate-700 p-3 rounded-lg text-white focus:border-sky-500 outline-none">
+                            </div>
+                            <div class="flex-1">
+                                <label class="block text-sm text-slate-400 mb-1">Milestone Bonus ($)</label>
+                                <input type="number" step="0.01" name="ref_bonus" value="{{ settings.ref_bonus }}" class="w-full bg-slate-900 border border-slate-700 p-3 rounded-lg text-white focus:border-sky-500 outline-none">
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-3 bg-red-500/10 p-4 rounded-lg border border-red-500/20 mt-2">
+                            <input type="checkbox" name="maintenance" id="maint" class="w-5 h-5 accent-red-500" {% if settings.maintenance %}checked{% endif %}>
+                            <label for="maint" class="text-red-400 font-bold cursor-pointer">Enable Maintenance Mode (Locks Bot)</label>
+                        </div>
+                        <button type="submit" class="w-full bg-sky-500 text-slate-900 font-bold p-3 rounded-lg hover:bg-sky-400 transition-all shadow-lg mt-2">Save Core Settings</button>
+                    </form>
+                </div>
+
+                <div class="glass-card p-6 rounded-2xl border border-emerald-500/20 shadow-lg">
+                    <h3 class="text-xl font-bold mb-4 text-emerald-400"><i class="fa-solid fa-wallet mr-2"></i> Payment Methods Manager</h3>
+                    <form action="/add_payment" method="POST" class="flex flex-col gap-3 mb-4">
+                        <div class="flex gap-2">
+                            <input type="text" name="name" placeholder="Name (e.g. bKash)" required class="w-1/3 bg-slate-900 border border-slate-700 p-3 rounded-lg text-sm text-white focus:border-emerald-500 outline-none">
+                            <input type="text" name="details" placeholder="Number/Details" required class="flex-1 bg-slate-900 border border-slate-700 p-3 rounded-lg text-sm text-white focus:border-emerald-500 outline-none">
+                            <input type="number" step="0.01" name="rate" placeholder="Rate" value="120" required class="w-1/4 bg-slate-900 border border-slate-700 p-3 rounded-lg text-sm text-white focus:border-emerald-500 outline-none">
+                        </div>
+                        <button type="submit" class="w-full bg-emerald-500 text-slate-900 font-bold p-3 rounded-lg hover:bg-emerald-400 transition-all shadow-lg">Add Payment Method</button>
+                    </form>
+                    <div class="space-y-2 mt-4 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
+                        {% for p in settings.payments %}
+                        <div class="bg-slate-800 p-3 rounded-lg flex justify-between items-center border border-slate-700 hover:border-emerald-500/50 transition-colors">
+                            <div><strong class="text-white">{{ p.name }}</strong> ({{ p.rate }} BDT/$)<br><span class="text-xs text-slate-400">{{ p.details }}</span></div>
+                            <a href="/del_payment/{{ p.name }}" class="bg-red-500/10 text-red-400 p-2 rounded hover:bg-red-500 hover:text-white transition-colors"><i class="fa-solid fa-trash"></i></a>
+                        </div>
+                        {% else %} 
+                        <p class="text-slate-500 text-sm text-center py-4 bg-slate-800/50 rounded-lg">No payment methods added yet.</p> 
+                        {% endfor %}
+                    </div>
+                </div>
+                
+                <div class="glass-card p-6 rounded-2xl border border-purple-500/20 md:col-span-2 shadow-lg">
+                    <h3 class="text-xl font-bold mb-4 text-purple-400"><i class="fa-solid fa-eye-slash mr-2"></i> Hide Bad / Slow Services</h3>
+                    <p class="text-sm text-slate-400 mb-4">If a service is dropping or slow, enter its ID here to instantly remove it from the bot menu.</p>
+                    <form action="/toggle_service" method="POST" class="flex gap-4">
+                        <input type="hidden" name="action" value="hide">
+                        <input type="text" name="sid" placeholder="Enter Service ID to Hide (e.g. 1045)" required class="flex-1 bg-slate-900 border border-slate-700 p-3 rounded-lg text-white focus:border-purple-500 outline-none">
+                        <button type="submit" class="bg-purple-500 hover:bg-purple-400 text-white px-8 py-3 rounded-lg font-bold transition-all shadow-lg">Hide Service</button>
+                    </form>
+                    <div class="flex flex-wrap gap-2 mt-4 bg-slate-900/50 p-4 rounded-xl min-h-[60px]">
+                        {% for sid in settings.hidden_services %}
+                        <form action="/toggle_service" method="POST" class="inline">
+                            <input type="hidden" name="action" value="unhide"><input type="hidden" name="sid" value="{{ sid }}">
+                            <button type="submit" class="bg-red-500/20 text-red-400 border border-red-500/30 px-3 py-1.5 rounded-lg text-sm hover:bg-red-500 hover:text-white transition-colors flex items-center gap-2">
+                                ID: {{ sid }} <i class="fa-solid fa-times"></i>
+                            </button>
+                        </form>
+                        {% else %}
+                        <p class="text-slate-500 text-sm w-full text-center">No hidden services.</p>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="content-tickets" class="tab-content">
+            <div class="glass-card rounded-2xl p-6 border border-amber-500/20 shadow-lg">
+                <h3 class="text-xl font-bold mb-6 text-amber-400"><i class="fa-solid fa-envelope mr-2"></i> Pending Support Tickets</h3>
+                <div class="space-y-4">
+                    {% for t in tickets %}
+                    <div class="bg-slate-900 p-5 rounded-xl border border-slate-700 hover:border-amber-500/30 transition-colors">
+                        <div class="flex justify-between items-center text-sm text-slate-400 mb-3 border-b border-slate-800 pb-2">
+                            <span class="font-bold text-sky-400"><i class="fa-solid fa-user mr-1"></i> User ID: {{ t.uid }}</span>
+                            <span><i class="fa-solid fa-clock mr-1"></i> {{ t.date.strftime('%Y-%m-%d %H:%M') if t.date else 'Unknown' }}</span>
+                        </div>
+                        <p class="text-white mb-4 text-lg border-l-4 border-amber-500 pl-4 py-1">"{{ t.msg }}"</p>
+                        <form action="/reply_ticket/{{ t._id }}" method="POST" class="flex gap-2">
+                            <input type="text" name="reply" placeholder="Type your reply here..." required class="flex-1 bg-slate-950 border border-slate-700 p-3 rounded-lg text-white focus:border-amber-500 outline-none">
+                            <button type="submit" class="bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold px-6 py-3 rounded-lg transition-all shadow-lg flex items-center gap-2">
+                                <i class="fa-solid fa-paper-plane"></i> Reply & Close
+                            </button>
+                        </form>
+                    </div>
+                    {% else %} 
+                    <div class="text-center py-12 bg-slate-900/50 rounded-xl border border-slate-800">
+                        <i class="fa-solid fa-check-circle text-4xl text-emerald-500 mb-3"></i>
+                        <p class="text-slate-400 text-lg">No open tickets. You are all caught up!</p> 
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
         <div id="content-users" class="tab-content">
-            <div class="glass-card rounded-2xl overflow-hidden border border-slate-800">
-                <div class="p-4 bg-slate-900/50 flex flex-col md:flex-row justify-between items-center gap-4 border-b border-slate-800">
-                    <h3 class="text-xl font-bold text-white">All Users Database</h3>
+            <div class="glass-card rounded-2xl overflow-hidden border border-slate-800 shadow-lg">
+                <div class="p-4 bg-slate-900/80 flex flex-col md:flex-row justify-between items-center gap-4 border-b border-slate-800">
+                    <h3 class="text-xl font-bold text-white"><i class="fa-solid fa-users mr-2 text-sky-400"></i> All Users Database</h3>
                     <input type="text" id="searchUser" onkeyup="searchTable('searchUser', 'userTable')" placeholder="Search ID/Name..." class="bg-slate-950 border border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-sky-500 w-full md:w-64">
                 </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse" id="userTable">
                         <thead>
-                            <tr class="bg-slate-950/50 text-slate-400 text-xs uppercase">
+                            <tr class="bg-slate-950 text-slate-400 text-xs uppercase tracking-wider">
                                 <th class="p-4 whitespace-nowrap">User Details</th>
                                 <th class="p-4">Balance</th>
                                 <th class="p-4">Spent</th>
@@ -118,7 +194,7 @@
                         </thead>
                         <tbody class="divide-y divide-slate-800/50">
                             {% for user in users %}
-                            <tr class="hover:bg-slate-800/30">
+                            <tr class="hover:bg-slate-800/50 transition-colors">
                                 <td class="p-4">
                                     <div class="font-bold text-white searchable">{{ user.name }}</div>
                                     <div class="text-xs text-slate-500 searchable">ID: {{ user._id }}</div>
@@ -128,12 +204,12 @@
                                 <td class="p-4 text-xs text-slate-500">{{ user.joined.strftime('%Y-%m-%d') if user.joined else 'N/A' }}</td>
                                 <td class="p-4 text-center">
                                     <form action="/add_balance/{{ user._id }}" method="POST" class="flex items-center justify-center gap-2">
-                                        <input type="number" step="0.01" name="amount" placeholder="+/- Amt" required class="w-20 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-white text-center">
-                                        <button type="submit" class="bg-sky-500/20 text-sky-400 hover:bg-sky-500 hover:text-white px-3 py-1 rounded transition-colors border border-sky-500/30">Apply</button>
+                                        <input type="number" step="0.01" name="amount" placeholder="+/- Amt" required class="w-24 bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-sm text-white text-center focus:border-sky-500 outline-none">
+                                        <button type="submit" class="bg-sky-500/20 text-sky-400 hover:bg-sky-500 hover:text-white px-3 py-1.5 rounded transition-colors border border-sky-500/30">Apply</button>
                                     </form>
                                 </td>
                                 <td class="p-4 text-center">
-                                    <a href="/ban_user/{{ user._id }}" onclick="return confirm('Ban this user?');" class="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white px-3 py-1 rounded border border-red-500/30 transition-colors">Ban</a>
+                                    <a href="/ban_user/{{ user._id }}" onclick="return confirm('Are you sure you want to ban this user?');" class="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white px-4 py-1.5 rounded border border-red-500/30 transition-colors inline-block"><i class="fa-solid fa-ban"></i></a>
                                 </td>
                             </tr>
                             {% endfor %}
@@ -144,44 +220,44 @@
         </div>
 
         <div id="content-orders" class="tab-content">
-            <div class="glass-card rounded-2xl overflow-hidden border border-slate-800">
-                <div class="p-4 bg-slate-900/50 flex flex-col md:flex-row justify-between items-center gap-4 border-b border-slate-800">
-                    <h3 class="text-xl font-bold text-white">Latest Orders</h3>
-                    <input type="text" id="searchOrder" onkeyup="searchTable('searchOrder', 'orderTable')" placeholder="Search Link/OID..." class="bg-slate-950 border border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-sky-500 w-full md:w-64">
+            <div class="glass-card rounded-2xl overflow-hidden border border-slate-800 shadow-lg">
+                <div class="p-4 bg-slate-900/80 flex flex-col md:flex-row justify-between items-center gap-4 border-b border-slate-800">
+                    <h3 class="text-xl font-bold text-white"><i class="fa-solid fa-list-check mr-2 text-emerald-400"></i> Latest Orders History</h3>
+                    <input type="text" id="searchOrder" onkeyup="searchTable('searchOrder', 'orderTable')" placeholder="Search Link/OID..." class="bg-slate-950 border border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-emerald-500 w-full md:w-64">
                 </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse" id="orderTable">
                         <thead>
-                            <tr class="bg-slate-950/50 text-slate-400 text-xs uppercase">
+                            <tr class="bg-slate-950 text-slate-400 text-xs uppercase tracking-wider">
                                 <th class="p-4">OID</th>
                                 <th class="p-4">User ID</th>
-                                <th class="p-4 min-w-[150px]">Link</th>
+                                <th class="p-4 min-w-[200px]">Link / Target</th>
                                 <th class="p-4">Cost</th>
-                                <th class="p-4">Status</th>
+                                <th class="p-4 text-center">Status</th>
                                 <th class="p-4 text-center">Action</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-800/50 text-sm">
                             {% for order in orders %}
-                            <tr class="hover:bg-slate-800/30">
+                            <tr class="hover:bg-slate-800/50 transition-colors">
                                 <td class="p-4 font-bold text-white searchable">#{{ order.oid }}</td>
                                 <td class="p-4 text-sky-400 searchable">{{ order.uid }}</td>
-                                <td class="p-4 text-slate-400 truncate max-w-[200px] searchable" title="{{ order.link }}">{{ order.link }}</td>
+                                <td class="p-4 text-slate-400 truncate max-w-[250px] searchable" title="{{ order.link }}">{{ order.link }}</td>
                                 <td class="p-4 text-emerald-400 font-bold">${{ "%.3f"|format(order.cost) }}</td>
-                                <td class="p-4">
+                                <td class="p-4 text-center">
                                     {% if order.status|lower == 'refunded' %}
-                                        <span class="bg-red-500/20 text-red-400 px-2 py-1 rounded text-xs font-bold border border-red-500/30">REFUNDED</span>
+                                        <span class="bg-red-500/10 text-red-400 px-3 py-1 rounded-full text-xs font-bold border border-red-500/20"><i class="fa-solid fa-rotate-left mr-1"></i> REFUNDED</span>
                                     {% else %}
-                                        <span class="bg-amber-500/20 text-amber-400 px-2 py-1 rounded text-xs font-bold border border-amber-500/30">{{ order.status|upper }}</span>
+                                        <span class="bg-amber-500/10 text-amber-400 px-3 py-1 rounded-full text-xs font-bold border border-amber-500/20">{{ order.status|upper }}</span>
                                     {% endif %}
                                 </td>
                                 <td class="p-4 text-center">
                                     {% if order.status|lower != 'refunded' %}
-                                    <a href="/refund_order/{{ order.oid }}" onclick="return confirm('Refund ${{ order.cost }} to User?');" class="bg-amber-500 hover:bg-amber-400 text-slate-900 px-3 py-1 rounded font-bold transition-colors shadow-lg whitespace-nowrap">
+                                    <a href="/refund_order/{{ order.oid }}" onclick="return confirm('Refund ${{ order.cost }} to User?');" class="bg-amber-500/10 hover:bg-amber-500 text-amber-500 hover:text-slate-900 border border-amber-500/30 px-4 py-1.5 rounded-lg font-bold transition-all whitespace-nowrap inline-block">
                                         Refund
                                     </a>
                                     {% else %}
-                                    <span class="text-slate-600 font-bold">Done</span>
+                                    <span class="text-slate-600 font-bold"><i class="fa-solid fa-check"></i> Done</span>
                                     {% endif %}
                                 </td>
                             </tr>
@@ -215,6 +291,48 @@
                 row.style.display = found ? '' : 'none';
             });
         }
+
+        // Initialize Sales Graph
+        document.addEventListener("DOMContentLoaded", function() {
+            const ctx = document.getElementById('salesChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: {{ dates | tojson | safe }},
+                    datasets: [{
+                        label: 'Sales Revenue ($)',
+                        data: {{ sales | tojson | safe }},
+                        borderColor: '#38bdf8',
+                        backgroundColor: 'rgba(56, 189, 248, 0.15)',
+                        borderWidth: 3, 
+                        fill: true, 
+                        tension: 0.4,
+                        pointBackgroundColor: '#020617',
+                        pointBorderColor: '#38bdf8',
+                        pointBorderWidth: 2,
+                        pointRadius: 4
+                    }]
+                },
+                options: { 
+                    responsive: true,
+                    scales: { 
+                        y: { 
+                            beginAtZero: true, 
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            ticks: { color: '#94a3b8' }
+                        }, 
+                        x: { 
+                            grid: { display: false },
+                            ticks: { color: '#94a3b8' }
+                        } 
+                    }, 
+                    plugins: { 
+                        legend: { display: false },
+                        tooltip: { backgroundColor: '#0f172a', titleColor: '#38bdf8', bodyColor: '#fff', borderColor: '#1e293b', borderWidth: 1 }
+                    } 
+                }
+            });
+        });
     </script>
 </body>
 </html>
