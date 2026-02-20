@@ -6,14 +6,14 @@ import math
 import time
 import os
 from datetime import datetime
-import google.generativeai as genai
+from google import genai
 
 # ==========================================
 # ১. CORE SETTINGS, AI & CURRENCY ENGINE 💱
 # ==========================================
 GEMINI_API_KEY = "AIzaSyBPqzynaZaa9UQmPm9EvhdrI6TcM-5FqcQ"
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-2.0-flash')
+client = genai.Client(api_key=GEMINI_API_KEY)
+
 
 API_CACHE = {'data': [], 'last_fetch': 0}
 CACHE_TTL = 300 
