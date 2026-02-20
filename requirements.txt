@@ -1,5 +1,7 @@
-flask
 pyTelegramBotAPI
+Flask
 pymongo
+dnspython
 requests
+google-generativeai
 gunicorn
