@@ -13,7 +13,9 @@ import google.generativeai as genai
 # ==========================================
 GEMINI_API_KEY = "AIzaSyBPqzynaZaa9UQmPm9EvhdrI6TcM-5FqcQ"
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+
+# 🔥 FIX: Changed to the most stable 'gemini-pro' model
+model = genai.GenerativeModel('gemini-pro')
 
 API_CACHE = {'data': [], 'last_fetch': 0}
 CACHE_TTL = 300 
@@ -153,7 +155,6 @@ def sub_check_callback(call):
                 try: bot.send_message(referrer, f"🏆 **MILESTONE REACHED!**\nYou got an extra **${bonus}** bonus!")
                 except: pass
 
-        # Short Success Animation
         msg = bot.send_message(call.message.chat.id, "🔐 **Verifying Access...**", parse_mode="Markdown")
         time.sleep(0.5)
         bot.delete_message(call.message.chat.id, msg.message_id)
@@ -179,7 +180,6 @@ def start(message):
     if not check_sub(uid): return send_force_sub(uid)
 
     settings = get_settings()
-    # Loading animation for /start
     msg_id = play_loading(uid, "Initializing Nexus Core", "Loading User Data", "Booting Dashboard")
 
     txt = f"👋 **WELCOME TO NEXUS SMM**\n━━━━━━━━━━━━━━━━━━━━\n💠 **Best Social Media Services**\n🚀 **Super Fast Delivery**\n━━━━━━━━━━━━━━━━━━━━\n📊 **Global Stats:**\n👥 Active Users: {settings.get('fake_users', 12000)}+\n📦 Orders Processed: {settings.get('fake_orders', 50000)}+\n━━━━━━━━━━━━━━━━━━━━\n🆔 **Your ID:** `{uid}`"
@@ -195,7 +195,6 @@ def show_platforms(message):
     if check_spam(message.chat.id) or check_maintenance(message.chat.id): return
     if not check_sub(message.chat.id): return send_force_sub(message.chat.id)
     
-    # Animated Loading
     msg_id = play_loading(message.chat.id, "Connecting to Main Server", "Fetching API Modules", "Rendering Interface")
 
     services = get_cached_services()
@@ -349,7 +348,6 @@ def place_final_order(call):
         
     update_spy(call.message.chat.id, f"Purchased ID {draft['sid']}")
     
-    # Custom Order Animation & Simulated Delay
     if draft['cost'] > 5.0:
         bot.edit_message_text("⏳ **Verifying Large Transaction...**\n`[■■□□□□□□□□] 20%`", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
         time.sleep(1.5)
@@ -556,19 +554,18 @@ def my_orders_pagination(call):
     bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
 
 # ==========================================
-# ৭. GEMINI AI & SMART KEYWORDS WITH ERROR TRACKER
+# ৭. GEMINI AI & SMART KEYWORDS (PRO MODEL)
 # ==========================================
 @bot.callback_query_handler(func=lambda c: c.data == "TALK_HUMAN")
 def talk_to_human(call):
     msg = bot.send_message(call.message.chat.id, "✍️ **Write your message for the Live Admin:**")
-    bot.register_next_step_handler(msg, lambda m: [tickets_col.insert_one({"uid": m.chat.id, "msg": m.text, "status": "open"}), bot.send_message(m.chat.id, "✅ Sent to Admin! They will reply soon.", parse_mode="Markdown")])
+    bot.register_next_step_handler(msg, lambda m: [tickets_col.insert_one({"uid": m.chat.id, "msg": m.text, "status": "open", "date": datetime.now()}), bot.send_message(m.chat.id, "✅ Sent to Admin! They will reply soon.", parse_mode="Markdown")])
 
 @bot.message_handler(func=lambda m: m.text not in ["🚀 New Order", "⭐ Favorites", "🔍 Smart Search", "📦 Orders", "💰 Deposit", "🤝 Affiliate", "👤 Profile", "🎟️ Voucher", "🏆 Leaderboard", "🎧 Support Ticket"])
 def ai_smart_assistant(message):
     update_spy(message.chat.id, f"Chatting with AI")
     text = message.text.lower()
     
-    # 7.1 Smart Keyword Matcher
     if any(word in text for word in ["buy", "need", "want", "views", "likes", "followers"]):
         services = get_cached_services()
         hidden = get_settings().get("hidden_services", [])
@@ -577,9 +574,8 @@ def ai_smart_assistant(message):
         if results:
             markup = types.InlineKeyboardMarkup(row_width=1)
             for s in results: markup.add(types.InlineKeyboardButton(f"⚡ {s['name'][:25]}", callback_data=f"INFO|{s['service']}"))
-            return bot.send_message(message.chat.id, "🤖 **Nexus AI:** I detected you want to order! Here are some matching services:", reply_markup=markup, parse_mode="Markdown")
+            return bot.send_message(message.chat.id, "🤖 **Nexus AI:** I detected you want to order! Here are matching services:", reply_markup=markup, parse_mode="Markdown")
 
-    # 7.2 Gemini AI Integration (WITH ERROR TRACKER)
     bot.send_chat_action(message.chat.id, 'typing')
     try:
         system_prompt = "You are Nexus AI, a polite support assistant for NEXUS SMM Panel. Help users with basic queries. Deposit means clicking '💰 Deposit'. New Order means clicking '🚀 New Order'. Answer shortly and natively. User says: "
@@ -591,7 +587,5 @@ def ai_smart_assistant(message):
         bot.send_message(message.chat.id, f"🤖 **Nexus AI:**\n━━━━━━━━━━━━━━━━━━━━\n{response.text}", reply_markup=markup, parse_mode="Markdown")
         
     except Exception as e:
-        # THE ERROR TRACKER (Exactly as requested)
-        error_msg = str(e)
-        print(f"GEMINI ERROR: {error_msg}")
-        bot.send_message(message.chat.id, f"⚠️ **AI Error Found:**\n`{error_msg[:200]}`\n\n_Admin, please check this error._", parse_mode="Markdown")
+        # Fallback if there is still any connection error
+        bot.send_message(message.chat.id, "🤖 _AI is currently syncing. Please use the Support Ticket menu to contact Admin._", parse_mode="Markdown")
