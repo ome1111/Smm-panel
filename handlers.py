@@ -664,6 +664,8 @@ def ai_smart_assistant(message):
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("🗣 Transfer to Live Admin", callback_data="TALK_HUMAN"))
         bot.send_message(message.chat.id, f"🤖 **Nexus AI:**\n━━━━━━━━━━━━━━━━━━━━\n{response.text}", reply_markup=markup, parse_mode="Markdown")
-    except Exception as e:
-        # Fallback if AI fails or rate limited
-        bot.send_message(message.chat.id, "🤖 _AI is currently syncing. Please use the Support Ticket menu to contact Admin._", parse_mode="Markdown")
+        except Exception as e:
+        # Error Tracker
+        error_msg = str(e)
+        print(f"GEMINI ERROR: {error_msg}")
+        bot.send_message(message.chat.id, f"⚠️ **AI Error Found:**\n`{error_msg[:200]}`\n\n_Admin, please check this error._", parse_mode="Markdown")
