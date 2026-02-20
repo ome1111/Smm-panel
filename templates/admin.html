@@ -28,8 +28,6 @@
         .menu-btn:hover:not(.active) { background: rgba(255, 255, 255, 0.05); }
 
         input, textarea, select { font-family: 'JetBrains Mono', monospace; }
-        
-        /* Sidebar transition */
         #sidebar { transition: transform 0.3s ease-in-out; }
     </style>
 </head>
@@ -69,7 +67,7 @@
                 <span class="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full">{{ tickets|length }}</span>
             </button>
             <button onclick="switchTab('users')" id="menu-users" class="menu-btn w-full flex items-center px-4 py-3 rounded-xl font-bold text-slate-300">
-                <i class="fa-solid fa-users w-6"></i> User Database
+                <i class="fa-solid fa-eye w-6"></i> Spy & Users
             </button>
             <button onclick="switchTab('orders')" id="menu-orders" class="menu-btn w-full flex items-center px-4 py-3 rounded-xl font-bold text-slate-300">
                 <i class="fa-solid fa-box-open w-6"></i> Orders Logs
@@ -229,23 +227,17 @@
             </div>
 
             <div id="content-fake_tool" class="tab-content max-w-4xl mx-auto">
-                <div class="glass-card p-8 border-t-4 border-emerald-500 shadow-xl text-center md:text-left">
-                    <div class="md:flex items-center justify-between mb-8">
-                        <div>
-                            <h3 class="text-2xl font-black text-white uppercase"><i class="fa-solid fa-bullhorn text-emerald-400 mr-2"></i> Auto Post Channel</h3>
-                            <p class="text-sm text-slate-500 mt-2">Bot will automatically post Fake Deposits and Fake Orders to your channel to build massive trust.</p>
-                        </div>
-                    </div>
+                <div class="glass-card p-8 border-t-4 border-emerald-500 shadow-xl">
+                    <h3 class="text-2xl font-black text-white uppercase mb-2"><i class="fa-solid fa-bullhorn text-emerald-400 mr-2"></i> Auto Post Channel</h3>
+                    <p class="text-sm text-slate-500 mb-6">Bot will automatically post Real & Fake Orders/Deposits to your channel to build massive trust.</p>
                     <form action="/update_fake_tool" method="POST" class="space-y-6">
                         <div class="space-y-2">
                             <label class="text-xs font-bold text-slate-500 uppercase">Telegram Channel ID / Username</label>
-                            <input type="text" name="channel" value="{{ settings.fake_post_channel }}" placeholder="e.g. -100123456789 or @MyChannel" class="w-full bg-slate-900 border border-slate-800 p-4 rounded-xl text-white font-mono focus:border-emerald-500 outline-none">
-                            <p class="text-[10px] text-amber-500">⚠️ Bot must be an admin in this channel to send messages.</p>
+                            <input type="text" name="channel" value="{{ settings.fake_post_channel }}" placeholder="-100123456789 or @MyChannel" class="w-full bg-slate-900 border border-slate-800 p-4 rounded-xl text-white focus:border-emerald-500 outline-none">
                         </div>
                         <div class="space-y-2">
-                            <label class="text-xs font-bold text-slate-500 uppercase">Post Frequency (Posts Per Hour)</label>
-                            <input type="number" name="freq" value="{{ settings.fake_post_freq }}" placeholder="e.g. 5" max="60" class="w-full bg-slate-900 border border-slate-800 p-4 rounded-xl text-white font-mono focus:border-emerald-500 outline-none">
-                            <p class="text-[10px] text-slate-500">If set to 5, bot will post approximately every 12 minutes.</p>
+                            <label class="text-xs font-bold text-slate-500 uppercase">Fake Post Frequency (Per Hour)</label>
+                            <input type="number" name="freq" value="{{ settings.fake_post_freq }}" placeholder="5" class="w-full bg-slate-900 border border-slate-800 p-4 rounded-xl text-white focus:border-emerald-500 outline-none">
                         </div>
                         <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-4 rounded-xl uppercase transition-all shadow-lg shadow-emerald-500/20">Save & Start Auto-Posting</button>
                     </form>
@@ -278,27 +270,50 @@
             <div id="content-users" class="tab-content max-w-full">
                 <div class="glass-card overflow-hidden border border-slate-800 shadow-xl">
                     <div class="p-4 md:p-6 bg-slate-900/80 flex flex-col md:flex-row justify-between items-center gap-4 border-b border-slate-800">
-                        <h3 class="text-xl font-black text-white uppercase"><i class="fa-solid fa-users text-sky-400 mr-2"></i> Users Database</h3>
+                        <h3 class="text-xl font-black text-white uppercase"><i class="fa-solid fa-eye text-sky-400 mr-2"></i> Live Spy & Users</h3>
                         <input type="text" id="searchUser" onkeyup="searchTable('searchUser', 'userTable')" placeholder="Search Name/ID..." class="w-full md:w-64 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-sm text-white focus:border-sky-500 outline-none">
                     </div>
                     <div class="overflow-x-auto max-h-[600px] custom-scrollbar">
-                        <table class="w-full text-left" id="userTable">
+                        <table class="w-full text-left whitespace-nowrap" id="userTable">
                             <thead class="sticky top-0 bg-slate-950 z-10 text-slate-500 text-[10px] uppercase font-bold">
-                                <tr><th class="p-4">User</th><th class="p-4">Wallet</th><th class="p-4">Spent</th><th class="p-4 text-center">Modify Bal</th><th class="p-4 text-center">Ban</th></tr>
+                                <tr>
+                                    <th class="p-4">User</th>
+                                    <th class="p-4 text-amber-400"><i class="fa-solid fa-satellite-dish mr-1"></i> Live Spy Mode</th>
+                                    <th class="p-4">Direct Message</th>
+                                    <th class="p-4">Finance</th>
+                                    <th class="p-4 text-center">Ban</th>
+                                </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-800/50 text-sm">
                                 {% for user in users %}
                                 <tr class="hover:bg-slate-800/30">
-                                    <td class="p-4"><div class="font-bold text-white searchable">{{ user.name }}</div><div class="text-[10px] text-slate-500 font-mono searchable">{{ user._id }}</div></td>
-                                    <td class="p-4 text-emerald-400 font-bold">${{ "%.3f"|format(user.balance) }}</td>
-                                    <td class="p-4 text-slate-400">${{ "%.3f"|format(user.spent) }}</td>
                                     <td class="p-4">
-                                        <form action="/add_balance/{{ user._id }}" method="POST" class="flex justify-center gap-1">
-                                            <input type="number" step="0.01" name="amount" placeholder="0.00" required class="w-16 md:w-20 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white">
-                                            <button type="submit" class="bg-sky-500 text-slate-900 px-2 py-1 rounded-lg text-xs font-bold">GO</button>
+                                        <div class="font-bold text-white searchable">{{ user.name }}</div>
+                                        <div class="text-[10px] text-slate-500 font-mono searchable">{{ user._id }}</div>
+                                    </td>
+                                    <td class="p-4">
+                                        <div class="font-mono text-[10px] text-emerald-400 bg-emerald-500/10 rounded px-2 py-1 max-w-[150px] md:max-w-[200px] truncate" title="{{ user.last_action if user.last_action else 'Offline' }}">
+                                            > {{ user.last_action if user.last_action else "Offline" }}
+                                        </div>
+                                        <div class="text-[9px] text-slate-500 mt-1">{{ user.last_active.strftime('%d %b, %H:%M:%S') if user.last_active else 'Unknown' }}</div>
+                                    </td>
+                                    <td class="p-4">
+                                        <form action="/send_single_msg" method="POST" class="flex gap-1">
+                                            <input type="hidden" name="uid" value="{{ user._id }}">
+                                            <input type="text" name="msg" placeholder="DM User..." required class="w-24 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white">
+                                            <button type="submit" class="bg-sky-500 text-slate-900 px-2 py-1 rounded-lg text-xs font-bold hover:bg-sky-400"><i class="fa-solid fa-paper-plane"></i></button>
                                         </form>
                                     </td>
-                                    <td class="p-4 text-center"><a href="/ban_user/{{ user._id }}" onclick="return confirm('Ban user?');" class="text-red-500 hover:text-red-400 bg-red-500/10 px-3 py-1.5 rounded-lg"><i class="fa-solid fa-ban"></i></a></td>
+                                    <td class="p-4">
+                                        <div class="text-emerald-400 font-bold">${{ "%.3f"|format(user.balance) }}</div>
+                                        <form action="/add_balance/{{ user._id }}" method="POST" class="flex gap-1 mt-1">
+                                            <input type="number" step="0.01" name="amount" placeholder="±Amt" required class="w-16 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white">
+                                            <button type="submit" class="bg-amber-500 text-slate-900 px-2 py-1 rounded-lg text-xs font-bold hover:bg-amber-400">SET</button>
+                                        </form>
+                                    </td>
+                                    <td class="p-4 text-center">
+                                        <a href="/ban_user/{{ user._id }}" onclick="return confirm('Ban user?');" class="text-red-500 hover:text-red-400 bg-red-500/10 px-3 py-1.5 rounded-lg"><i class="fa-solid fa-ban"></i></a>
+                                    </td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -331,7 +346,7 @@
                                         {% else %}<span class="bg-amber-500/10 text-amber-400 px-2 py-1 rounded text-[10px] font-bold">{{ order.status|upper }}</span>{% endif %}
                                     </td>
                                     <td class="p-4 text-center flex justify-center gap-2">
-                                        {% if order.status|lower not in ['refunded', 'canceled'] %}
+                                        {% if order.status|lower not in ['refunded', 'canceled', 'error', 'fail'] %}
                                         <a href="/resend_order/{{ order.oid }}" onclick="return confirm('Resend API?');" class="bg-sky-500/10 text-sky-400 p-2 rounded-lg hover:bg-sky-500 hover:text-white" title="Resend"><i class="fa-solid fa-rotate-right"></i></a>
                                         <a href="/refund_order/{{ order.oid }}" onclick="return confirm('Refund Wallet?');" class="bg-red-500/10 text-red-400 p-2 rounded-lg hover:bg-red-500 hover:text-white" title="Refund"><i class="fa-solid fa-reply"></i></a>
                                         {% else %}<span class="text-slate-600 font-bold"><i class="fa-solid fa-check"></i></span>{% endif %}
@@ -348,7 +363,6 @@
     </main>
 
     <script>
-        // Hamburger Menu Logic
         const sidebar = document.getElementById('sidebar');
         const overlay = document.getElementById('mobile-overlay');
 
@@ -363,19 +377,15 @@
             }
         }
 
-        // Tab Switching Logic
         function switchTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.menu-btn').forEach(el => el.classList.remove('active'));
             document.getElementById('content-' + tabId).classList.add('active');
             document.getElementById('menu-' + tabId).classList.add('active');
             localStorage.setItem('activeGodTab', tabId);
-            
-            // Close mobile menu on tab click
             if (window.innerWidth < 1024) { toggleMenu(); }
         }
 
-        // Search Tables
         function searchTable(inputId, tableId) {
             let input = document.getElementById(inputId).value.toLowerCase();
             let rows = document.querySelectorAll('#' + tableId + ' tbody tr');
@@ -385,12 +395,10 @@
             });
         }
 
-        // Init on Load
         document.addEventListener("DOMContentLoaded", function() {
             const savedTab = localStorage.getItem('activeGodTab') || 'dashboard';
             switchTab(savedTab);
 
-            // Chart Init
             const ctx = document.getElementById('salesChart').getContext('2d');
             new Chart(ctx, {
                 type: 'line',
