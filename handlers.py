@@ -64,15 +64,11 @@ def get_cached_services():
     return API_CACHE['data']
 
 # ==========================================
-# ২. CYBERPUNK UI & CLEANER ENGINES
+# ২. UI ENGINE (CRASH-PROOF & FAST) ⚡
 # ==========================================
 def play_loading(chat_id, t1, t2, t3):
-    msg = bot.send_message(chat_id, f"📡 **{t1}**\n`[■□□□□□□□□□] 10%`", parse_mode="Markdown")
-    time.sleep(0.3)
-    bot.edit_message_text(f"🔐 **{t2}**\n`[■■■■■□□□□□] 50%`", chat_id, msg.message_id, parse_mode="Markdown")
-    time.sleep(0.3)
-    bot.edit_message_text(f"🚀 **{t3}**\n`[■■■■■■■■■□] 90%`", chat_id, msg.message_id, parse_mode="Markdown")
-    time.sleep(0.2)
+    # 🔥 FIX: Removed heavy time.sleep() loops to prevent Render OOM crash
+    msg = bot.send_message(chat_id, f"⚡ **{t3}...**", parse_mode="Markdown")
     return msg.message_id
 
 def identify_platform(cat_name):
@@ -320,10 +316,11 @@ def place_final_order(call):
     
     update_spy(call.message.chat.id, f"Processing ID {draft['sid']}")
     
-    bars = ["[▓▓░░░░░░░░] 20%", "[▓▓▓▓▓░░░░░] 50%", "[▓▓▓▓▓▓▓▓░░] 80%", "[▓▓▓▓▓▓▓▓▓▓] 100%"]
+    # 🔥 SAFE PAYMENT ANIMATION (Lightweight)
+    bars = ["[▓▓▓▓▓░░░░░] 50%", "[▓▓▓▓▓▓▓▓▓▓] 100%"]
     for b in bars:
         bot.edit_message_text(f"⏳ **Processing Secure Payment...**\n`{b}`", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
-        time.sleep(0.4)
+        time.sleep(0.2)
 
     res = api.place_order(draft['sid'], draft['link'], draft['qty'])
     
@@ -348,7 +345,7 @@ def cancel_order(call):
     bot.edit_message_text("🚫 **Order Cancelled by user.**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
 
 # ==========================================
-# ৫. UNIVERSAL BUTTONS (RESTORED 🔥)
+# ৫. UNIVERSAL BUTTONS (100% Complete)
 # ==========================================
 def fetch_orders_page(chat_id, page=0):
     all_orders = list(orders_col.find({"uid": chat_id}).sort("_id", -1))
@@ -378,7 +375,7 @@ def fetch_orders_page(chat_id, page=0):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("MYORD|"))
 def my_orders_pagination(call):
-    bot.answer_callback_query(call.id, "⏳ Syncing Live Status...")
+    bot.answer_callback_query(call.id, "⏳ Loading...")
     page = int(call.data.split("|")[1])
     txt, markup = fetch_orders_page(call.message.chat.id, page)
     bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
@@ -420,9 +417,7 @@ def universal_buttons(message):
         bot.send_message(message.chat.id, card, reply_markup=markup, parse_mode="Markdown")
         
     elif message.text == "📦 Orders":
-        msg_id = play_loading(message.chat.id, "Syncing Servers", "Retrieving History", "Parsing Data")
         txt, markup = fetch_orders_page(message.chat.id, 0)
-        bot.delete_message(message.chat.id, msg_id)
         bot.send_message(message.chat.id, txt, reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
         
     elif message.text == "💰 Deposit":
@@ -538,4 +533,4 @@ def ai_handler(message):
         markup = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("🗣 Contact Admin", callback_data="TALK_HUMAN"))
         bot.send_message(message.chat.id, f"🤖 **Nexus AI:**\n━━━━━━━━━━━━━━━━━━━━\n{response.text}", reply_markup=markup, parse_mode="Markdown")
     except Exception as e:
-        bot.send_message(message.chat.id, f"⚠️ **AI Error Found:** `{str(e)[:100]}`", parse_mode="Markdown")
+        bot.send_message(message.chat.id, f"⚠️ **AI Error:** `{str(e)[:100]}`", parse_mode="Markdown")
