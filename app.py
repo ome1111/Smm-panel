@@ -87,8 +87,12 @@ def auto_fake_proof_cron():
 
             # 🛒 FAKE ORDER GENERATOR
             if random.random() < (ord_freq / 60):
-                qty = random.randint(50, 5000) # Random qty jemon 150, 430, 2100 etc.
-                amt = round(random.uniform(0.1, 5.0), 2)
+                # 🔥 QTY FIX: ১০০, ১৫০, ২০০, ৫০০, ১২৫০ এরকম রাউন্ড ফিগার আসবে
+                qty = random.randrange(100, 5050, 50) 
+                
+                # কস্ট যেন রিয়েল লাগে তাই কোয়ান্টিটির সাথে সামঞ্জস্য রেখে ডলার হবে
+                amt = round((qty / 1000) * random.uniform(0.5, 2.5), 2)
+                if amt < 0.1: amt = 0.12 # মিনিমাম 0.12$
                 
                 # Fetching Real Services from 1xpanel RAM Cache
                 cached_services = handlers.get_cached_services()
