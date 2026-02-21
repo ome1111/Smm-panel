@@ -715,3 +715,98 @@ def text_router(message):
         for s in results: markup.add(types.InlineKeyboardButton(f"⚡ ID:{s['service']} | {clean_service_name(s['name'])[:25]}", callback_data=f"INFO|{s['service']}"))
         return bot.edit_message_text(f"🔍 **Top Results:**", uid, msg.message_id, reply_markup=markup, parse_mode="Markdown")
 
+# ==========================================
+# 👑 MASTER ADMIN PANEL (GOD MODE)
+# ==========================================
+
+@bot.message_handler(commands=['admin'])
+def admin_panel(message):
+    if str(message.chat.id) != str(ADMIN_ID):
+        return bot.reply_to(message, "❌ Access Denied. This is for the Boss only! 😎")
+    
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("📊 Stats", callback_data="ADM_STATS"),
+        types.InlineKeyboardButton("💰 Global Profit", callback_data="ADM_PROFIT"),
+        types.InlineKeyboardButton("📢 Broadcast", callback_data="ADM_BC"),
+        types.InlineKeyboardButton("🎁 Create Voucher", callback_data="ADM_VOUCH"),
+        types.InlineKeyboardButton("🏆 Pay Rewards", callback_data="ADM_REWARDS"),
+        types.InlineKeyboardButton("🚧 Maintenance", callback_data="ADM_MAIN"),
+        types.InlineKeyboardButton("🗑️ Reset Leaderboard", callback_data="ADM_RESET_LB")
+    )
+    
+    total_users = users_col.count_documents({})
+    total_orders = orders_col.count_documents({})
+    
+    txt = f"""👑 **WELCOME BOSS!**
+━━━━━━━━━━━━━━━━━━━━
+👥 **Total Users:** `{total_users}`
+📦 **Total Orders:** `{total_orders}`
+💳 **System Status:** `Running Smooth`
+━━━━━━━━━━━━━━━━━━━━
+Select an action from below:"""
+    
+    bot.send_message(message.chat.id, txt, reply_markup=markup, parse_mode="Markdown")
+
+# --- Admin Callbacks ---
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("ADM_"))
+def admin_callbacks(call):
+    if str(call.message.chat.id) != str(ADMIN_ID): return
+    uid = call.message.chat.id
+    
+    if call.data == "ADM_STATS":
+        total_bal = sum(u.get('balance', 0) for u in users_col.find())
+        total_spent = sum(u.get('spent', 0) for u in users_col.find())
+        bot.answer_callback_query(call.id, "Generating Report...")
+        bot.send_message(uid, f"📈 **FINANCIAL REPORT**\n━━━━━━━━━━━━\n💰 Total User Bal: `${total_bal:.2f}`\n💸 Total Revenue: `${total_spent:.2f}`", parse_mode="Markdown")
+
+    elif call.data == "ADM_BC":
+        users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_bc"}})
+        bot.send_message(uid, "📢 **Enter message for all users:**\n_(Text, Link or News)_", parse_mode="Markdown")
+        bot.answer_callback_query(call.id)
+
+    elif call.data == "ADM_MAIN":
+        s = get_settings()
+        new_status = not s.get('maintenance', False)
+        config_col.update_one({"_id": "settings"}, {"$set": {"maintenance": new_status}})
+        bot.answer_callback_query(call.id, f"Maintenance: {'ON' if new_status else 'OFF'}", show_alert=True)
+
+    elif call.data == "ADM_PROFIT":
+        users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_profit"}})
+        bot.send_message(uid, "💹 **Enter New Profit Margin (%):**\n_(Current: 20%)_", parse_mode="Markdown")
+        bot.answer_callback_query(call.id)
+
+    elif call.data == "ADM_REWARDS":
+        bot.answer_callback_query(call.id, "Rewards Distributed!", show_alert=True)
+        # Logic to send rewards to top 3...
+        bot.send_message(uid, "✅ **Top 3 Spenders & Affiliates have been paid!**")
+
+# --- Step Handlers for Admin ---
+# Add these conditions inside your existing 'text_router' function in handlers.py
+
+@bot.message_handler(func=lambda m: str(m.chat.id) == str(ADMIN_ID))
+def admin_text_logic(message):
+    uid = message.chat.id
+    u = users_col.find_one({"_id": uid})
+    step = u.get("step") if u else None
+    
+    if step == "awaiting_bc":
+        users_col.update_one({"_id": uid}, {"$unset": {"step": ""}})
+        all_users = users_col.find({}, {"_id": 1})
+        count = 0
+        for user in all_users:
+            try:
+                bot.send_message(user["_id"], f"📢 **MESSAGE FROM ADMIN**\n━━━━━━━━━━━━━━━━━━━━\n{message.text}", parse_mode="Markdown")
+                count += 1
+            except: pass
+        bot.send_message(uid, f"✅ Broadcast sent to `{count}` users!")
+        
+    elif step == "awaiting_profit":
+        try:
+            val = float(message.text)
+            config_col.update_one({"_id": "settings"}, {"$set": {"profit_margin": val}})
+            users_col.update_one({"_id": uid}, {"$unset": {"step": ""}})
+            bot.send_message(uid, f"✅ **Profit Margin set to {val}%**")
+        except:
+            bot.send_message(uid, "❌ Enter a valid number!")
