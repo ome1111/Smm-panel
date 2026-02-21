@@ -17,6 +17,8 @@ from telebot import types
 from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col
 from config import *
 import api
+def update_spy(uid, action_text):
+    pass
 
 # ==========================================
 # 1. CURRENCY ENGINE & FAST SETTINGS CACHE
@@ -58,9 +60,7 @@ def get_settings():
     SETTINGS_CACHE["time"] = time.time()
     return s
 
-# def update_spy(uid, action_text):
-    pass  # 🚀 লগস পুরোপুরি বন্ধ! এখন সার্ভার কোনো এক্সট্রা কাজ করবে না, শুধু ফোকাস করবে স্পিডে!
-
+# 
 def check_spam(uid):
     if str(uid) == str(ADMIN_ID): return False 
     current_time = time.time()
