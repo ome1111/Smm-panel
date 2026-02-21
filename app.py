@@ -366,5 +366,19 @@ def refund_order(oid):
         except: pass
     return redirect(url_for('index'))
 
+# ==========================================
+# 5. AUTO WEBHOOK CONNECTION & SERVER RUN
+# ==========================================
 if __name__ == '__main__':
+    # ⚡ ১. আগের জ্যাম ক্লিয়ার করা
+    bot.remove_webhook()
+    time.sleep(1)
+    
+    # ⚡ ২. অটোমেটিক Render এর সাথে টেলিগ্রামের লিংক করা
+    RENDER_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://smm-panel-g8ab.onrender.com')
+    bot.set_webhook(url=f"{RENDER_URL.rstrip('/')}/{BOT_TOKEN}")
+    
+    print("✅ Webhook Connected Successfully!")
+    
+    # ⚡ ৩. সার্ভার স্টার্ট
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
