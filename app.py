@@ -22,10 +22,21 @@ def webhook():
     if request.headers.get('content-type') == 'application/json':
         json_string = request.get_data().decode('utf-8')
         update = telebot.types.Update.de_json(json_string)
-        # 🔥 MAGIC FIX: Run bot in background thread for Instant Reply!
         threading.Thread(target=bot.process_new_updates, args=([update],)).start()
         return 'OK', 200
     return 'Forbidden', 403
+
+# 🔥 THE MAGIC LINK TO WAKE UP THE BOT
+@app.route('/set_webhook')
+def manual_set_webhook():
+    bot.remove_webhook()
+    time.sleep(1)
+    RENDER_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://smm-panel-g8ab.onrender.com')
+    success = bot.set_webhook(url=f"{RENDER_URL.rstrip('/')}/{BOT_TOKEN}")
+    if success:
+        return "<h1>✅ Webhook Connected Successfully!</h1><p>Your Bot is now LIVE and running fast!</p>"
+    else:
+        return "<h1>❌ Webhook Connection Failed!</h1><p>Check Render Logs.</p>"
 
 # ==========================================
 # 2. CYBER BOX AUTO ENGINE (Fake Proofs)
@@ -38,7 +49,6 @@ def auto_fake_proof_cron():
                 time.sleep(60)
                 continue
 
-            # Night Mode Logic (Sleep 2AM - 8AM)
             if s.get('night_mode', False):
                 hour = datetime.now().hour
                 if 2 <= hour <= 8:
@@ -50,12 +60,11 @@ def auto_fake_proof_cron():
                 time.sleep(60)
                 continue
 
-            dep_freq = s.get('fake_dep_freq', 2) # Per hour
-            ord_freq = s.get('fake_ord_freq', 3) # Per hour
+            dep_freq = s.get('fake_dep_freq', 2)
+            ord_freq = s.get('fake_ord_freq', 3)
 
-            # 💰 FAKE DEPOSIT GENERATOR
             if random.random() < (dep_freq / 60): 
-                gateways = ["bKash Auto", "Nagad Express", "Binance Pay", "USDT TRC20", "PerfectMoney", "Rocket", "Upay"]
+                gateways = ["bKash Auto", "Nagad Express", "Binance Pay", "USDT TRC20", "PerfectMoney"]
                 method = random.choice(gateways)
                 min_dep = s.get('fake_deposit_min', 1.0)
                 max_dep = s.get('fake_deposit_max', 20.0)
@@ -68,7 +77,6 @@ def auto_fake_proof_cron():
                 msg = f"🔔 **NEW DEPOSIT (AUTO)**\n👤 User: `{name}`\n🏦 Method: **{method}**\n💰 Amount: **{currency_sym}{amt}**\n✅ Status: `Approved`"
                 bot.send_message(proof_channel, msg, parse_mode="Markdown")
 
-            # 🛒 FAKE ORDER GENERATOR
             if random.random() < (ord_freq / 60):
                 min_ord = s.get('fake_order_min', 0.5)
                 max_ord = s.get('fake_order_max', 10.0)
@@ -81,10 +89,8 @@ def auto_fake_proof_cron():
 
         except Exception as e:
             pass
-        
-        time.sleep(60) # Check every 60 seconds silently
+        time.sleep(60)
 
-# 🔥 Start Background Thread for Auto Proofs
 threading.Thread(target=auto_fake_proof_cron, daemon=True).start()
 
 # ==========================================
@@ -155,7 +161,6 @@ def save_settings():
         "reward_top3": float(request.form.get('reward_top3', 2.0))
     }
     
-    # Process Payment Gateways
     payments = []
     pay_names = request.form.getlist('pay_name[]')
     pay_rates = request.form.getlist('pay_rate[]')
@@ -269,7 +274,6 @@ def reset_monthly():
 @app.route('/approve_dep/<int:uid>/<amt>/<tid>')
 def approve_dep(uid, amt, tid):
     users_col.update_one({"_id": uid}, {"$inc": {"balance": float(amt)}})
-    
     u = users_col.find_one({"_id": uid})
     if u and u.get("ref_by"):
         s = config_col.find_one({"_id": "settings"}) or {}
@@ -278,16 +282,13 @@ def approve_dep(uid, amt, tid):
             users_col.update_one({"_id": u["ref_by"]}, {"$inc": {"balance": comm, "ref_earnings": comm}})
             try: bot.send_message(u["ref_by"], f"💸 **COMMISSION EARNED!**\nYour referral made a deposit. You earned `${comm:.3f}`!", parse_mode="Markdown")
             except: pass
-
-    try:
-        bot.send_message(uid, f"✅ **DEPOSIT APPROVED!**\nAmount: `${float(amt):.2f}` added to your wallet.\nTrxID: `{tid}`", parse_mode="Markdown")
+    try: bot.send_message(uid, f"✅ **DEPOSIT APPROVED!**\nAmount: `${float(amt):.2f}` added to your wallet.\nTrxID: `{tid}`", parse_mode="Markdown")
     except: pass
     return "✅ Deposit Approved and user notified. You can close this window."
 
 @app.route('/reject_dep/<int:uid>/<tid>')
 def reject_dep(uid, tid):
-    try:
-        bot.send_message(uid, f"❌ **DEPOSIT REJECTED!**\nYour TrxID `{tid}` was invalid or not received. Contact Admin if this is a mistake.", parse_mode="Markdown")
+    try: bot.send_message(uid, f"❌ **DEPOSIT REJECTED!**\nYour TrxID `{tid}` was invalid. Contact Admin.", parse_mode="Markdown")
     except: pass
     return "❌ Deposit Rejected. User notified."
 
@@ -366,19 +367,5 @@ def refund_order(oid):
         except: pass
     return redirect(url_for('index'))
 
-# ==========================================
-# 5. AUTO WEBHOOK CONNECTION & SERVER RUN
-# ==========================================
 if __name__ == '__main__':
-    # ⚡ ১. আগের জ্যাম ক্লিয়ার করা
-    bot.remove_webhook()
-    time.sleep(1)
-    
-    # ⚡ ২. অটোমেটিক Render এর সাথে টেলিগ্রামের লিংক করা
-    RENDER_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://smm-panel-g8ab.onrender.com')
-    bot.set_webhook(url=f"{RENDER_URL.rstrip('/')}/{BOT_TOKEN}")
-    
-    print("✅ Webhook Connected Successfully!")
-    
-    # ⚡ ৩. সার্ভার স্টার্ট
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
