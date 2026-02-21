@@ -38,6 +38,7 @@ def get_settings():
             "channels": [], 
             "profit_margin": 20.0, 
             "maintenance": False, 
+            "maintenance_msg": "Bot is currently upgrading to serve you better.",
             "payments": [], 
             "log_channel": "", 
             "proof_channel": "",
@@ -47,7 +48,10 @@ def get_settings():
             "fake_order_min": 0.5, 
             "fake_order_max": 10.0, 
             "fake_frequency": 2, 
-            "night_mode": True
+            "night_mode": True,
+            "ref_bonus": 0.05,
+            "flash_sale_active": False,
+            "flash_sale_discount": 0.0
         }
         config_col.insert_one(settings)
     return settings
@@ -72,6 +76,10 @@ def auto_refund_cron():
             active_orders = orders_col.find({"status": {"$in": ["pending", "processing", "in progress"]}})
             
             for order in active_orders:
+                # Skip shadow banned orders (they are fake)
+                if order.get('is_shadow'):
+                    continue
+                    
                 res = api.get_order_status(order['oid'])
                 
                 if res and 'status' in res:
@@ -94,7 +102,7 @@ def auto_refund_cron():
                             try: 
                                 bot.send_message(
                                     order['uid'], 
-                                    f"⚠️ **ORDER REFUNDED**\nOrder `{order['oid']}` failed 3 times on the server. `{order['cost']}` USD has been returned to your wallet.", 
+                                    f"⚠️ **ORDER REFUNDED**\nOrder `{order['oid']}` failed on the server. `{order['cost']}` USD has been returned to your wallet.", 
                                     parse_mode="Markdown"
                                 )
                             except Exception: 
@@ -123,12 +131,12 @@ def auto_refund_cron():
         except Exception as e:
             pass
             
-        time.sleep(300) # Sleep for 5 minutes
+        time.sleep(300) # Check every 5 minutes
 
 threading.Thread(target=auto_refund_cron, daemon=True).start()
 
 # ==========================================
-# 4. 🔥 THE ULTIMATE FAKE PROOF ENGINE
+# 4. 🔥 THE CYBER BOX FAKE PROOF ENGINE
 # ==========================================
 def auto_fake_proof_cron():
     while True:
@@ -140,7 +148,7 @@ def auto_fake_proof_cron():
                 
                 # Night Mode Check (Sleeps from 2 AM to 7 AM)
                 if s.get('night_mode') and 2 <= hour < 8:
-                    time.sleep(3600) # Sleep for 1 hour
+                    time.sleep(3600)
                     continue
 
                 proof_ch = s.get('proof_channel')
@@ -178,12 +186,11 @@ def auto_fake_proof_cron():
                         max_ord = float(s.get('fake_order_max', 10.0))
                         cost = round(random.uniform(min_ord, max_ord), 2)
                         
-                        # Live Sync with Real Services for authentic names
                         services = handlers.get_cached_services()
                         if services:
                             srv = random.choice(services)
                             s_name = handlers.clean_service_name(srv['name'])[:18] + ".."
-                            qty = random.randint(1, 50) * 100 # Examples: 100, 1500, 2300
+                            qty = random.randint(1, 50) * 100 
                         else:
                             s_name = "Premium Service"
                             qty = random.randint(1000, 5000)
@@ -211,11 +218,10 @@ def auto_fake_proof_cron():
                 min_sleep = int(avg_sleep_mins * 0.5 * 60)
                 max_sleep = int(avg_sleep_mins * 1.5 * 60)
                 
-                # Sleep for a random time between min and max
                 time.sleep(random.randint(max(60, min_sleep), max(300, max_sleep)))
                 
             else:
-                time.sleep(300) # Check settings again in 5 mins if turned OFF
+                time.sleep(300) # Check again in 5 mins
                 
         except Exception as e:
             time.sleep(300)
@@ -268,7 +274,7 @@ def admin_dashboard():
     settings = get_settings()
     
     users = list(users_col.find().sort("joined", -1))
-    orders = list(orders_col.find().sort("date", -1).limit(150))
+    orders = list(orders_col.find().sort("date", -1).limit(200))
     tickets = list(tickets_col.find().sort("date", -1))
     vouchers = list(vouchers_col.find().sort("_id", -1))
     
@@ -303,8 +309,14 @@ def update_settings():
     
     profit_margin = float(request.form.get('profit_margin', 20))
     maintenance = request.form.get('maintenance') == 'on'
+    maintenance_msg = request.form.get('maintenance_msg', 'Bot is upgrading.')
     log_channel = request.form.get('log_channel', '').strip()
     proof_channel = request.form.get('proof_channel', '').strip()
+    
+    # God Mode: Flash Sale & Referral
+    flash_sale_active = request.form.get('flash_sale_active') == 'on'
+    flash_sale_discount = float(request.form.get('flash_sale_discount', 0.0))
+    ref_bonus = float(request.form.get('ref_bonus', 0.05))
     
     # Fake Proof Settings
     fake_proof_status = request.form.get('fake_proof_status') == 'on'
@@ -328,14 +340,17 @@ def update_settings():
         if n and r:
             payments.append({"name": n, "rate": float(r)})
     
-    # Update Database
     config_col.update_one(
         {"_id": "settings"}, 
         {"$set": {
             "profit_margin": profit_margin,
             "maintenance": maintenance,
+            "maintenance_msg": maintenance_msg,
             "log_channel": log_channel,
             "proof_channel": proof_channel,
+            "flash_sale_active": flash_sale_active,
+            "flash_sale_discount": flash_sale_discount,
+            "ref_bonus": ref_bonus,
             "fake_proof_status": fake_proof_status,
             "night_mode": night_mode,
             "fake_deposit_min": fake_deposit_min,
@@ -351,7 +366,68 @@ def update_settings():
     return redirect(url_for('admin_dashboard'))
 
 # ==========================================
-# 7. ALL OTHER ROUTES (100% SECURE & COMPLETE)
+# 7. 🔥 GOD MODE: USER & ORDER EDIT ROUTES 
+# ==========================================
+
+@app.route('/edit_user', methods=['POST'])
+def edit_user():
+    """এখান থেকে ইউজারের ব্যালেন্স, ডিসকাউন্ট ইত্যাদি কন্ট্রোল হবে"""
+    if not session.get('logged_in'): 
+        return redirect(url_for('login'))
+        
+    uid = int(request.form.get('user_id'))
+    new_bal = float(request.form.get('balance', 0))
+    new_spent = float(request.form.get('spent', 0))
+    custom_discount = float(request.form.get('custom_discount', 0))
+    tier_override = request.form.get('tier_override', '')
+    
+    if tier_override == "none":
+        tier_override = None
+        
+    users_col.update_one(
+        {"_id": uid}, 
+        {"$set": {
+            "balance": new_bal,
+            "spent": new_spent,
+            "custom_discount": custom_discount,
+            "tier_override": tier_override
+        }}
+    )
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/toggle_shadow_ban/<int:uid>')
+def toggle_shadow_ban(uid):
+    """ইউজারকে শ্যাডো ব্যান (অদৃশ্য ব্যান) করার রাউট"""
+    if not session.get('logged_in'): 
+        return redirect(url_for('login'))
+        
+    user = users_col.find_one({"_id": uid})
+    if user:
+        current_status = user.get('shadow_banned', False)
+        users_col.update_one({"_id": uid}, {"$set": {"shadow_banned": not current_status}})
+        
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/reset_refs/<int:uid>')
+def reset_refs(uid):
+    """ইউজারের রেফারেল ডাটা রিসেট করার রাউট"""
+    if not session.get('logged_in'): 
+        return redirect(url_for('login'))
+        
+    users_col.update_one({"_id": uid}, {"$set": {"ref_earnings": 0.0}})
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/override_order/<int:oid>/<status>')
+def override_order(oid, status):
+    """আটকে থাকা অর্ডার ম্যানুয়ালি কমপ্লিট বা ক্যানসেল করা"""
+    if not session.get('logged_in'): 
+        return redirect(url_for('login'))
+        
+    orders_col.update_one({"oid": oid}, {"$set": {"status": status}})
+    return redirect(url_for('admin_dashboard'))
+
+# ==========================================
+# 8. STANDARD ADMIN ROUTES (100% SECURE)
 # ==========================================
 @app.route('/export_csv')
 def export_csv_web():
@@ -443,7 +519,7 @@ def approve_dep(uid, amt, tid):
         )
         bot.send_message(ADMIN_ID, f"✅ Approved ${amount} for User ID: {uid}")
         
-        # Real Deposit -> Forwarding to Proof Channel (Cyber Box Style)
+        # Real Deposit -> Forwarding to Proof Channel
         s = get_settings()
         proof_ch = s.get('proof_channel')
         
@@ -623,7 +699,7 @@ def send_broadcast():
     return redirect(url_for('admin_dashboard'))
 
 # ==========================================
-# 8. START SERVER
+# 9. START SERVER
 # ==========================================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
