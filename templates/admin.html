@@ -3,418 +3,429 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NEXUS - Titan God Panel</title>
+    <title>NEXUS - Titan Admin Panel</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <style>
-        body { font-family: 'Rajdhani', sans-serif; background-color: #020617; color: #e2e8f0; }
-        .glass-card { background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(56, 189, 248, 0.1); border-radius: 1.25rem; }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; animation: fadeIn 0.4s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        
-        /* Custom Scrollbar */
-        .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: #0f172a; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #38bdf8; }
-
-        /* Sidebar Menu Active State */
-        .menu-btn { transition: all 0.3s ease; }
-        .menu-btn.active { background: rgba(56, 189, 248, 0.15); border-left: 4px solid #38bdf8; color: #38bdf8; }
-        .menu-btn:hover:not(.active) { background: rgba(255, 255, 255, 0.05); }
-
-        input, textarea, select { font-family: 'JetBrains Mono', monospace; }
-        #sidebar { transition: transform 0.3s ease-in-out; }
+        body { 
+            font-family: 'Rajdhani', sans-serif; 
+            background-color: #020617; 
+            color: #e2e8f0;
+        }
+        .glass-card { 
+            background: rgba(15, 23, 42, 0.7); 
+            backdrop-filter: blur(12px); 
+            border: 1px solid rgba(56, 189, 248, 0.1); 
+            border-radius: 1rem;
+        }
+        .tab-btn {
+            transition: all 0.3s ease;
+        }
+        .tab-btn.active {
+            background-color: rgba(56, 189, 248, 0.1);
+            color: #38bdf8;
+            border-left: 4px solid #38bdf8;
+        }
+        .table-row-hover:hover { background-color: rgba(255, 255, 255, 0.02); }
+        .data-font { font-family: 'JetBrains Mono', monospace; }
     </style>
 </head>
-<body class="antialiased flex h-screen overflow-hidden custom-scrollbar">
+<body class="flex h-screen overflow-hidden bg-[url('https://www.transparenttextures.com/patterns/stardust.png')]">
 
-    <div id="mobile-overlay" class="fixed inset-0 bg-black/60 z-40 hidden lg:hidden" onclick="toggleMenu()"></div>
-
-    <aside id="sidebar" class="w-64 bg-slate-900 border-r border-slate-800 flex flex-col fixed inset-y-0 left-0 z-50 transform -translate-x-full lg:translate-x-0 lg:relative h-full">
-        <div class="p-6 flex items-center justify-between border-b border-slate-800">
-            <div class="flex items-center space-x-3">
-                <div class="w-10 h-10 bg-sky-500 rounded-xl flex items-center justify-center shadow-lg shadow-sky-500/20">
-                    <i class="fa-solid fa-bolt text-slate-900 text-xl"></i>
-                </div>
-                <div>
-                    <h1 class="text-xl font-black text-white leading-none tracking-tighter">NEXUS<span class="text-sky-400">GOD</span></h1>
-                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Admin Control</p>
-                </div>
+    <aside class="w-64 glass-card m-4 flex flex-col justify-between hidden md:flex border-r border-slate-800 relative z-20">
+        <div>
+            <div class="p-6 text-center border-b border-slate-800/50">
+                <h2 class="text-3xl font-bold text-sky-400 tracking-wider">NEXUS SMM</h2>
+                <p class="text-xs text-slate-500 uppercase tracking-widest mt-1">Titan Control Panel</p>
             </div>
-            <button onclick="toggleMenu()" class="lg:hidden text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-2xl"></i></button>
+            <nav class="p-4 space-y-2">
+                <button onclick="switchTab('dashboard')" id="btn-dashboard" class="tab-btn active w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-slate-800/50 hover:text-white font-bold">
+                    <i class="fas fa-chart-pie w-5 text-center"></i> Dashboard
+                </button>
+                <button onclick="switchTab('users')" id="btn-users" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-slate-800/50 hover:text-white font-bold">
+                    <i class="fas fa-users w-5 text-center"></i> Manage Users
+                </button>
+                <button onclick="switchTab('orders')" id="btn-orders" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-slate-800/50 hover:text-white font-bold">
+                    <i class="fas fa-shopping-cart w-5 text-center"></i> All Orders
+                </button>
+                <button onclick="switchTab('tickets')" id="btn-tickets" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-slate-800/50 hover:text-white font-bold">
+                    <i class="fas fa-headset w-5 text-center"></i> Support Tickets
+                </button>
+                <button onclick="switchTab('vouchers')" id="btn-vouchers" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-slate-800/50 hover:text-white font-bold">
+                    <i class="fas fa-ticket-alt w-5 text-center"></i> Vouchers
+                </button>
+                <button onclick="switchTab('settings')" id="btn-settings" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-slate-800/50 hover:text-white font-bold">
+                    <i class="fas fa-cog w-5 text-center"></i> App Settings
+                </button>
+            </nav>
         </div>
-
-        <div class="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
-            <button onclick="switchTab('dashboard')" id="menu-dashboard" class="menu-btn active w-full flex items-center px-4 py-3 rounded-xl font-bold text-slate-300">
-                <i class="fa-solid fa-chart-pie w-6"></i> Analytics
-            </button>
-            <button onclick="switchTab('settings')" id="menu-settings" class="menu-btn w-full flex items-center px-4 py-3 rounded-xl font-bold text-slate-300">
-                <i class="fa-solid fa-sliders w-6"></i> Core Settings
-            </button>
-            <button onclick="switchTab('marketing')" id="menu-marketing" class="menu-btn w-full flex items-center px-4 py-3 rounded-xl font-bold text-slate-300">
-                <i class="fa-solid fa-bullseye w-6"></i> Marketing & Growth
-            </button>
-            <button onclick="switchTab('fake_tool')" id="menu-fake_tool" class="menu-btn w-full flex items-center px-4 py-3 rounded-xl font-bold text-slate-300">
-                <i class="fa-solid fa-bullhorn w-6"></i> Auto Post Channel
-            </button>
-            <button onclick="switchTab('tickets')" id="menu-tickets" class="menu-btn w-full flex items-center justify-between px-4 py-3 rounded-xl font-bold text-slate-300">
-                <div class="flex items-center"><i class="fa-solid fa-envelope w-6"></i> Inbox</div>
-                <span class="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full">{{ tickets|length }}</span>
-            </button>
-            <button onclick="switchTab('users')" id="menu-users" class="menu-btn w-full flex items-center px-4 py-3 rounded-xl font-bold text-slate-300">
-                <i class="fa-solid fa-eye w-6"></i> Spy & Users
-            </button>
-            <button onclick="switchTab('orders')" id="menu-orders" class="menu-btn w-full flex items-center px-4 py-3 rounded-xl font-bold text-slate-300">
-                <i class="fa-solid fa-box-open w-6"></i> Orders Logs
-            </button>
-        </div>
-
-        <div class="p-4 border-t border-slate-800">
-            <a href="/logout" class="flex items-center justify-center w-full px-4 py-3 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white rounded-xl font-bold transition-all border border-red-500/20">
-                <i class="fa-solid fa-right-from-bracket mr-2"></i> Logout System
+        <div class="p-4 border-t border-slate-800/50">
+            <a href="/logout" class="block w-full text-center bg-red-500/10 hover:bg-red-500/20 text-red-500 font-bold py-2 px-4 rounded-lg transition-colors border border-red-500/30">
+                <i class="fas fa-sign-out-alt mr-2"></i> Lock Panel
             </a>
         </div>
     </aside>
 
-    <main class="flex-1 flex flex-col h-screen overflow-hidden bg-[#020617]">
+    <main class="flex-1 p-4 md:p-8 overflow-y-auto relative z-10 h-full">
         
-        <header class="lg:hidden flex items-center justify-between p-4 bg-slate-900/80 backdrop-blur border-b border-slate-800 z-30">
-            <div class="flex items-center space-x-2">
-                <i class="fa-solid fa-bolt text-sky-500"></i>
-                <h1 class="text-lg font-black text-white">NEXUS<span class="text-sky-400">GOD</span></h1>
-            </div>
-            <button onclick="toggleMenu()" class="text-white p-2 bg-slate-800 rounded-lg hover:bg-slate-700 transition">
-                <i class="fa-solid fa-bars text-xl"></i>
-            </button>
-        </header>
-
-        <div class="flex-1 overflow-y-auto p-4 lg:p-8 custom-scrollbar">
-
-            <div id="content-dashboard" class="tab-content active max-w-6xl mx-auto">
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                    <div class="glass-card p-4 md:p-6 border-t-4 border-sky-500"><p class="text-slate-500 text-xs font-bold uppercase">Users</p><h3 class="text-2xl md:text-4xl font-black text-white mt-1">{{ stats.users }}</h3></div>
-                    <div class="glass-card p-4 md:p-6 border-t-4 border-emerald-500"><p class="text-slate-500 text-xs font-bold uppercase">Revenue</p><h3 class="text-2xl md:text-4xl font-black text-emerald-400 mt-1">${{ stats.revenue }}</h3></div>
-                    <div class="glass-card p-4 md:p-6 border-t-4 border-amber-500"><p class="text-slate-500 text-xs font-bold uppercase">API Wallet</p><h3 class="text-2xl md:text-3xl font-black text-amber-400 mt-1">{{ stats.api_status }}</h3></div>
-                    <div class="glass-card p-4 md:p-6 border-t-4 border-red-500"><p class="text-slate-500 text-xs font-bold uppercase">System</p><h3 class="text-xl md:text-2xl font-black mt-1 {{ 'text-red-500' if settings.maintenance else 'text-emerald-500' }}">{{ 'LOCKED' if settings.maintenance else 'ACTIVE' }}</h3></div>
+        <div id="tab-dashboard" class="tab-content block animate-[fadeIn_0.3s_ease-out]">
+            <h2 class="text-2xl font-bold mb-6 text-white border-b border-slate-700 pb-2"><i class="fas fa-satellite-dish text-sky-400 mr-2"></i> System Analytics</h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                <div class="glass-card p-6 border-l-4 border-emerald-500 relative overflow-hidden">
+                    <i class="fas fa-money-bill-wave absolute -right-4 -bottom-4 text-6xl text-emerald-500/10"></i>
+                    <h3 class="text-slate-400 text-sm font-bold uppercase tracking-wider mb-2">Net Profit (Live)</h3>
+                    <div class="text-4xl font-bold text-emerald-400 data-font">${{ profit }}</div>
+                    <p class="text-xs text-emerald-500/70 mt-2">Calculated from completed orders</p>
                 </div>
 
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-                    <div class="lg:col-span-2 glass-card p-6 shadow-xl border border-sky-500/10">
-                        <h3 class="text-lg font-black text-white uppercase mb-4">7 Days Sales Trend</h3>
-                        <canvas id="salesChart" height="200"></canvas>
-                    </div>
-                    <div class="glass-card p-6 shadow-xl border border-sky-500/10 flex flex-col justify-center">
-                        <h3 class="text-lg font-black text-white uppercase mb-4"><i class="fa-solid fa-bullhorn text-sky-400 mr-2"></i> Broadcast Message</h3>
-                        <form action="/send_broadcast" method="POST" class="space-y-3">
-                            <textarea name="msg" rows="4" required placeholder="Type global notice..." class="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-white text-sm focus:border-sky-500 outline-none"></textarea>
-                            <button type="submit" class="w-full bg-sky-500 hover:bg-sky-400 text-slate-900 font-black py-3 rounded-xl uppercase transition-all">Blast Now</button>
-                        </form>
+                <div class="glass-card p-6 border-l-4 border-sky-500 relative overflow-hidden">
+                    <i class="fas fa-shopping-bag absolute -right-4 -bottom-4 text-6xl text-sky-500/10"></i>
+                    <h3 class="text-slate-400 text-sm font-bold uppercase tracking-wider mb-2">Total Gross Sales</h3>
+                    <div class="text-4xl font-bold text-sky-400 data-font">${{ sales }}</div>
+                    <p class="text-xs text-sky-500/70 mt-2">Total volume processed</p>
+                </div>
+
+                <div class="glass-card p-6 border-l-4 border-purple-500 relative overflow-hidden">
+                    <i class="fas fa-server absolute -right-4 -bottom-4 text-6xl text-purple-500/10"></i>
+                    <h3 class="text-slate-400 text-sm font-bold uppercase tracking-wider mb-2">Main Panel API Balance</h3>
+                    <div class="text-4xl font-bold text-purple-400 data-font">{{ bal }}</div>
+                    <p class="text-xs text-purple-500/70 mt-2">Funds left in your provider account</p>
+                </div>
+
+                <div class="glass-card p-6 border-l-4 border-amber-500 relative overflow-hidden">
+                    <i class="fas fa-users absolute -right-4 -bottom-4 text-6xl text-amber-500/10"></i>
+                    <h3 class="text-slate-400 text-sm font-bold uppercase tracking-wider mb-2">Total Registered Users</h3>
+                    <div class="text-4xl font-bold text-amber-400 data-font">{{ u_count }}</div>
+                </div>
+
+                <div class="glass-card p-6 border-l-4 border-rose-500 relative overflow-hidden">
+                    <i class="fas fa-box-open absolute -right-4 -bottom-4 text-6xl text-rose-500/10"></i>
+                    <h3 class="text-slate-400 text-sm font-bold uppercase tracking-wider mb-2">Total Processed Orders</h3>
+                    <div class="text-4xl font-bold text-rose-400 data-font">{{ o_count }}</div>
+                </div>
+
+                <div class="glass-card p-6 border-l-4 border-indigo-500 relative overflow-hidden">
+                    <i class="fas fa-heartbeat absolute -right-4 -bottom-4 text-6xl text-indigo-500/10"></i>
+                    <h3 class="text-slate-400 text-sm font-bold uppercase tracking-wider mb-2">Bot Status</h3>
+                    <div class="text-3xl font-bold mt-1">
+                        {% if s.maintenance %}
+                            <span class="text-red-500"><i class="fas fa-tools animate-pulse"></i> Maintenance Mode</span>
+                        {% else %}
+                            <span class="text-green-500"><i class="fas fa-check-circle"></i> Fully Active</span>
+                        {% endif %}
                     </div>
                 </div>
             </div>
+            
+            <div class="glass-card p-6 border border-slate-700/50">
+                <h3 class="text-lg font-bold text-sky-400 mb-4"><i class="fas fa-bullhorn mr-2"></i> Quick Global Broadcast</h3>
+                <form action="/send_broadcast" method="POST" class="flex gap-4">
+                    <input type="text" name="msg" placeholder="Write a message to send to all real users..." class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-sky-500" required>
+                    <button type="submit" class="bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold px-6 py-2 rounded-lg transition-colors shadow-[0_0_10px_rgba(56,189,248,0.3)]">
+                        <i class="fas fa-paper-plane mr-2"></i> Send
+                    </button>
+                </form>
+            </div>
+        </div>
 
-            <div id="content-settings" class="tab-content max-w-6xl mx-auto">
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div class="glass-card p-6 shadow-xl border-t-4 border-sky-500">
-                        <h3 class="text-xl font-black text-white mb-6 uppercase"><i class="fa-solid fa-gears text-sky-400 mr-2"></i> Core Engine</h3>
-                        <form action="/update_core_settings" method="POST" class="space-y-4">
-                            <div class="grid grid-cols-2 gap-4">
-                                <div><label class="text-xs text-slate-500 font-bold uppercase">Profit Margin (%)</label><input type="number" step="0.1" name="profit" value="{{ settings.profit_margin }}" class="w-full bg-slate-900 border border-slate-800 p-3 rounded-xl text-white mt-1"></div>
-                                <div><label class="text-xs text-slate-500 font-bold uppercase">Deposit Comm. (%)</label><input type="number" step="0.1" name="dep_commission" value="{{ settings.dep_commission }}" class="w-full bg-slate-900 border border-slate-800 p-3 rounded-xl text-white mt-1"></div>
-                                <div><label class="text-xs text-slate-500 font-bold uppercase">Ref Target</label><input type="number" name="ref_target" value="{{ settings.ref_target }}" class="w-full bg-slate-900 border border-slate-800 p-3 rounded-xl text-white mt-1"></div>
-                                <div><label class="text-xs text-slate-500 font-bold uppercase">Milestone Bonus ($)</label><input type="number" step="0.01" name="ref_bonus" value="{{ settings.ref_bonus }}" class="w-full bg-slate-900 border border-slate-800 p-3 rounded-xl text-white mt-1"></div>
-                            </div>
-                            <div class="bg-red-500/10 p-4 rounded-xl border border-red-500/20 flex items-center justify-between">
-                                <span class="text-red-400 font-bold text-sm uppercase">Maintenance Mode (Lock Bot)</span>
-                                <input type="checkbox" name="maintenance" class="w-6 h-6 accent-red-500" {% if settings.maintenance %}checked{% endif %}>
-                            </div>
-                            <button type="submit" class="w-full bg-sky-500 text-slate-900 font-black py-3 rounded-xl uppercase">Update Configurations</button>
-                        </form>
-                    </div>
-
-                    <div class="glass-card p-6 shadow-xl border-t-4 border-emerald-500">
-                        <h3 class="text-xl font-black text-white mb-6 uppercase"><i class="fa-solid fa-money-bill-transfer text-emerald-400 mr-2"></i> Payment Gateways</h3>
-                        <form action="/add_payment" method="POST" class="flex flex-col gap-3 mb-6">
-                            <div class="flex gap-2">
-                                <input type="text" name="name" placeholder="Name (bKash)" required class="w-1/3 bg-slate-900 border border-slate-800 p-3 rounded-xl text-sm text-white">
-                                <input type="number" step="0.01" name="rate" placeholder="Rate" value="120" required class="w-1/4 bg-slate-900 border border-slate-800 p-3 rounded-xl text-sm text-white">
-                                <button type="submit" class="flex-1 bg-emerald-500 text-slate-900 font-black rounded-xl">Add</button>
-                            </div>
-                            <input type="text" name="details" placeholder="Account Details / Number" required class="w-full bg-slate-900 border border-slate-800 p-3 rounded-xl text-sm text-white">
-                        </form>
-                        <div class="space-y-2 max-h-[180px] overflow-y-auto custom-scrollbar pr-2">
-                            {% for p in settings.payments %}
-                            <div class="flex justify-between items-center p-3 bg-slate-900/50 rounded-xl border border-slate-800">
-                                <div><span class="text-emerald-400 font-bold text-sm">{{ p.name }}</span><p class="text-[10px] text-slate-500 font-mono">{{ p.details }} ({{ p.rate }} BDT/$)</p></div>
-                                <a href="/del_payment/{{ p.name }}" class="text-slate-500 hover:text-red-400"><i class="fa-solid fa-trash-can"></i></a>
-                            </div>
+        <div id="tab-users" class="tab-content hidden animate-[fadeIn_0.3s_ease-out]">
+            <div class="flex justify-between items-center mb-6 border-b border-slate-700 pb-2">
+                <h2 class="text-2xl font-bold text-white"><i class="fas fa-users text-sky-400 mr-2"></i> Manage Users</h2>
+                <form action="/add_fake_user" method="POST" class="flex gap-2">
+                    <input type="text" name="fake_name" placeholder="Fake Name" required class="bg-slate-900 border border-slate-700 rounded px-3 py-1 text-sm focus:border-sky-500 outline-none">
+                    <input type="number" step="0.01" name="fake_spent" placeholder="Spent Amt ($)" required class="bg-slate-900 border border-slate-700 rounded px-3 py-1 text-sm focus:border-sky-500 outline-none w-32">
+                    <button type="submit" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 text-sm font-bold px-4 py-1 rounded transition-colors"><i class="fas fa-plus"></i> Add Fake</button>
+                </form>
+            </div>
+            <div class="glass-card overflow-hidden">
+                <div class="overflow-x-auto max-h-[70vh]">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-800/80 text-sky-400 text-sm uppercase tracking-wider">
+                                <th class="p-4 border-b border-slate-700 font-semibold">User ID</th>
+                                <th class="p-4 border-b border-slate-700 font-semibold">Name</th>
+                                <th class="p-4 border-b border-slate-700 font-semibold">Bal (USD)</th>
+                                <th class="p-4 border-b border-slate-700 font-semibold">Spent (USD)</th>
+                                <th class="p-4 border-b border-slate-700 font-semibold">Type</th>
+                                <th class="p-4 border-b border-slate-700 font-semibold text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-sm divide-y divide-slate-800/50">
+                            {% for u in users %}
+                            <tr class="table-row-hover transition-colors">
+                                <td class="p-4 data-font text-slate-300">{{ u['_id'] }}</td>
+                                <td class="p-4 font-bold">{{ u.get('name', 'N/A') }}</td>
+                                <td class="p-4 text-green-400 data-font">${{ "%.3f"|format(u.get('balance', 0)) }}</td>
+                                <td class="p-4 text-sky-400 data-font">${{ "%.3f"|format(u.get('spent', 0)) }}</td>
+                                <td class="p-4">
+                                    {% if u.get('is_fake') %}
+                                        <span class="bg-purple-500/20 text-purple-400 px-2 py-1 rounded text-xs font-bold border border-purple-500/30">Bot / Fake</span>
+                                    {% else %}
+                                        <span class="bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded text-xs font-bold border border-emerald-500/30">Real User</span>
+                                    {% endif %}
+                                </td>
+                                <td class="p-4 text-right space-x-2">
+                                    {% if not u.get('is_fake') %}
+                                        {% if u.get('banned') %}
+                                            <a href="/unban_user/{{ u['_id'] }}" class="inline-block bg-emerald-500/10 text-emerald-500 border border-emerald-500/30 hover:bg-emerald-500 hover:text-white px-3 py-1 rounded transition-colors" title="Unban"><i class="fas fa-check"></i></a>
+                                        {% else %}
+                                            <a href="/ban_user/{{ u['_id'] }}" class="inline-block bg-red-500/10 text-red-500 border border-red-500/30 hover:bg-red-500 hover:text-white px-3 py-1 rounded transition-colors" title="Ban User"><i class="fas fa-ban"></i></a>
+                                        {% endif %}
+                                    {% endif %}
+                                </td>
+                            </tr>
                             {% endfor %}
-                        </div>
-                    </div>
+                        </tbody>
+                    </table>
                 </div>
             </div>
+        </div>
 
-            <div id="content-marketing" class="tab-content max-w-6xl mx-auto">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div class="glass-card p-6 border-t-4 border-fuchsia-500">
-                        <h3 class="text-lg font-black text-white mb-4 uppercase"><i class="fa-solid fa-robot text-fuchsia-400 mr-2"></i> Inject Fake Spenders</h3>
-                        <form action="/add_fake_spender" method="POST" class="space-y-3">
-                            <input type="text" name="name" placeholder="Fake Username" required class="w-full bg-slate-900 border border-slate-800 p-3 rounded-xl text-white">
-                            <input type="number" step="0.01" name="amount" placeholder="Spent Amount ($)" required class="w-full bg-slate-900 border border-slate-800 p-3 rounded-xl text-white">
-                            <button type="submit" class="w-full bg-fuchsia-600 text-white font-black py-3 rounded-xl">Add to Leaderboard</button>
-                        </form>
-                    </div>
-
-                    <div class="glass-card p-6 border-t-4 border-purple-500">
-                        <h3 class="text-lg font-black text-white mb-4 uppercase"><i class="fa-solid fa-chart-bar text-purple-400 mr-2"></i> Fake Global Stats</h3>
-                        <form action="/update_fake_stats" method="POST" class="space-y-3">
-                            <input type="number" name="fake_orders" value="{{ settings.fake_orders }}" placeholder="Total Orders Show" class="w-full bg-slate-900 border border-slate-800 p-3 rounded-xl text-white">
-                            <input type="number" name="fake_users" value="{{ settings.fake_users }}" placeholder="Total Users Show" class="w-full bg-slate-900 border border-slate-800 p-3 rounded-xl text-white">
-                            <button type="submit" class="w-full bg-purple-600 text-white font-black py-3 rounded-xl">Update Display Stats</button>
-                        </form>
-                    </div>
-
-                    <div class="glass-card p-6 border-t-4 border-amber-500 md:col-span-2 lg:col-span-1">
-                        <h3 class="text-lg font-black text-white mb-4 uppercase"><i class="fa-solid fa-ticket text-amber-400 mr-2"></i> Gift Vouchers</h3>
-                        <form action="/add_voucher" method="POST" class="flex gap-2 mb-4">
-                            <input type="text" name="code" placeholder="Code (MEGA50)" required class="flex-1 bg-slate-900 border border-slate-800 p-3 rounded-xl text-sm text-white">
-                            <input type="number" step="0.01" name="amount" placeholder="Amt ($)" required class="w-1/4 bg-slate-900 border border-slate-800 p-3 rounded-xl text-sm text-white">
-                            <input type="number" name="limit" placeholder="Limit" required class="w-1/4 bg-slate-900 border border-slate-800 p-3 rounded-xl text-sm text-white">
-                            <button type="submit" class="bg-amber-500 text-slate-900 font-black px-4 rounded-xl">Add</button>
-                        </form>
-                        <div class="space-y-2 max-h-[150px] overflow-y-auto custom-scrollbar">
-                            {% for v in vouchers %}
-                            <div class="flex justify-between items-center p-3 bg-slate-900/50 rounded-xl border border-slate-800">
-                                <div><span class="text-amber-400 font-bold">{{ v.code }}</span><p class="text-[10px] text-slate-500">Amount: ${{ v.amount }} | Used: {{ v.used_by|length }}/{{ v.limit }}</p></div>
-                                <a href="/del_voucher/{{ v.code }}" class="text-red-400 hover:text-red-300"><i class="fa-solid fa-trash"></i></a>
-                            </div>
+        <div id="tab-orders" class="tab-content hidden animate-[fadeIn_0.3s_ease-out]">
+            <h2 class="text-2xl font-bold mb-6 text-white border-b border-slate-700 pb-2"><i class="fas fa-shopping-cart text-sky-400 mr-2"></i> Recent Orders</h2>
+            <div class="glass-card overflow-hidden">
+                <div class="overflow-x-auto max-h-[75vh]">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-800/80 text-sky-400 text-sm uppercase tracking-wider">
+                                <th class="p-4 border-b border-slate-700 font-semibold">Order ID</th>
+                                <th class="p-4 border-b border-slate-700 font-semibold">User ID</th>
+                                <th class="p-4 border-b border-slate-700 font-semibold">Details</th>
+                                <th class="p-4 border-b border-slate-700 font-semibold">Cost</th>
+                                <th class="p-4 border-b border-slate-700 font-semibold">Status</th>
+                                <th class="p-4 border-b border-slate-700 font-semibold text-right">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-sm divide-y divide-slate-800/50">
+                            {% for o in orders %}
+                            <tr class="table-row-hover transition-colors">
+                                <td class="p-4 data-font text-slate-300 font-bold">#{{ o['oid'] }}</td>
+                                <td class="p-4 data-font text-slate-400">{{ o['uid'] }}</td>
+                                <td class="p-4">
+                                    <div class="text-xs text-sky-400 font-bold mb-1">SID: {{ o.get('sid', 'N/A') }} | QTY: {{ o.get('qty', 0) }}</div>
+                                    <div class="text-xs text-slate-500 truncate max-w-[200px]" title="{{ o.get('link', 'N/A') }}">{{ o.get('link', 'N/A') }}</div>
+                                </td>
+                                <td class="p-4 text-emerald-400 font-bold data-font">${{ "%.3f"|format(o.get('cost', 0)) }}</td>
+                                <td class="p-4">
+                                    {% set status = o.get('status', 'pending')|lower %}
+                                    {% if status == 'completed' %}
+                                        <span class="text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded font-bold text-xs uppercase"><i class="fas fa-check mr-1"></i> Completed</span>
+                                    {% elif status in ['canceled', 'refunded', 'fail'] %}
+                                        <span class="text-red-400 bg-red-400/10 px-2 py-1 rounded font-bold text-xs uppercase"><i class="fas fa-times mr-1"></i> {{ status }}</span>
+                                    {% else %}
+                                        <span class="text-amber-400 bg-amber-400/10 px-2 py-1 rounded font-bold text-xs uppercase"><i class="fas fa-spinner fa-spin mr-1"></i> {{ status }}</span>
+                                    {% endif %}
+                                </td>
+                                <td class="p-4 text-right space-x-2">
+                                    {% if status not in ['refunded', 'canceled'] %}
+                                        <a href="/refund_order/{{ o['oid'] }}" class="inline-block text-xs bg-amber-500/10 text-amber-500 border border-amber-500/30 hover:bg-amber-500 hover:text-slate-900 px-3 py-1 rounded font-bold transition-colors">Refund</a>
+                                    {% endif %}
+                                    <a href="/delete_order/{{ o['oid'] }}" class="inline-block text-xs bg-red-500/10 text-red-500 border border-red-500/30 hover:bg-red-500 hover:text-white px-3 py-1 rounded font-bold transition-colors"><i class="fas fa-trash"></i></a>
+                                </td>
+                            </tr>
                             {% endfor %}
-                        </div>
-                    </div>
-
-                    <div class="glass-card p-6 border-t-4 border-blue-500 md:col-span-2 lg:col-span-1 space-y-6">
-                        <div>
-                            <h3 class="text-sm font-bold text-white mb-2 uppercase">Force Sub Channels</h3>
-                            <form action="/add_channel" method="POST" class="flex gap-2 mb-3">
-                                <input type="text" name="channel" placeholder="@Channel" required class="flex-1 bg-slate-900 border border-slate-800 p-2 rounded-lg text-sm text-white">
-                                <button type="submit" class="bg-blue-600 text-white font-bold px-4 rounded-lg text-sm">Add</button>
-                            </form>
-                            <div class="flex flex-wrap gap-2">
-                                {% for ch in channels %}<span class="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-1 rounded text-xs">{{ ch }} <a href="/del_channel/{{ ch|replace('@', '') }}" class="ml-1 text-red-400">✖</a></span>{% endfor %}
-                            </div>
-                        </div>
-                        <hr class="border-slate-800">
-                        <div>
-                            <h3 class="text-sm font-bold text-white mb-2 uppercase">Hide Bad Services</h3>
-                            <form action="/toggle_service" method="POST" class="flex gap-2 mb-3">
-                                <input type="hidden" name="action" value="hide">
-                                <input type="text" name="sid" placeholder="Service ID" required class="flex-1 bg-slate-900 border border-slate-800 p-2 rounded-lg text-sm text-white">
-                                <button type="submit" class="bg-purple-600 text-white font-bold px-4 rounded-lg text-sm">Hide</button>
-                            </form>
-                            <div class="flex flex-wrap gap-2 max-h-[80px] overflow-y-auto custom-scrollbar">
-                                {% for sid in settings.hidden_services %}
-                                <form action="/toggle_service" method="POST" class="inline"><input type="hidden" name="action" value="unhide"><input type="hidden" name="sid" value="{{ sid }}"><button type="submit" class="bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-1 rounded text-xs">ID: {{ sid }} ✖</button></form>
-                                {% endfor %}
-                            </div>
-                        </div>
-                    </div>
+                        </tbody>
+                    </table>
                 </div>
             </div>
+        </div>
 
-            <div id="content-fake_tool" class="tab-content max-w-4xl mx-auto">
-                <div class="glass-card p-8 border-t-4 border-emerald-500 shadow-xl">
-                    <h3 class="text-2xl font-black text-white uppercase mb-2"><i class="fa-solid fa-bullhorn text-emerald-400 mr-2"></i> Auto Post Channel</h3>
-                    <p class="text-sm text-slate-500 mb-6">Bot will automatically post Real & Fake Orders/Deposits to your channel to build massive trust.</p>
-                    <form action="/update_fake_tool" method="POST" class="space-y-6">
-                        <div class="space-y-2">
-                            <label class="text-xs font-bold text-slate-500 uppercase">Telegram Channel ID / Username</label>
-                            <input type="text" name="channel" value="{{ settings.fake_post_channel }}" placeholder="-100123456789 or @MyChannel" class="w-full bg-slate-900 border border-slate-800 p-4 rounded-xl text-white focus:border-emerald-500 outline-none">
+        <div id="tab-tickets" class="tab-content hidden animate-[fadeIn_0.3s_ease-out]">
+            <h2 class="text-2xl font-bold mb-6 text-white border-b border-slate-700 pb-2"><i class="fas fa-headset text-sky-400 mr-2"></i> Support Tickets</h2>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {% for t in tickets %}
+                <div class="glass-card p-5 relative border-l-4 {% if t.status == 'open' %}border-amber-500{% else %}border-emerald-500{% endif %}">
+                    <div class="flex justify-between items-start mb-3">
+                        <div>
+                            <span class="text-xs text-slate-500 data-font">UID: {{ t.uid }}</span>
+                            <span class="ml-2 text-xs font-bold {% if t.status == 'open' %}text-amber-400 bg-amber-400/10{% else %}text-emerald-400 bg-emerald-400/10{% endif %} px-2 py-0.5 rounded uppercase">{{ t.status }}</span>
                         </div>
-                        <div class="space-y-2">
-                            <label class="text-xs font-bold text-slate-500 uppercase">Fake Post Frequency (Per Hour)</label>
-                            <input type="number" name="freq" value="{{ settings.fake_post_freq }}" placeholder="5" class="w-full bg-slate-900 border border-slate-800 p-4 rounded-xl text-white focus:border-emerald-500 outline-none">
+                        <a href="/delete_ticket/{{ t['_id'] }}" class="text-slate-500 hover:text-red-500 transition-colors"><i class="fas fa-trash"></i></a>
+                    </div>
+                    <div class="text-white mb-4 bg-slate-900/50 p-3 rounded border border-slate-700/50">
+                        <i class="fas fa-comment-dots text-sky-500/50 mr-2"></i> {{ t.msg }}
+                    </div>
+                    
+                    {% if t.status == 'open' %}
+                    <form action="/reply_ticket" method="POST" class="mt-4">
+                        <input type="hidden" name="ticket_id" value="{{ t['_id'] }}">
+                        <input type="hidden" name="uid" value="{{ t.uid }}">
+                        <div class="flex gap-2">
+                            <input type="text" name="reply_msg" placeholder="Write reply..." required class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:border-sky-500 outline-none">
+                            <button type="submit" class="bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold px-4 py-2 rounded text-sm transition-colors"><i class="fas fa-reply mr-1"></i> Reply</button>
                         </div>
-                        <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-4 rounded-xl uppercase transition-all shadow-lg shadow-emerald-500/20">Save & Start Auto-Posting</button>
+                    </form>
+                    {% else %}
+                    <div class="mt-4 bg-emerald-500/5 border border-emerald-500/20 p-3 rounded text-sm text-emerald-400">
+                        <i class="fas fa-reply mr-2"></i> <strong>Admin Replied:</strong> {{ t.get('reply', 'N/A') }}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+                {% if not tickets %}
+                <div class="col-span-full text-center text-slate-500 py-10">
+                    <i class="fas fa-inbox text-4xl mb-3 opacity-50"></i>
+                    <p>No support tickets available.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div id="tab-vouchers" class="tab-content hidden animate-[fadeIn_0.3s_ease-out]">
+            <h2 class="text-2xl font-bold mb-6 text-white border-b border-slate-700 pb-2"><i class="fas fa-ticket-alt text-sky-400 mr-2"></i> Promo Vouchers</h2>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="glass-card p-6 lg:col-span-1 border-t-4 border-sky-500">
+                    <h3 class="text-lg font-bold text-sky-400 mb-4"><i class="fas fa-plus-circle mr-2"></i> Create New Voucher</h3>
+                    <form action="/create_voucher" method="POST" class="space-y-4">
+                        <div>
+                            <label class="block text-xs text-slate-400 font-bold mb-1 uppercase tracking-wide">Voucher Code</label>
+                            <input type="text" name="code" placeholder="e.g. FREE50" required class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white focus:border-sky-500 outline-none uppercase font-bold tracking-widest">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-slate-400 font-bold mb-1 uppercase tracking-wide">Amount (USD)</label>
+                            <input type="number" step="0.01" name="amount" placeholder="0.50" required class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white focus:border-sky-500 outline-none data-font">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-slate-400 font-bold mb-1 uppercase tracking-wide">Usage Limit</label>
+                            <input type="number" name="limit" placeholder="10" required class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white focus:border-sky-500 outline-none data-font">
+                        </div>
+                        <button type="submit" class="w-full bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold py-2 rounded transition-colors shadow-[0_0_10px_rgba(56,189,248,0.3)]">Generate Voucher</button>
                     </form>
                 </div>
-            </div>
-
-            <div id="content-tickets" class="tab-content max-w-6xl mx-auto">
-                <div class="glass-card p-6 border-t-4 border-amber-500 shadow-xl">
-                    <h3 class="text-xl font-black text-white uppercase mb-6"><i class="fa-solid fa-headset text-amber-400 mr-2"></i> Support Inbox</h3>
-                    <div class="space-y-4 max-h-[600px] overflow-y-auto custom-scrollbar pr-2">
-                        {% for t in tickets %}
-                        <div class="bg-slate-900/50 p-5 rounded-2xl border border-slate-800">
-                            <div class="flex justify-between items-center mb-3">
-                                <span class="text-sm font-black text-sky-400">UID: {{ t.uid }}</span>
-                                <span class="text-[10px] font-bold text-slate-500">{{ t.date.strftime('%Y-%m-%d %H:%M') if t.date else 'NEW' }}</span>
-                            </div>
-                            <p class="text-white mb-4 border-l-2 border-amber-500 pl-3">"{{ t.msg }}"</p>
-                            <form action="/reply_ticket/{{ t._id }}" method="POST" class="flex gap-2">
-                                <input type="text" name="reply" placeholder="Type reply..." required class="flex-1 bg-slate-950 border border-slate-800 p-3 rounded-xl text-sm text-white">
-                                <button type="submit" class="bg-amber-500 text-slate-900 font-bold px-4 rounded-xl text-sm uppercase">Reply</button>
-                            </form>
+                
+                <div class="lg:col-span-2 space-y-4">
+                    {% for v in vouchers %}
+                    <div class="glass-card p-4 flex justify-between items-center border-l-4 {% if v.used_by|length >= v.limit %}border-red-500 opacity-50{% else %}border-emerald-500{% endif %}">
+                        <div>
+                            <div class="text-xl font-bold text-white tracking-widest">{{ v.code }}</div>
+                            <div class="text-sm text-slate-400 mt-1">Reward: <span class="text-emerald-400 font-bold">${{ v.amount }}</span></div>
                         </div>
-                        {% else %}
-                        <p class="text-center text-slate-500 py-10 font-bold uppercase">No pending tickets.</p>
+                        <div class="text-right">
+                            <div class="text-sm font-bold bg-slate-900 px-3 py-1 rounded border border-slate-700">
+                                <span class="{% if v.used_by|length >= v.limit %}text-red-400{% else %}text-sky-400{% endif %}">{{ v.used_by|length }}</span> / {{ v.limit }} Used
+                            </div>
+                            {% if v.used_by|length >= v.limit %}
+                                <div class="text-xs text-red-500 font-bold uppercase mt-2"><i class="fas fa-ban"></i> Exhausted</div>
+                            {% else %}
+                                <div class="text-xs text-emerald-500 font-bold uppercase mt-2"><i class="fas fa-check-circle"></i> Active</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                    {% if not vouchers %}
+                        <div class="text-center text-slate-500 py-10 glass-card">No vouchers generated yet.</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-settings" class="tab-content hidden animate-[fadeIn_0.3s_ease-out]">
+            <h2 class="text-2xl font-bold mb-6 text-white border-b border-slate-700 pb-2"><i class="fas fa-cogs text-sky-400 mr-2"></i> Application Settings</h2>
+            
+            <form action="/settings" method="POST" class="space-y-6 max-w-4xl">
+                <div class="glass-card p-6 border-t-4 border-indigo-500">
+                    <h3 class="text-lg font-bold text-white mb-4"><i class="fas fa-sliders-h mr-2 text-indigo-400"></i> Core Configurations</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-sm text-slate-400 font-bold mb-2 uppercase tracking-wide">Profit Margin (%)</label>
+                            <div class="flex items-center">
+                                <input type="number" step="0.1" name="profit_margin" value="{{ s.get('profit_margin', 20.0) }}" class="w-full bg-slate-900 border border-slate-700 rounded-l-lg px-4 py-3 text-white focus:border-indigo-500 outline-none data-font text-lg">
+                                <div class="bg-slate-800 border border-l-0 border-slate-700 px-4 py-3 rounded-r-lg text-slate-400 font-bold">%</div>
+                            </div>
+                            <p class="text-xs text-slate-500 mt-2">Added directly to API base prices.</p>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm text-slate-400 font-bold mb-2 uppercase tracking-wide">Force Sub Channels</label>
+                            <input type="text" name="channels" value="{{ s.get('channels', []) | join(', ') }}" placeholder="@Channel1, @Channel2" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white focus:border-indigo-500 outline-none data-font">
+                            <p class="text-xs text-slate-500 mt-2">Comma separated usernames (e.g. @NexusUpdates).</p>
+                        </div>
+                        
+                        <div class="col-span-full bg-slate-900/50 p-4 rounded border border-slate-700 flex items-center justify-between">
+                            <div>
+                                <label class="text-white font-bold text-lg cursor-pointer flex items-center gap-2">
+                                    <i class="fas fa-tools text-red-400"></i> Maintenance Mode
+                                </label>
+                                <p class="text-xs text-slate-500">Enable to lock out regular users during upgrades.</p>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" name="maintenance" class="sr-only peer" {% if s.get('maintenance') %}checked{% endif %}>
+                                <div class="w-14 h-7 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-red-500"></div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="glass-card p-6 border-t-4 border-emerald-500">
+                    <h3 class="text-lg font-bold text-white mb-4"><i class="fas fa-wallet mr-2 text-emerald-400"></i> Payment Gateways (Fiat & Crypto)</h3>
+                    <div id="payment-methods" class="space-y-3">
+                        {% for p in s.get('payments', []) %}
+                        <div class="flex gap-3 payment-row bg-slate-900/50 p-2 rounded border border-slate-700/50">
+                            <div class="flex-1">
+                                <label class="text-xs text-slate-500 font-bold uppercase ml-1">Method Name</label>
+                                <input type="text" name="pay_name[]" value="{{ p.name }}" placeholder="e.g. Bkash / Binance" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white focus:border-emerald-500 outline-none">
+                            </div>
+                            <div class="w-1/3">
+                                <label class="text-xs text-slate-500 font-bold uppercase ml-1">Rate (Per $1)</label>
+                                <input type="number" step="0.01" name="pay_rate[]" value="{{ p.rate }}" placeholder="e.g. 120 or 1" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white focus:border-emerald-500 outline-none data-font">
+                            </div>
+                            <div class="w-auto flex items-end pb-1">
+                                <button type="button" onclick="this.parentElement.parentElement.remove()" class="text-slate-500 hover:text-red-500 p-2 transition-colors"><i class="fas fa-times-circle text-xl"></i></button>
+                            </div>
+                        </div>
                         {% endfor %}
                     </div>
+                    
+                    <div class="mt-4 p-3 bg-sky-500/10 border border-sky-500/20 rounded text-xs text-sky-400">
+                        <i class="fas fa-info-circle mr-1"></i> <strong>Pro Tip for Crypto:</strong> Name it "Binance Pay" and set rate to "1" to collect exact USD amount. Set Bkash/Nagad rate to "120".
+                    </div>
+                    
+                    <button type="button" onclick="addPaymentRow()" class="mt-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-4 py-2 rounded text-sm transition-colors border border-slate-600"><i class="fas fa-plus mr-1"></i> Add Gateway</button>
                 </div>
-            </div>
 
-            <div id="content-users" class="tab-content max-w-full">
-                <div class="glass-card overflow-hidden border border-slate-800 shadow-xl">
-                    <div class="p-4 md:p-6 bg-slate-900/80 flex flex-col md:flex-row justify-between items-center gap-4 border-b border-slate-800">
-                        <h3 class="text-xl font-black text-white uppercase"><i class="fa-solid fa-eye text-sky-400 mr-2"></i> Live Spy & Users</h3>
-                        <input type="text" id="searchUser" onkeyup="searchTable('searchUser', 'userTable')" placeholder="Search Name/ID..." class="w-full md:w-64 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-sm text-white focus:border-sky-500 outline-none">
-                    </div>
-                    <div class="overflow-x-auto max-h-[600px] custom-scrollbar">
-                        <table class="w-full text-left whitespace-nowrap" id="userTable">
-                            <thead class="sticky top-0 bg-slate-950 z-10 text-slate-500 text-[10px] uppercase font-bold">
-                                <tr>
-                                    <th class="p-4">User</th>
-                                    <th class="p-4 text-amber-400"><i class="fa-solid fa-satellite-dish mr-1"></i> Live Spy Mode</th>
-                                    <th class="p-4">Direct Message</th>
-                                    <th class="p-4">Finance</th>
-                                    <th class="p-4 text-center">Ban</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-slate-800/50 text-sm">
-                                {% for user in users %}
-                                <tr class="hover:bg-slate-800/30">
-                                    <td class="p-4">
-                                        <div class="font-bold text-white searchable">{{ user.name }}</div>
-                                        <div class="text-[10px] text-slate-500 font-mono searchable">{{ user._id }}</div>
-                                    </td>
-                                    <td class="p-4">
-                                        <div class="font-mono text-[10px] text-emerald-400 bg-emerald-500/10 rounded px-2 py-1 max-w-[150px] md:max-w-[200px] truncate" title="{{ user.last_action if user.last_action else 'Offline' }}">
-                                            > {{ user.last_action if user.last_action else "Offline" }}
-                                        </div>
-                                        <div class="text-[9px] text-slate-500 mt-1">{{ user.last_active.strftime('%d %b, %H:%M:%S') if user.last_active else 'Unknown' }}</div>
-                                    </td>
-                                    <td class="p-4">
-                                        <form action="/send_single_msg" method="POST" class="flex gap-1">
-                                            <input type="hidden" name="uid" value="{{ user._id }}">
-                                            <input type="text" name="msg" placeholder="DM User..." required class="w-24 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white">
-                                            <button type="submit" class="bg-sky-500 text-slate-900 px-2 py-1 rounded-lg text-xs font-bold hover:bg-sky-400"><i class="fa-solid fa-paper-plane"></i></button>
-                                        </form>
-                                    </td>
-                                    <td class="p-4">
-                                        <div class="text-emerald-400 font-bold">${{ "%.3f"|format(user.balance) }}</div>
-                                        <form action="/add_balance/{{ user._id }}" method="POST" class="flex gap-1 mt-1">
-                                            <input type="number" step="0.01" name="amount" placeholder="±Amt" required class="w-16 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white">
-                                            <button type="submit" class="bg-amber-500 text-slate-900 px-2 py-1 rounded-lg text-xs font-bold hover:bg-amber-400">SET</button>
-                                        </form>
-                                    </td>
-                                    <td class="p-4 text-center">
-                                        <a href="/ban_user/{{ user._id }}" onclick="return confirm('Ban user?');" class="text-red-500 hover:text-red-400 bg-red-500/10 px-3 py-1.5 rounded-lg"><i class="fa-solid fa-ban"></i></a>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
+                <div class="flex justify-end pt-4">
+                    <button type="submit" class="bg-indigo-500 hover:bg-indigo-400 text-white font-bold px-8 py-3 rounded-lg transition-all shadow-[0_0_15px_rgba(99,102,241,0.4)] text-lg">
+                        <i class="fas fa-save mr-2"></i> Save All Changes
+                    </button>
                 </div>
-            </div>
-
-            <div id="content-orders" class="tab-content max-w-full">
-                <div class="glass-card overflow-hidden border border-slate-800 shadow-xl">
-                    <div class="p-4 md:p-6 bg-slate-900/80 flex flex-col md:flex-row justify-between items-center gap-4 border-b border-slate-800">
-                        <h3 class="text-xl font-black text-white uppercase"><i class="fa-solid fa-box text-emerald-400 mr-2"></i> Orders Logs</h3>
-                        <input type="text" id="searchOrder" onkeyup="searchTable('searchOrder', 'orderTable')" placeholder="Search OID/Link..." class="w-full md:w-64 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-sm text-white focus:border-emerald-500 outline-none">
-                    </div>
-                    <div class="overflow-x-auto max-h-[600px] custom-scrollbar">
-                        <table class="w-full text-left whitespace-nowrap" id="orderTable">
-                            <thead class="sticky top-0 bg-slate-950 z-10 text-slate-500 text-[10px] uppercase font-bold">
-                                <tr><th class="p-4">OID</th><th class="p-4">UID</th><th class="p-4">Link</th><th class="p-4">Cost</th><th class="p-4 text-center">Status</th><th class="p-4 text-center">Action</th></tr>
-                            </thead>
-                            <tbody class="divide-y divide-slate-800/50 text-xs">
-                                {% for order in orders %}
-                                <tr class="hover:bg-slate-800/30">
-                                    <td class="p-4 font-mono font-bold text-sky-400 searchable">#{{ order.oid }}</td>
-                                    <td class="p-4 text-slate-400 searchable">{{ order.uid }}</td>
-                                    <td class="p-4 max-w-[150px] truncate text-slate-500 searchable">{{ order.link }}</td>
-                                    <td class="p-4 text-emerald-400 font-bold">${{ "%.3f"|format(order.cost) }}</td>
-                                    <td class="p-4 text-center">
-                                        {% if order.status|lower == 'refunded' %}<span class="bg-red-500/10 text-red-500 px-2 py-1 rounded text-[10px] font-bold">REFUNDED</span>
-                                        {% elif order.status|lower == 'completed' %}<span class="bg-emerald-500/10 text-emerald-500 px-2 py-1 rounded text-[10px] font-bold">COMPLETED</span>
-                                        {% else %}<span class="bg-amber-500/10 text-amber-400 px-2 py-1 rounded text-[10px] font-bold">{{ order.status|upper }}</span>{% endif %}
-                                    </td>
-                                    <td class="p-4 text-center flex justify-center gap-2">
-                                        {% if order.status|lower not in ['refunded', 'canceled', 'error', 'fail'] %}
-                                        <a href="/resend_order/{{ order.oid }}" onclick="return confirm('Resend API?');" class="bg-sky-500/10 text-sky-400 p-2 rounded-lg hover:bg-sky-500 hover:text-white" title="Resend"><i class="fa-solid fa-rotate-right"></i></a>
-                                        <a href="/refund_order/{{ order.oid }}" onclick="return confirm('Refund Wallet?');" class="bg-red-500/10 text-red-400 p-2 rounded-lg hover:bg-red-500 hover:text-white" title="Refund"><i class="fa-solid fa-reply"></i></a>
-                                        {% else %}<span class="text-slate-600 font-bold"><i class="fa-solid fa-check"></i></span>{% endif %}
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
+            </form>
         </div>
+
     </main>
 
     <script>
-        const sidebar = document.getElementById('sidebar');
-        const overlay = document.getElementById('mobile-overlay');
-
-        function toggleMenu() {
-            const isClosed = sidebar.classList.contains('-translate-x-full');
-            if (isClosed) {
-                sidebar.classList.remove('-translate-x-full');
-                overlay.classList.remove('hidden');
-            } else {
-                sidebar.classList.add('-translate-x-full');
-                overlay.classList.add('hidden');
-            }
-        }
-
+        // Tab Switching Logic
         function switchTab(tabId) {
-            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-            document.querySelectorAll('.menu-btn').forEach(el => el.classList.remove('active'));
-            document.getElementById('content-' + tabId).classList.add('active');
-            document.getElementById('menu-' + tabId).classList.add('active');
-            localStorage.setItem('activeGodTab', tabId);
-            if (window.innerWidth < 1024) { toggleMenu(); }
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active', 'border-l-4'));
+            
+            document.getElementById('tab-' + tabId).classList.remove('hidden');
+            document.getElementById('btn-' + tabId).classList.add('active');
         }
 
-        function searchTable(inputId, tableId) {
-            let input = document.getElementById(inputId).value.toLowerCase();
-            let rows = document.querySelectorAll('#' + tableId + ' tbody tr');
-            rows.forEach(row => {
-                let text = Array.from(row.querySelectorAll('.searchable')).map(el => el.textContent.toLowerCase()).join(' ');
-                row.style.display = text.includes(input) ? '' : 'none';
-            });
+        // Dynamic Payment Method Rows
+        function addPaymentRow() {
+            const container = document.getElementById('payment-methods');
+            const row = document.createElement('div');
+            row.className = 'flex gap-3 payment-row bg-slate-900/50 p-2 rounded border border-slate-700/50 animate-[fadeIn_0.2s_ease-out]';
+            row.innerHTML = `
+                <div class="flex-1">
+                    <label class="text-xs text-slate-500 font-bold uppercase ml-1">Method Name</label>
+                    <input type="text" name="pay_name[]" placeholder="e.g. USDT TRC20" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white focus:border-emerald-500 outline-none" required>
+                </div>
+                <div class="w-1/3">
+                    <label class="text-xs text-slate-500 font-bold uppercase ml-1">Rate (Per $1)</label>
+                    <input type="number" step="0.01" name="pay_rate[]" placeholder="e.g. 1" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white focus:border-emerald-500 outline-none data-font" required>
+                </div>
+                <div class="w-auto flex items-end pb-1">
+                    <button type="button" onclick="this.parentElement.parentElement.remove()" class="text-slate-500 hover:text-red-500 p-2 transition-colors"><i class="fas fa-times-circle text-xl"></i></button>
+                </div>
+            `;
+            container.appendChild(row);
         }
-
-        document.addEventListener("DOMContentLoaded", function() {
-            const savedTab = localStorage.getItem('activeGodTab') || 'dashboard';
-            switchTab(savedTab);
-
-            const ctx = document.getElementById('salesChart').getContext('2d');
-            new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: {{ dates | tojson | safe }},
-                    datasets: [{
-                        label: 'Sales ($)',
-                        data: {{ sales | tojson | safe }},
-                        borderColor: '#38bdf8',
-                        backgroundColor: 'rgba(56, 189, 248, 0.1)',
-                        borderWidth: 3, fill: true, tension: 0.4, pointRadius: 4, pointBackgroundColor: '#0f172a'
-                    }]
-                },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: 'rgba(255,255,255,0.05)' } }, x: { grid: { display: false } } } }
-            });
-        });
     </script>
 </body>
 </html>
