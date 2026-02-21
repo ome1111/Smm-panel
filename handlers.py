@@ -205,8 +205,7 @@ def start(message):
 
     user = users_col.find_one({"_id": uid})
     if not user:
-        users_col.insert_one={"_id": uid, "name": message.from_user.first_name, "balance": 0.0, "spent": 0.0, "currency": "BDT", "ref_by": referrer, "ref_paid": False, "ref_earnings": 0.0, "joined": datetime.now(), "favorites": [], "custom_discount": 0.0, "shadow_banned": False, "tier_override": None, "welcome_paid": False}
-        users_col.insert_one(users_col.insert_one)
+        users_col.insert_one({"_id": uid, "name": message.from_user.first_name, "balance": 0.0, "spent": 0.0, "currency": "BDT", "ref_by": referrer, "ref_paid": False, "ref_earnings": 0.0, "joined": datetime.now(), "favorites": [], "custom_discount": 0.0, "shadow_banned": False, "tier_override": None, "welcome_paid": False})
         user = users_col.find_one({"_id": uid})
     
     if not check_sub(uid):
@@ -342,7 +341,7 @@ def start_ord(call):
     users_col.update_one({"_id": call.message.chat.id}, {"$set": {"step": "awaiting_link", "temp_sid": sid}})
     bot.send_message(call.message.chat.id, "🔗 **Paste the Target Link:**\n_(Reply with your link)_", parse_mode="Markdown")
 
-# 🔥 REAL ORDER BOX DESIGN LOGIC
+# 🔥 REAL ORDER CHANNEL POST LOGIC
 @bot.callback_query_handler(func=lambda c: c.data == "PLACE_ORD")
 def final_ord(call):
     bot.answer_callback_query(call.id)
@@ -360,7 +359,7 @@ def final_ord(call):
     srv = next((x for x in services if str(x['service']) == str(draft['sid'])), None)
     srv_name = clean_service_name(srv['name']) if srv else f"ID: {draft['sid']}"
     
-    # ASCII Box Design Formatting
+    # 🎨 আপনার স্পেশাল বক্স ডিজাইন (Real Orders)
     masked_id = f"***{str(uid)[-4:]}"
     short_srv = srv_name[:22] + ".." if len(srv_name) > 22 else srv_name
     qty_int = int(draft['qty'])
@@ -390,6 +389,7 @@ def final_ord(call):
         
         receipt = f"🧾 **OFFICIAL INVOICE**\n━━━━━━━━━━━━━━━━━━━━\n✅ **Status:** Order Placed Successfully\n🆔 **Order ID:** `{res['order']}`\n🔗 **Link:** {draft['link']}\n🔢 **Quantity:** {draft['qty']}\n💳 **Paid:** `{cost_str}`\n━━━━━━━━━━━━━━━━━━━━"
         bot.edit_message_text(receipt, uid, call.message.message_id, parse_mode="Markdown", disable_web_page_preview=True)
+        # 📢 Real Order Channel Post happens here!
         if proof_ch:
             try: bot.send_message(proof_ch, channel_post, parse_mode="Markdown")
             except: pass
