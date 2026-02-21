@@ -1,3 +1,11 @@
+import sys
+import io
+
+# 🔥 Render-এর ASCII Encoding Error ফিক্স (যাতে বাংলা সাপোর্ট করে)
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
 from telebot import types
 from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col
 from config import *
@@ -6,7 +14,7 @@ import math
 import time
 import os
 import threading
-import re  # 🔥 নতুন অ্যাড করা হয়েছে সার্ভিসের নাম ক্লিন করার জন্য
+import re
 from datetime import datetime
 from google import genai
 
@@ -46,7 +54,7 @@ def check_spam(uid):
     user_actions[uid] = [t for t in user_actions[uid] if current_time - t < 3]
     if len(user_actions[uid]) > 5:
         blocked_users[uid] = current_time + 300
-        try: bot.send_message(uid, "🛡 **ANTI-SPAM!** You are temporarily blocked for 5 minutes.", parse_mode="Markdown")
+        try: bot.send_message(uid, "🛡 **ANTI-SPAM!** You are temporarily blocked.", parse_mode="Markdown")
         except: pass
         return True
     return False
@@ -61,7 +69,7 @@ def get_settings():
 
 def check_maintenance(chat_id):
     if get_settings().get('maintenance', False) and str(chat_id) != str(ADMIN_ID):
-        bot.send_message(chat_id, "🛠 **SYSTEM UPDATE**\n━━━━━━━━━━━━━━━━━━━━\nThe bot is undergoing a massive upgrade. Please try again later.", parse_mode="Markdown")
+        bot.send_message(chat_id, "🛠 **SYSTEM UPDATE**\n━━━━━━━━━━━━━━━━━━━━\nBot is upgrading. Please try again later.", parse_mode="Markdown")
         return True
     return False
 
@@ -98,18 +106,23 @@ def identify_platform(cat_name):
     return "🌐 Other Services"
 
 def clean_service_name(raw_name):
-    n = raw_name
-    # 🔥 যে শব্দগুলো হাইড করতে চান তার লিস্ট
-    words_to_remove = ["Telegram", "TG", "Instagram", "IG", "Facebook", "FB", "YouTube", "YT", "TikTok", "Twitter", "X", "1xpanel", "1xPanel", "1XPANEL"]
-    
-    for word in words_to_remove:
-        n = re.sub(word, "", n, flags=re.IGNORECASE)
-    
-    n = n.strip(" -|:._/\\")
-    n = n.strip()
-    
-    badge = " 💎" if "non drop" in raw_name.lower() else " ⚡" if "fast" in raw_name.lower() or "instant" in raw_name.lower() else ""
-    return f"{n[:50]}{badge}"  # 🔥 ফুল সার্ভিস নেম শো করার জন্য 50 দেওয়া হয়েছে
+    try:
+        n = str(raw_name)
+        # 🔥 'X' বাদ দেওয়া হয়েছে যাতে Max/Extra ইত্যাদি শব্দ নষ্ট না হয়
+        words_to_remove = ["Telegram", "TG", "Instagram", "IG", "Facebook", "FB", "YouTube", "YT", "TikTok", "Twitter", "1xpanel", "1xPanel", "1XPANEL"]
+        
+        for word in words_to_remove:
+            n = re.compile(re.escape(word), re.IGNORECASE).sub("", n)
+        
+        n = n.strip(" -|:._/\\")
+        n = " ".join(n.split()) # Remove double spaces
+        
+        badge = " 💎" if "non drop" in str(raw_name).lower() else " ⚡" if "fast" in str(raw_name).lower() or "instant" in str(raw_name).lower() else ""
+        
+        if not n: n = "Premium Service"
+        return f"{n[:50]}{badge}" 
+    except:
+        return str(raw_name)[:50]
 
 def get_user_tier(spent):
     if spent >= 50: return "🥇 Gold VIP", 5 
@@ -167,23 +180,26 @@ def sub_callback(call):
     else: bot.send_message(call.message.chat.id, "❌ **Please join all channels first!**")
 
 # ==========================================
-# ৫. FAST ORDERING SYSTEM
+# ৫. FAST ORDERING SYSTEM (INSTANT ANIMATION)
 # ==========================================
 @bot.message_handler(func=lambda m: m.text == "🚀 New Order")
 def new_order_start(message):
     update_spy(message.chat.id, "Browsing Platforms")
     if check_spam(message.chat.id) or check_maintenance(message.chat.id) or not check_sub(message.chat.id): return
     
+    # 🌍 Instant Loading Message
+    msg = bot.send_message(message.chat.id, "🌍 **Connecting to API...**", parse_mode="Markdown")
+    
     services = get_cached_services()
     if not services: 
-        return bot.send_message(message.chat.id, "⏳ **API Syncing...** Server is fetching data. Please try again in 1 minute.", parse_mode="Markdown")
+        return bot.edit_message_text("⏳ **API Syncing...** Please try again in 1 minute.", message.chat.id, msg.message_id, parse_mode="Markdown")
 
     hidden = get_settings().get("hidden_services", [])
     platforms = sorted(list(set(identify_platform(s['category']) for s in services if str(s['service']) not in hidden)))
     markup = types.InlineKeyboardMarkup(row_width=2)
     for p in platforms: markup.add(types.InlineKeyboardButton(p, callback_data=f"PLAT|{p}|0"))
     
-    bot.send_message(message.chat.id, "🔥 **Trending Now:**\n👉 _Telegram Post Views_\n👉 _Instagram Premium Likes_\n━━━━━━━━━━━━━━━━━━━━\n📂 **Select a Platform:**", reply_markup=markup, parse_mode="Markdown")
+    bot.edit_message_text("🔥 **Trending Now:**\n👉 _Telegram Post Views_\n👉 _Instagram Premium Likes_\n━━━━━━━━━━━━━━━━━━━━\n📂 **Select a Platform:**", message.chat.id, msg.message_id, reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("PLAT|"))
 def show_cats(call):
@@ -245,7 +261,7 @@ def list_servs(call):
     if nav: markup.row(*nav)
     
     plat = identify_platform(cat_name)
-    markup.add(types.InlineKeyboardButton("🔙 Back to Categories", callback_data=f"PLAT|{plat}|0"))
+    markup.add(types.InlineKeyboardButton("🔙 Back", callback_data=f"PLAT|{plat}|0"))
     bot.edit_message_text(f"📍 **{plat}** ➔ **{cat_name[:20]}**\n━━━━━━━━━━━━━━━━━━━━\n📦 **Select Service:**", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("INFO|"))
@@ -269,7 +285,7 @@ def info_card(call):
     speed = "🚀 Speed: 10K - 50K / Day" if "fast" in s['name'].lower() or "instant" in s['name'].lower() else "🐢 Speed: 1K - 5K / Day"
     start_time = "⏱️ Start Time: 0-30 Minutes" if "instant" in s['name'].lower() else "⏱️ Start Time: 1-6 Hours"
 
-    txt = (f"ℹ️ **SERVICE DETAILS**\n━━━━━━━━━━━━━━━━━━━━\n🏷 **Name:** {clean_service_name(s['name'])}\n🆔 **ID:** `{sid}`\n💰 **Price:** `{rate_str}` per 1000\n📉 **Min:** {s['min']} | 📈 **Max:** {s['max']}\n\n{start_time}\n{speed}\n━━━━━━━━━━━━━━━━━━━━\n⚠️ *Make sure your account/post is public!*")
+    txt = (f"ℹ️ **SERVICE DETAILS**\n━━━━━━━━━━━━━━━━━━━━\n🏷 **Name:** {clean_service_name(s['name'])}\n🆔 **ID:** `{sid}`\n💰 **Price:** `{rate_str}` per 1000\n📉 **Min:** {s['min']} | 📈 **Max:** {s['max']}\n\n{start_time}\n{speed}\n━━━━━━━━━━━━━━━━━━━━\n⚠️ *Make sure your account is public!*")
     
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(types.InlineKeyboardButton("🛒 Order Now", callback_data=f"ORD|{sid}"), types.InlineKeyboardButton("⭐ Fav", callback_data=f"FAV_ADD|{sid}"))
@@ -334,7 +350,7 @@ def final_ord(call):
     if not draft or user['balance'] < draft['cost']: return bot.send_message(call.message.chat.id, "❌ Session expired or insufficient balance.")
     update_spy(call.message.chat.id, f"Processing ID {draft['sid']}")
     
-    bot.edit_message_text(f"⏳ **Processing Secure Payment...**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+    bot.edit_message_text("🛒📦 **Sending to API...**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
 
     res = api.place_order(draft['sid'], draft['link'], draft['qty'])
     if res and 'order' in res:
@@ -365,6 +381,9 @@ def cancel_ord(call):
 def profile(message):
     update_spy(message.chat.id, "Viewing Profile")
     if check_spam(message.chat.id) or check_maintenance(message.chat.id) or not check_sub(message.chat.id): return
+    
+    msg = bot.send_message(message.chat.id, "✨ **Loading Profile...**", parse_mode="Markdown")
+
     u = users_col.find_one({"_id": message.chat.id})
     curr = u.get("currency", "BDT")
     tier, _ = get_user_tier(u.get('spent', 0))
@@ -386,7 +405,7 @@ def profile(message):
             f"║  👑 Tier: {tier.ljust(19)}║\n"
             f"╚════════════════════════════════╝\n```\n"
             f"⚙️ **Click below to change your App Currency:**")
-    bot.send_message(message.chat.id, card, reply_markup=markup, parse_mode="Markdown")
+    bot.edit_message_text(card, message.chat.id, msg.message_id, reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("SET_CURR|"))
 def set_curr(call):
@@ -396,7 +415,7 @@ def set_curr(call):
     bot.edit_message_text(f"✅ **App Currency updated to {new_curr}!**\n\n_Check '🚀 New Order' or '👤 Profile' again to see updated prices._", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
 
 # ==========================================
-# ৭. UNIVERSAL FEATURES (ORDERS, SEARCH, DEPOSIT, AFFILIATE, TICKETS, FAV)
+# ৭. UNIVERSAL FEATURES
 # ==========================================
 def fetch_orders_page(chat_id, page=0):
     user = users_col.find_one({"_id": chat_id})
@@ -451,15 +470,23 @@ def process_voucher(message):
 
 def process_smart_search(message):
     query = message.text.strip().lower()
+    
+    msg = bot.send_message(message.chat.id, "📡 **Scanning Database...**", parse_mode="Markdown")
+
     services, hidden = get_cached_services(), get_settings().get("hidden_services", [])
     if query.isdigit():
         s = next((x for x in services if str(x['service']) == query and query not in hidden), None)
-        if s: return bot.send_message(message.chat.id, f"✅ **Found:** {s['name']}", reply_markup=types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("ℹ️ Order Now", callback_data=f"INFO|{query}")), parse_mode="Markdown")
+        if s: 
+            markup = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("ℹ️ Order Now", callback_data=f"INFO|{query}"))
+            return bot.edit_message_text(f"✅ **Found:** {clean_service_name(s['name'])}", message.chat.id, msg.message_id, reply_markup=markup, parse_mode="Markdown")
+            
     results = [s for s in services if str(s['service']) not in hidden and (query in s['name'].lower() or query in s['category'].lower())][:10]
-    if not results: return bot.send_message(message.chat.id, "❌ No related services found.")
+    if not results: 
+        return bot.edit_message_text("❌ No related services found.", message.chat.id, msg.message_id)
+        
     markup = types.InlineKeyboardMarkup(row_width=1)
     for s in results: markup.add(types.InlineKeyboardButton(f"⚡ ID:{s['service']} | {clean_service_name(s['name'])[:25]}", callback_data=f"INFO|{s['service']}"))
-    bot.send_message(message.chat.id, f"🔍 **Top Results:**", reply_markup=markup, parse_mode="Markdown")
+    bot.edit_message_text(f"🔍 **Top Results:**", message.chat.id, msg.message_id, reply_markup=markup, parse_mode="Markdown")
 
 def process_amt(message, curr_code):
     try:
@@ -483,7 +510,10 @@ def pay_details(call):
 
 def process_deposit_trx(message, amt, method_name):
     tid = message.text.strip()
-    bot.send_message(message.chat.id, "✅ **Request Submitted!**\nAdmin will verify your TrxID.", parse_mode="Markdown")
+    msg = bot.send_message(message.chat.id, "💳 **Securing TrxID...**", parse_mode="Markdown")
+    
+    bot.edit_message_text("✅ **Request Submitted!**\nAdmin will verify your TrxID.", message.chat.id, msg.message_id, parse_mode="Markdown")
+    
     admin_txt = f"🔔 **NEW DEPOSIT**\n👤 User: `{message.chat.id}`\n🏦 Method: **{method_name}**\n💰 Amt: **${round(float(amt), 2)}** (USD)\n🧾 TrxID: `{tid}`"
     markup = types.InlineKeyboardMarkup(row_width=2)
     app_url = BASE_URL.rstrip('/')
@@ -576,11 +606,13 @@ def ai_chat(message):
             return bot.send_message(message.chat.id, "🤖 **Nexus AI:** I found these premium services for you:", reply_markup=markup, parse_mode="Markdown")
 
     bot.send_chat_action(message.chat.id, 'typing')
+    msg = bot.send_message(message.chat.id, "🧠 **AI Thinking...**", parse_mode="Markdown")
+
     try:
         prompt = f"Role: Nexus SMM Support. User asks: {message.text}. Rule: Be short, friendly and native Bengali/English."
         response = client.models.generate_content(model='gemini-2.0-flash', contents=prompt)
         markup = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("🗣 Contact Admin", callback_data="TALK_HUMAN"))
-        bot.send_message(message.chat.id, f"🤖 **Nexus AI:**\n━━━━━━━━━━━━━━━━━━━━\n{response.text}", reply_markup=markup, parse_mode="Markdown")
+        bot.edit_message_text(f"🤖 **Nexus AI:**\n━━━━━━━━━━━━━━━━━━━━\n{response.text}", message.chat.id, msg.message_id, reply_markup=markup, parse_mode="Markdown")
     except Exception as e:
-        bot.send_message(message.chat.id, f"⚠️ **AI Error:** `{str(e)[:100]}`", parse_mode="Markdown")
+        bot.edit_message_text(f"⚠️ **AI is temporarily busy or resting.** Please try again later.", message.chat.id, msg.message_id, parse_mode="Markdown")
 
