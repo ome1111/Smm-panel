@@ -148,12 +148,15 @@
         </div>
 
         <div id="tab-users" class="tab-content hidden animate-[fadeIn_0.3s_ease-out]">
-            <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 border-b border-slate-700 pb-4 gap-4">
+            <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 border-b border-slate-700 pb-4 gap-4">
                 <h2 class="text-2xl font-bold text-white"><i class="fas fa-users-cog text-sky-400 mr-2"></i> Users Engine</h2>
                 
-                <div class="flex flex-wrap gap-2 w-full md:w-auto">
+                <div class="flex flex-wrap gap-2 w-full lg:w-auto">
+                    <a href="/distribute_rewards" class="flex-1 md:flex-none text-center bg-amber-500/10 border border-amber-500/50 hover:bg-amber-500 hover:text-slate-900 text-amber-400 text-sm font-bold px-4 py-2 rounded transition-all shadow-[0_0_10px_rgba(245,158,11,0.2)]" onclick="return confirm('Send wallet cash to Top 3 Spenders and Affiliates?');">
+                        <i class="fas fa-gift mr-1"></i> Distribute Rewards
+                    </a>
                     <a href="/reset_monthly" class="flex-1 md:flex-none text-center bg-rose-500/10 border border-rose-500/50 hover:bg-rose-500 hover:text-white text-rose-400 text-sm font-bold px-4 py-2 rounded transition-all" onclick="return confirm('Are you sure you want to reset all spents and referral earnings to 0 for the new month?');">
-                        <i class="fas fa-recycle mr-1"></i> Reset Monthly Leaderboard
+                        <i class="fas fa-recycle mr-1"></i> Reset Board
                     </a>
                     <button onclick="generateRivals()" id="btn_rivals" class="flex-1 md:flex-none text-center bg-purple-500/10 border border-purple-500/50 hover:bg-purple-500 hover:text-white text-purple-400 text-sm font-bold px-4 py-2 rounded transition-all">
                         <i class="fas fa-robot mr-1"></i> Add Rivals
@@ -166,7 +169,7 @@
 
             <div class="glass-card p-4 mb-6 border-l-4 border-slate-500">
                 <form action="/add_fake_user" method="POST" class="flex flex-col sm:flex-row items-center gap-3">
-                    <span class="text-sm font-bold text-slate-400 w-full sm:w-auto"><i class="fas fa-plus-circle"></i> Manual Fake User:</span>
+                    <span class="text-sm font-bold text-slate-400 w-full sm:w-auto"><i class="fas fa-plus-circle"></i> Fake User:</span>
                     <input type="text" name="fake_name" placeholder="Fake Name" required class="w-full sm:w-auto bg-slate-900 border border-slate-700 rounded px-3 py-2 sm:py-1 text-sm text-white outline-none focus:border-sky-500">
                     <input type="number" step="0.01" name="fake_spent" placeholder="Spent Amt ($)" required class="w-full sm:w-24 bg-slate-900 border border-slate-700 rounded px-3 py-2 sm:py-1 text-sm text-white outline-none focus:border-sky-500">
                     <input type="number" step="0.01" name="fake_ref" placeholder="Ref Earn ($)" required class="w-full sm:w-24 bg-slate-900 border border-slate-700 rounded px-3 py-2 sm:py-1 text-sm text-white outline-none focus:border-sky-500">
@@ -180,9 +183,9 @@
                         <thead>
                             <tr class="bg-slate-800/80 text-sky-400 text-sm uppercase tracking-wider">
                                 <th class="p-4 border-b border-slate-700 font-semibold">User ID & Name</th>
-                                <th class="p-4 border-b border-slate-700 font-semibold">Financials</th>
+                                <th class="p-4 border-b border-slate-700 font-semibold">Financials ($)</th>
                                 <th class="p-4 border-b border-slate-700 font-semibold">Status / Type</th>
-                                <th class="p-4 border-b border-slate-700 font-semibold text-right">God Mode Actions</th>
+                                <th class="p-4 border-b border-slate-700 font-semibold text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody class="text-sm divide-y divide-slate-800/50">
@@ -208,29 +211,22 @@
                                             <span class="text-emerald-400 text-xs font-bold border border-emerald-500/30 px-2 py-1 rounded bg-emerald-500/10">Active User</span>
                                         {% endif %}
                                     {% endif %}
-                                    
-                                    {% if u.get('custom_discount', 0) > 0 %}
-                                        <div class="mt-2 text-amber-400 text-[10px] uppercase font-bold"><i class="fas fa-gift"></i> {{ u.get('custom_discount') }}% OFF</div>
-                                    {% endif %}
                                 </td>
                                 <td class="p-4 text-right">
-                                    {% if not u.get('is_fake') %}
-                                        <div class="flex items-center justify-end space-x-3 opacity-80 group-hover:opacity-100 transition-opacity">
+                                    <div class="flex items-center justify-end space-x-3 opacity-80 group-hover:opacity-100 transition-opacity">
+                                        {% if not u.get('is_fake') %}
                                             <button onclick="openUserModal('{{ u['_id'] }}', '{{ u.get('balance', 0) }}', '{{ u.get('spent', 0) }}', '{{ u.get('ref_earnings', 0) }}', '{{ u.get('custom_discount', 0) }}', '{{ u.get('tier_override', 'none') }}')" class="text-sky-400 hover:text-sky-300 transform hover:scale-110 transition-all" title="Edit Data"><i class="fas fa-pencil-alt text-lg"></i></button>
                                             
-                                            <a href="/toggle_shadow_ban/{{ u['_id'] }}" class="{% if u.get('shadow_banned') %}text-rose-500{% else %}text-slate-400 hover:text-rose-400{% endif %} transform hover:scale-110 transition-all" title="Toggle Shadow Ban">
-                                                <i class="fas fa-ghost text-lg"></i>
-                                            </a>
+                                            <a href="/toggle_shadow_ban/{{ u['_id'] }}" class="{% if u.get('shadow_banned') %}text-rose-500{% else %}text-slate-400 hover:text-rose-400{% endif %} transform hover:scale-110 transition-all" title="Toggle Shadow Ban"><i class="fas fa-ghost text-lg"></i></a>
                                             
                                             {% if u.get('banned') %}
                                                 <a href="/unban_user/{{ u['_id'] }}" class="text-emerald-500 hover:text-emerald-400 transform hover:scale-110 transition-all" title="Unban"><i class="fas fa-check-circle text-lg"></i></a>
                                             {% else %}
                                                 <a href="/ban_user/{{ u['_id'] }}" class="text-red-500 hover:text-red-400 transform hover:scale-110 transition-all" title="Hard Ban"><i class="fas fa-ban text-lg"></i></a>
                                             {% endif %}
-                                        </div>
-                                    {% else %}
-                                        <span class="text-slate-600 text-xs">No actions</span>
-                                    {% endif %}
+                                        {% endif %}
+                                        <a href="/delete_user/{{ u['_id'] }}" onclick="return confirm('Are you sure you want to permanently delete this user?');" class="text-red-500/70 hover:text-red-500 transform hover:scale-110 transition-all ml-2" title="Delete User"><i class="fas fa-trash-alt text-lg"></i></a>
+                                    </div>
                                 </td>
                             </tr>
                             {% endfor %}
@@ -248,11 +244,19 @@
                 <form action="/edit_user" method="POST" class="space-y-4">
                     <input type="hidden" name="user_id" id="modal_uid">
                     
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-xs text-slate-400 font-bold uppercase mb-1">Balance ($)</label>
-                            <input type="number" step="0.001" name="balance" id="modal_bal" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none focus:border-sky-500 data-font" required>
+                    <div>
+                        <label class="block text-xs text-sky-400 font-bold uppercase mb-1">Balance ($)</label>
+                        <div class="flex gap-2">
+                            <select name="bal_action" class="bg-slate-900 border border-slate-700 rounded px-2 py-2 text-white outline-none w-1/3 text-sm focus:border-sky-500">
+                                <option value="set">Set To</option>
+                                <option value="add">+ Add</option>
+                                <option value="sub">- Sub</option>
+                            </select>
+                            <input type="number" step="0.001" name="balance_val" id="modal_balance_val" class="w-2/3 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none focus:border-sky-500 data-font" required>
                         </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
                         <div>
                             <label class="block text-xs text-slate-400 font-bold uppercase mb-1">Total Spent ($)</label>
                             <input type="number" step="0.001" name="spent" id="modal_spent" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none focus:border-sky-500 data-font" required>
@@ -261,20 +265,22 @@
                             <label class="block text-xs text-emerald-400 font-bold uppercase mb-1">Ref Earned ($)</label>
                             <input type="number" step="0.001" name="ref_earnings" id="modal_ref" class="w-full bg-slate-900 border border-emerald-500/50 rounded px-3 py-2 text-white outline-none focus:border-emerald-500 data-font" required>
                         </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-4">
                         <div>
                             <label class="block text-xs text-amber-400 font-bold uppercase mb-1"><i class="fas fa-gift"></i> Custom Off (%)</label>
                             <input type="number" step="0.1" name="custom_discount" id="modal_discount" class="w-full bg-slate-900 border border-amber-500/50 rounded px-3 py-2 text-white outline-none focus:border-amber-500 data-font">
                         </div>
-                    </div>
-                    
-                    <div>
-                        <label class="block text-xs text-purple-400 font-bold uppercase mb-1"><i class="fas fa-crown"></i> VIP Tier Override</label>
-                        <select name="tier_override" id="modal_tier" class="w-full bg-slate-900 border border-purple-500/50 rounded px-3 py-2 text-white outline-none focus:border-purple-500">
-                            <option value="none">Auto (Based on Spent amount)</option>
-                            <option value="💎 Diamond VIP">💎 Diamond VIP</option>
-                            <option value="🥇 Gold VIP">🥇 Gold VIP</option>
-                            <option value="🥈 Silver VIP">🥈 Silver VIP</option>
-                        </select>
+                        <div>
+                            <label class="block text-xs text-purple-400 font-bold uppercase mb-1"><i class="fas fa-crown"></i> VIP Tier</label>
+                            <select name="tier_override" id="modal_tier" class="w-full bg-slate-900 border border-purple-500/50 rounded px-3 py-2 text-white outline-none focus:border-purple-500 text-sm">
+                                <option value="none">Auto (By Spent)</option>
+                                <option value="💎 Diamond VIP">💎 Diamond VIP</option>
+                                <option value="🥇 Gold VIP">🥇 Gold VIP</option>
+                                <option value="🥈 Silver VIP">🥈 Silver VIP</option>
+                            </select>
+                        </div>
                     </div>
                     
                     <button type="submit" class="w-full bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold py-2.5 rounded-lg mt-2 transition-colors shadow-[0_0_10px_rgba(56,189,248,0.3)]">Save Modifications</button>
@@ -472,10 +478,15 @@
                     <h3 class="text-lg font-bold text-white mb-4"><i class="fas fa-wallet mr-2 text-emerald-400"></i> Payment Gateways</h3>
                     <div id="payment-methods" class="space-y-3">
                         {% for p in s.get('payments', []) %}
-                        <div class="flex flex-col sm:flex-row gap-3 payment-row bg-slate-900/50 p-3 rounded border border-slate-700/50 relative">
-                            <div class="flex-1"><input type="text" name="pay_name[]" value="{{ p.name }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none"></div>
-                            <div class="w-full sm:w-1/3"><input type="number" step="0.01" name="pay_rate[]" value="{{ p.rate }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white data-font outline-none"></div>
-                            <button type="button" onclick="this.parentElement.remove()" class="absolute sm:static right-2 top-2 sm:mt-0 text-slate-500 hover:text-red-500 px-2"><i class="fas fa-times-circle text-xl sm:text-base"></i></button>
+                        <div class="payment-row flex flex-col gap-2 bg-slate-900/50 p-3 rounded border border-slate-700/50 relative">
+                            <div class="flex flex-col sm:flex-row gap-2">
+                                <input type="text" name="pay_name[]" value="{{ p.name }}" placeholder="Method Name (e.g. Bkash)" class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none" required>
+                                <input type="number" step="0.01" name="pay_rate[]" value="{{ p.rate }}" placeholder="Rate" class="w-full sm:w-32 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white data-font outline-none" required>
+                            </div>
+                            <div class="flex gap-2 items-center">
+                                <input type="text" name="pay_address[]" value="{{ p.address }}" placeholder="Account Number or Crypto Address" class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none" required>
+                                <button type="button" onclick="this.closest('.payment-row').remove()" class="text-slate-500 hover:text-red-500 px-3 transition-colors"><i class="fas fa-trash text-lg"></i></button>
+                            </div>
                         </div>
                         {% endfor %}
                     </div>
@@ -528,7 +539,7 @@
         function openUserModal(uid, bal, spent, refEarn, discount, tier) {
             document.getElementById('modal_uid').value = uid;
             document.getElementById('modal_uid_display').innerText = `(${uid})`;
-            document.getElementById('modal_bal').value = parseFloat(bal).toFixed(3);
+            document.getElementById('modal_balance_val').value = parseFloat(bal).toFixed(3);
             document.getElementById('modal_spent').value = parseFloat(spent).toFixed(3);
             document.getElementById('modal_ref').value = parseFloat(refEarn).toFixed(3);
             document.getElementById('modal_discount').value = discount;
@@ -581,8 +592,17 @@
         function addPaymentRow() {
             const container = document.getElementById('payment-methods');
             const row = document.createElement('div');
-            row.className = 'flex flex-col sm:flex-row gap-3 payment-row bg-slate-900/50 p-3 rounded border border-slate-700/50 relative mt-3 animate-[fadeIn_0.2s_ease-out]';
-            row.innerHTML = `<div class="flex-1"><input type="text" name="pay_name[]" placeholder="e.g. USDT TRC20" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none" required></div><div class="w-full sm:w-1/3"><input type="number" step="0.01" name="pay_rate[]" placeholder="Rate (e.g. 1)" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white data-font outline-none" required></div><button type="button" onclick="this.parentElement.remove()" class="absolute sm:static right-2 top-2 sm:mt-0 text-slate-500 hover:text-red-500 px-2 flex items-center justify-center transition-colors"><i class="fas fa-times-circle text-xl sm:text-base"></i></button>`;
+            row.className = 'payment-row flex flex-col gap-2 bg-slate-900/50 p-3 rounded border border-slate-700/50 relative mt-3 animate-[fadeIn_0.2s_ease-out]';
+            row.innerHTML = `
+                <div class="flex flex-col sm:flex-row gap-2">
+                    <input type="text" name="pay_name[]" placeholder="Method Name (e.g. Binance Pay)" class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none" required>
+                    <input type="number" step="0.01" name="pay_rate[]" placeholder="Rate (e.g. 1)" class="w-full sm:w-32 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white data-font outline-none" required>
+                </div>
+                <div class="flex gap-2 items-center">
+                    <input type="text" name="pay_address[]" placeholder="Account Number or Crypto Address" class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none" required>
+                    <button type="button" onclick="this.closest('.payment-row').remove()" class="text-slate-500 hover:text-red-500 px-3 transition-colors"><i class="fas fa-trash text-lg"></i></button>
+                </div>
+            `;
             container.appendChild(row);
         }
     </script>
