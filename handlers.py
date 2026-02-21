@@ -18,13 +18,10 @@ from telebot import types
 from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col
 from config import *
 import api
-from google import genai
 
 # ==========================================
-# 1. AI & CURRENCY ENGINE SETTINGS
+# 1. CURRENCY ENGINE SETTINGS
 # ==========================================
-GEMINI_API_KEY = "apnar_notun_gemini_api_key_ekhane_din" 
-client = genai.Client(api_key=GEMINI_API_KEY)
 BASE_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://smm-panel-g8ab.onrender.com')
 
 user_actions, blocked_users = {}, {}
@@ -182,8 +179,8 @@ def check_sub(chat_id):
 def start(message):
     uid = message.chat.id
     update_spy(uid, "Bot Started")
-    users_col.update_one({"_id": uid}, {"$unset": {"step": "", "step_data": ""}}) # Clear any hanging steps
-    bot.clear_step_handler_by_chat_id(uid) # Clear old handler locks
+    users_col.update_one({"_id": uid}, {"$unset": {"step": "", "step_data": ""}})
+    bot.clear_step_handler_by_chat_id(uid)
     
     if check_spam(uid) or check_maintenance(uid): return
     
@@ -211,7 +208,7 @@ def start(message):
         for ch in get_settings().get("channels", []): 
             markup.add(types.InlineKeyboardButton(f"📢 Join Channel", url=f"https://t.me/{ch.replace('@','')}"))
         markup.add(types.InlineKeyboardButton("🟢 VERIFY ACCOUNT 🟢", callback_data="CHECK_SUB"))
-        bot.send_message(uid, "🛑 **ACCESS RESTRICTED**\nYou must join our official channels to unlock the bot and receive your bonus.", reply_markup=markup, parse_mode="Markdown")
+        bot.send_message(uid, "🛑 **ACCESS RESTRICTED**\nYou must join our official channels to unlock the bot.", reply_markup=markup, parse_mode="Markdown")
         bot.send_message(uid, "Please join and click verify.", reply_markup=types.ReplyKeyboardRemove())
         return
 
@@ -348,12 +345,11 @@ def info_card(call):
     if call.message.text and "YOUR ORDERS" in call.message.text: bot.send_message(call.message.chat.id, txt, reply_markup=markup, parse_mode="Markdown")
     else: bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
-# 🔥 100% FIXED ORDER LOGIC (State Machine)
+# 🔥 100% FIXED ORDER LOGIC (State Machine without AI)
 @bot.callback_query_handler(func=lambda c: c.data.startswith("ORD|"))
 def start_ord(call):
     bot.answer_callback_query(call.id)
     sid = call.data.split("|")[1]
-    # Set pure dictionary state in MongoDB
     users_col.update_one({"_id": call.message.chat.id}, {"$set": {"step": "awaiting_link", "step_data": {"sid": sid}}})
     bot.send_message(call.message.chat.id, "🔗 **Paste the Target Link:**\n_(Reply with your link)_", parse_mode="Markdown")
 
@@ -446,6 +442,7 @@ def fetch_orders_page(chat_id, page=0):
     if page > 0: nav.append(types.InlineKeyboardButton("⬅️ Prev", callback_data=f"MYORD|{page-1}"))
     if end < len(all_orders): nav.append(types.InlineKeyboardButton("Next ➡️", callback_data=f"MYORD|{page+1}"))
     if nav: markup.row(*nav)
+    users_col.update_one({"_id": chat_id}, {"$set": {"step": "awaiting_refill"}})
     markup.add(types.InlineKeyboardButton("🔄 Request Refill", callback_data="ASK_REFILL"))
     return txt, markup
 
@@ -537,7 +534,7 @@ def universal_buttons(message):
         bot.send_message(message.chat.id, "⭐ **Your Favorites:**", reply_markup=markup, parse_mode="Markdown")
 
 # ==========================================
-# 7. CRYPTO PAYMENT & DETAILS FIX
+# 7. CRYPTO PAYMENT LOGIC FIX
 # ==========================================
 @bot.callback_query_handler(func=lambda c: c.data.startswith("PAY|"))
 def pay_details(call):
@@ -551,19 +548,13 @@ def pay_details(call):
     rate = pay_data.get('rate', 120) if pay_data else 120
     
     # 🔥 CRYPTO DOLLAR FIX
-    is_crypto = any(x in method.lower() for x in ['usdt', 'binance', 'crypto', 'btc', 'pm', 'perfect'])
+    is_crypto = any(x in method.lower() for x in ['usdt', 'binance', 'crypto', 'btc', 'pm', 'perfect', 'payeer'])
     display_amt = f"${amt_usd:.2f}" if is_crypto else f"{round(amt_usd * float(rate), 2)} Local Currency"
     
     txt = f"🏦 **{method} Payment Details**\n━━━━━━━━━━━━━━━━━━━━\n💵 **Amount to Send:** `{display_amt}`\n📍 **Account / Address:** `{address}`\n━━━━━━━━━━━━━━━━━━━━\n⚠️ Send the exact amount to the address above, then reply to this message with your **TrxID / Transaction ID**:"
     
     users_col.update_one({"_id": call.message.chat.id}, {"$set": {"step": "awaiting_trx", "step_data": {"amt": amt_usd, "method": method}}})
     bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, parse_mode="Markdown")
-
-@bot.callback_query_handler(func=lambda c: c.data == "TALK_HUMAN")
-def talk_to_human(call):
-    bot.answer_callback_query(call.id)
-    users_col.update_one({"_id": call.message.chat.id}, {"$set": {"step": "awaiting_ticket"}})
-    bot.send_message(call.message.chat.id, "✍️ **Write your message for Admin:**", parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("FAV_ADD|"))
 def add_to_favorites(call):
@@ -572,7 +563,7 @@ def add_to_favorites(call):
     users_col.update_one({"_id": call.message.chat.id}, {"$addToSet": {"favorites": sid}})
 
 # ==========================================
-# 8. THE MASTER STATE MACHINE & AI ENGINE
+# 8. THE MASTER STATE MACHINE (100% FIXED)
 # ==========================================
 @bot.message_handler(func=lambda m: True)
 def text_router(message):
@@ -581,6 +572,10 @@ def text_router(message):
     
     update_spy(uid, "Sending Message")
     if check_spam(uid) or check_maintenance(uid) or not check_sub(uid): return
+    
+    # Check if universal button was clicked
+    if text in ["⭐ Favorites", "🏆 Leaderboard", "📦 Orders", "💰 Deposit", "🎧 Support Ticket", "🔍 Smart Search", "🤝 Affiliate", "🎟️ Voucher"]:
+        return universal_buttons(message)
     
     u = users_col.find_one({"_id": uid})
     if not u: return
@@ -616,8 +611,14 @@ def text_router(message):
             users_col.update_one({"_id": uid}, {"$unset": {"step": "", "step_data": ""}})
             return bot.send_message(uid, "❌ Service not found.")
             
-        if qty < int(s['min']) or qty > int(s['max']): 
-            return bot.send_message(uid, f"❌ Invalid Quantity! Allowed: {s['min']} - {s['max']}")
+        try:
+            s_min = int(s.get('min', 0))
+            s_max = int(s.get('max', 99999999))
+        except:
+            s_min, s_max = 0, 99999999
+            
+        if qty < s_min or qty > s_max: 
+            return bot.send_message(uid, f"❌ Invalid Quantity! Allowed: {s_min} - {s_max}")
 
         curr = u.get("currency", "BDT")
         rate_usd = calculate_price(s['rate'], u.get('spent', 0), u.get('custom_discount', 0))
@@ -643,7 +644,7 @@ def text_router(message):
             payments = get_settings().get("payments", [])
             markup = types.InlineKeyboardMarkup(row_width=1)
             for p in payments: 
-                is_crypto = any(x in p['name'].lower() for x in ['usdt', 'binance', 'crypto', 'btc', 'pm', 'perfect'])
+                is_crypto = any(x in p['name'].lower() for x in ['usdt', 'binance', 'crypto', 'btc', 'pm', 'perfect', 'payeer'])
                 display_amt = f"${amt_usd:.2f}" if is_crypto else f"{round(amt_usd * float(p['rate']), 2)} {curr_code}"
                 markup.add(types.InlineKeyboardButton(f"🏦 {p['name']} (Pay {display_amt})", callback_data=f"PAY|{amt_usd}|{p['name']}"))
             
@@ -715,15 +716,5 @@ def text_router(message):
         for s in results: markup.add(types.InlineKeyboardButton(f"⚡ ID:{s['service']} | {clean_service_name(s['name'])[:25]}", callback_data=f"INFO|{s['service']}"))
         return bot.edit_message_text(f"🔍 **Top Results:**", uid, msg.message_id, reply_markup=markup, parse_mode="Markdown")
 
-    # 🔥 FALLBACK: AI CHAT ENGINE
-    bot.send_chat_action(uid, 'typing')
-    msg = bot.send_message(uid, "🧠 AI Thinking.")
-    show_loading(uid, msg.message_id, ["🧠 AI Thinking.", "🧠 AI Thinking..", "🧠 AI Thinking...", "🤖 Nexus AI Replying!"])
-
-    try:
-        prompt = f"Role: Nexus SMM Support. User asks: {text}. Rule: Be short, friendly and native Bengali/English."
-        response = client.models.generate_content(model='gemini-2.0-flash', contents=prompt)
-        markup = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("🗣 Contact Admin", callback_data="TALK_HUMAN"))
-        bot.edit_message_text(f"🤖 **Nexus AI:**\n━━━━━━━━━━━━━━━━━━━━\n{response.text}", uid, msg.message_id, reply_markup=markup, parse_mode="Markdown")
-    except Exception: 
-        bot.edit_message_text(f"⚠️ **AI is temporarily busy.**", uid, msg.message_id, parse_mode="Markdown")
+    # 🔥 FALLBACK (Since AI is removed)
+    bot.send_message(uid, "❌ **Unknown Command.** Please select an option from the menu below:", reply_markup=main_menu(), parse_mode="Markdown")
