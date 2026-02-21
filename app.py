@@ -6,10 +6,13 @@ from datetime import datetime
 from flask import Flask, request, render_template, redirect, url_for, session, jsonify
 import telebot
 from bson.objectid import ObjectId
-import handlers  # 🔥 জাস্ট এই জাদুকরী লাইনটা বসিয়ে দিন! এটার জন্যই সব আটকে ছিল!
+
 # Import from loader and config
 from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col
 from config import BOT_TOKEN, ADMIN_ID, ADMIN_PASSWORD
+
+# Import handlers to access RAM cached services
+import handlers
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'super_secret_nexus_titan_key_1010')
@@ -63,28 +66,44 @@ def auto_fake_proof_cron():
             dep_freq = s.get('fake_dep_freq', 2)
             ord_freq = s.get('fake_ord_freq', 3)
 
+            # 💰 FAKE DEPOSIT GENERATOR
             if random.random() < (dep_freq / 60): 
                 gateways = ["bKash Auto", "Nagad Express", "Binance Pay", "USDT TRC20", "PerfectMoney"]
                 method = random.choice(gateways)
-                min_dep = s.get('fake_deposit_min', 1.0)
-                max_dep = s.get('fake_deposit_max', 20.0)
-                amt = round(random.uniform(min_dep, max_dep), 2)
-                name = f"User_{random.randint(1000, 9999)}"
                 
-                is_crypto = any(x in method.lower() for x in ['usdt', 'binance', 'crypto', 'btc', 'pm', 'perfect', 'payeer'])
-                currency_sym = "$" if is_crypto else "৳"
+                is_crypto = any(x in method.lower() for x in ['usdt', 'binance', 'crypto', 'btc', 'pm', 'perfect'])
+                if is_crypto:
+                    amt = round(random.uniform(0.5, 10.0), 2)
+                    display_amt = f"${amt}"
+                else:
+                    amt = random.choice([10, 20, 50, 100, 150, 200, 500])
+                    display_amt = f"৳{amt}"
                 
-                msg = f"🔔 **NEW DEPOSIT (AUTO)**\n👤 User: `{name}`\n🏦 Method: **{method}**\n💰 Amount: **{currency_sym}{amt}**\n✅ Status: `Approved`"
+                fake_uid = str(random.randint(1000000, 9999999))
+                masked_id = f"***{fake_uid[-4:]}"
+                
+                msg = f"```text\n╔══ 💰 𝗡𝗘𝗪 𝗗𝗘𝗣𝗢𝗦𝗜𝗧 ══╗\n║ 👤 𝗜𝗗: {masked_id}\n║ 🏦 𝗠𝗲𝘁𝗵𝗼𝗱: {method}\n║ 💵 𝗔𝗺𝗼𝘂𝗻𝘁: {display_amt}\n║ ✅ 𝗦𝘁𝗮𝘁𝘂𝘀: Approved\n╚════════════════════╝\n```"
                 bot.send_message(proof_channel, msg, parse_mode="Markdown")
 
+            # 🛒 FAKE ORDER GENERATOR
             if random.random() < (ord_freq / 60):
-                min_ord = s.get('fake_order_min', 0.5)
-                max_ord = s.get('fake_order_max', 10.0)
-                amt = round(random.uniform(min_ord, max_ord), 3)
-                qty = random.randint(100, 5000)
-                services = ["Instagram Premium Likes ⚡", "Telegram Post Views 💎", "YouTube Subscribers 🛡️", "TikTok Views ⚡", "Facebook Followers 💎"]
-                srv = random.choice(services)
-                msg = f"🛒 **NEW ORDER PLACED**\n📦 Service: {srv}\n🔢 Quantity: {qty}\n💳 Cost: **${amt}**\n⚡ Status: `Processing`"
+                qty = random.randint(50, 5000) # Random qty jemon 150, 430, 2100 etc.
+                amt = round(random.uniform(0.1, 5.0), 2)
+                
+                # Fetching Real Services from 1xpanel RAM Cache
+                cached_services = handlers.get_cached_services()
+                if cached_services:
+                    srv = random.choice(cached_services)
+                    srv_name = handlers.clean_service_name(srv['name'])
+                else:
+                    srv_name = "Premium Service ⚡"
+                    
+                short_srv = srv_name[:22] + ".." if len(srv_name) > 22 else srv_name
+                
+                fake_uid = str(random.randint(1000000, 9999999))
+                masked_id = f"***{fake_uid[-4:]}"
+                
+                msg = f"```text\n╔════ 🟢 𝗡𝗘𝗪 𝗢𝗥𝗗𝗘𝗥 ════╗\n║ 👤 𝗜𝗗: {masked_id}\n║ 🚀 𝗦𝗲𝗿𝘃𝗶𝗰𝗲: {short_srv}\n║ 📦 𝗤𝘁𝘆: {qty}\n║ 💵 𝗖𝗼𝘀𝘁: ${amt}\n╚════════════════════╝\n```"
                 bot.send_message(proof_channel, msg, parse_mode="Markdown")
 
         except Exception as e:
