@@ -4,21 +4,45 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NEXUS - Titan Admin Panel</title>
+    
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <style>
-        body { font-family: 'Rajdhani', sans-serif; background-color: #020617; color: #e2e8f0; }
-        .glass-card { background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(16px); border: 1px solid rgba(56, 189, 248, 0.15); border-radius: 1rem; }
-        .tab-btn { transition: all 0.3s ease; }
-        .tab-btn.active { background-color: rgba(56, 189, 248, 0.15); color: #38bdf8; border-left: 4px solid #38bdf8; }
-        .table-row-hover:hover { background-color: rgba(255, 255, 255, 0.03); }
-        .data-font { font-family: 'JetBrains Mono', monospace; }
+        body { 
+            font-family: 'Rajdhani', sans-serif; 
+            background-color: #020617; 
+            color: #e2e8f0; 
+        }
+        .glass-card { 
+            background: rgba(15, 23, 42, 0.85); 
+            backdrop-filter: blur(16px); 
+            border: 1px solid rgba(56, 189, 248, 0.15); 
+            border-radius: 1rem; 
+        }
+        .tab-btn { 
+            transition: all 0.3s ease; 
+        }
+        .tab-btn.active { 
+            background-color: rgba(56, 189, 248, 0.15); 
+            color: #38bdf8; 
+            border-left: 4px solid #38bdf8; 
+        }
+        .table-row-hover:hover { 
+            background-color: rgba(255, 255, 255, 0.03); 
+        }
+        .data-font { 
+            font-family: 'JetBrains Mono', monospace; 
+        }
         
         /* Mobile Menu Animations */
-        #sidebar { transition: transform 0.3s ease-in-out; }
-        #mobile-overlay { transition: opacity 0.3s ease-in-out; }
+        #sidebar { 
+            transition: transform 0.3s ease-in-out; 
+        }
+        #mobile-overlay { 
+            transition: opacity 0.3s ease-in-out; 
+        }
     </style>
 </head>
 <body class="flex flex-col md:flex-row h-screen overflow-hidden bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] relative">
@@ -37,13 +61,16 @@
     <aside id="sidebar" class="fixed md:relative inset-y-0 left-0 w-64 glass-card m-2 md:m-4 flex flex-col justify-between transform -translate-x-full md:translate-x-0 z-50 border-r border-slate-800 h-[calc(100vh-1rem)] md:h-[calc(100vh-2rem)]">
         <div>
             <div class="md:hidden absolute top-4 right-4">
-                <button onclick="toggleMobileMenu()" class="text-slate-400 hover:text-red-400"><i class="fas fa-times text-xl"></i></button>
+                <button onclick="toggleMobileMenu()" class="text-slate-400 hover:text-red-400">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
             </div>
             
             <div class="p-6 text-center border-b border-slate-800/50 mt-4 md:mt-0">
                 <h2 class="text-3xl font-bold text-sky-400 tracking-wider">NEXUS SMM</h2>
                 <p class="text-xs text-slate-500 uppercase tracking-widest mt-1">Titan Control Panel</p>
             </div>
+            
             <nav class="p-4 space-y-2 overflow-y-auto">
                 <button onclick="switchTab('dashboard')" id="btn-dashboard" class="tab-btn active w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-slate-800/50 hover:text-white font-bold">
                     <i class="fas fa-chart-pie w-5 text-center"></i> Dashboard
@@ -65,6 +92,7 @@
                 </button>
             </nav>
         </div>
+        
         <div class="p-4 border-t border-slate-800/50">
             <a href="/logout" class="block w-full text-center bg-red-500/10 hover:bg-red-500/20 text-red-500 font-bold py-2 px-4 rounded-lg transition-colors border border-red-500/30">
                 <i class="fas fa-sign-out-alt mr-2"></i> Lock Panel
@@ -75,7 +103,9 @@
     <main class="flex-1 p-2 md:p-8 overflow-y-auto relative z-10 h-[calc(100vh-5rem)] md:h-full w-full">
         
         <div id="tab-dashboard" class="tab-content block animate-[fadeIn_0.3s_ease-out]">
-            <h2 class="text-2xl font-bold mb-6 text-white border-b border-slate-700 pb-2"><i class="fas fa-satellite-dish text-sky-400 mr-2"></i> System Analytics</h2>
+            <h2 class="text-2xl font-bold mb-6 text-white border-b border-slate-700 pb-2">
+                <i class="fas fa-satellite-dish text-sky-400 mr-2"></i> System Analytics
+            </h2>
             
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 mb-8">
                 <div class="glass-card p-6 border-l-4 border-emerald-500 relative overflow-hidden">
@@ -111,7 +141,7 @@
                         {% if s.maintenance %}
                             <span class="text-red-500"><i class="fas fa-tools animate-pulse"></i> Maintenance</span>
                         {% else %}
-                            <span class="text-green-500"><i class="fas fa-check-circle"></i> Active</span>
+                            <span class="text-green-500"><i class="fas fa-check-circle"></i> Fully Active</span>
                         {% endif %}
                     </div>
                 </div>
@@ -122,16 +152,17 @@
                     <h3 class="text-lg font-bold text-sky-400 mb-2"><i class="fas fa-globe mr-2"></i> Global Broadcast</h3>
                     <p class="text-xs text-slate-500 mb-4">Send message to ALL registered real users.</p>
                     <form action="/send_broadcast" method="POST" class="flex flex-col gap-3">
-                        <textarea name="msg" placeholder="Write global message..." rows="2" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-sky-500" required></textarea>
-                        <button type="submit" class="bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold px-6 py-2 rounded-lg w-full md:w-auto">Send to All</button>
+                        <textarea name="msg" placeholder="Write global message here..." rows="2" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-sky-500 outline-none" required></textarea>
+                        <button type="submit" class="bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold px-6 py-2 rounded-lg w-full md:w-auto transition-colors">Send to All Users</button>
                     </form>
                 </div>
+                
                 <div class="glass-card p-4 md:p-6 border border-slate-700/50 border-t-4 border-t-emerald-500">
                     <h3 class="text-lg font-bold text-emerald-400 mb-2"><i class="fas fa-bullseye mr-2"></i> Targeted Broadcast</h3>
-                    <p class="text-xs text-slate-500 mb-4">Send ONLY to active buyers (last 7 days).</p>
+                    <p class="text-xs text-slate-500 mb-4">Send ONLY to active buyers (who ordered in the last 7 days).</p>
                     <form action="/smart_cast" method="POST" class="flex flex-col gap-3">
-                        <textarea name="msg" placeholder="Write exclusive offer..." rows="2" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-emerald-500" required></textarea>
-                        <button type="submit" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold px-6 py-2 rounded-lg w-full md:w-auto">Send to Buyers</button>
+                        <textarea name="msg" placeholder="Write exclusive offer here..." rows="2" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-emerald-500 outline-none" required></textarea>
+                        <button type="submit" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold px-6 py-2 rounded-lg w-full md:w-auto transition-colors">Send to Active Buyers</button>
                     </form>
                 </div>
             </div>
@@ -153,7 +184,7 @@
 
             <div class="glass-card p-4 mb-6 border-l-4 border-purple-500">
                 <form action="/add_fake_user" method="POST" class="flex flex-col sm:flex-row items-center gap-3">
-                    <span class="text-sm font-bold text-slate-300 w-full sm:w-auto">Add Fake User:</span>
+                    <span class="text-sm font-bold text-slate-300 w-full sm:w-auto">Add Fake User (For Leaderboard):</span>
                     <input type="text" name="fake_name" placeholder="Fake Name" required class="w-full sm:w-auto bg-slate-900 border border-slate-700 rounded px-3 py-2 sm:py-1 text-sm focus:border-sky-500 outline-none text-white">
                     <input type="number" step="0.01" name="fake_spent" placeholder="Spent Amt ($)" required class="w-full sm:w-32 bg-slate-900 border border-slate-700 rounded px-3 py-2 sm:py-1 text-sm focus:border-sky-500 outline-none text-white">
                     <button type="submit" class="w-full sm:w-auto bg-purple-500 hover:bg-purple-400 text-white text-sm font-bold px-4 py-2 sm:py-1.5 rounded transition-colors"><i class="fas fa-plus"></i> Add Fake</button>
@@ -182,9 +213,9 @@
                                 <td class="p-4 text-sky-400 data-font">${{ "%.3f"|format(u.get('spent', 0)) }}</td>
                                 <td class="p-4">
                                     {% if u.get('is_fake') %}
-                                        <span class="text-purple-400 text-xs font-bold border border-purple-500/30 px-2 py-1 rounded">Fake</span>
+                                        <span class="text-purple-400 text-xs font-bold border border-purple-500/30 px-2 py-1 rounded bg-purple-500/10">Fake</span>
                                     {% else %}
-                                        <span class="text-emerald-400 text-xs font-bold border border-emerald-500/30 px-2 py-1 rounded">Real</span>
+                                        <span class="text-emerald-400 text-xs font-bold border border-emerald-500/30 px-2 py-1 rounded bg-emerald-500/10">Real</span>
                                     {% endif %}
                                 </td>
                                 <td class="p-4 text-right space-x-2">
@@ -206,6 +237,7 @@
 
         <div id="tab-orders" class="tab-content hidden animate-[fadeIn_0.3s_ease-out]">
             <h2 class="text-2xl font-bold mb-6 text-white border-b border-slate-700 pb-2"><i class="fas fa-shopping-cart text-sky-400 mr-2"></i> Recent Orders</h2>
+            
             <div class="glass-card overflow-hidden">
                 <div class="overflow-x-auto max-h-[75vh]">
                     <table class="w-full text-left border-collapse whitespace-nowrap">
@@ -229,18 +261,17 @@
                                     <div class="text-xs text-slate-500 truncate max-w-[150px]" title="{{ o.get('link', 'N/A') }}">{{ o.get('link', 'N/A') }}</div>
                                 </td>
                                 <td class="p-4 text-emerald-400 font-bold data-font">${{ "%.3f"|format(o.get('cost', 0)) }}</td>
-                                <td class="p-4">
-                                    {% set status = o.get('status', 'pending')|lower %}
-                                    {% if status == 'completed' %}
-                                        <span class="text-emerald-400 font-bold text-xs uppercase"><i class="fas fa-check mr-1"></i> Completed</span>
-                                    {% elif status in ['canceled', 'refunded', 'fail', 'error'] %}
-                                        <span class="text-red-400 font-bold text-xs uppercase"><i class="fas fa-times mr-1"></i> {{ status }}</span>
+                                <td class="p-4 uppercase font-bold text-xs">
+                                    {% if o.get('status', '')|lower == 'completed' %}
+                                        <span class="text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded"><i class="fas fa-check"></i> Done</span>
+                                    {% elif o.get('status', '')|lower in ['canceled','refunded', 'error', 'fail'] %}
+                                        <span class="text-red-400 bg-red-400/10 px-2 py-1 rounded"><i class="fas fa-times"></i> {{ o.get('status', '') }}</span>
                                     {% else %}
-                                        <span class="text-amber-400 font-bold text-xs uppercase"><i class="fas fa-spinner fa-spin mr-1"></i> {{ status }}</span>
+                                        <span class="text-amber-400 bg-amber-400/10 px-2 py-1 rounded"><i class="fas fa-spinner fa-spin"></i> Wait</span>
                                     {% endif %}
                                 </td>
                                 <td class="p-4 text-right space-x-2">
-                                    {% if status not in ['refunded', 'canceled'] %}
+                                    {% if o.get('status', '')|lower not in ['refunded', 'canceled', 'error', 'fail'] %}
                                         <a href="/refund_order/{{ o['oid'] }}" class="inline-block text-xs bg-amber-500/10 text-amber-500 border border-amber-500/30 hover:bg-amber-500 hover:text-slate-900 px-3 py-1 rounded font-bold transition-colors">Refund</a>
                                     {% endif %}
                                     <a href="/delete_order/{{ o['oid'] }}" class="inline-block text-xs bg-red-500/10 text-red-500 border border-red-500/30 hover:bg-red-500 hover:text-white px-3 py-1 rounded font-bold transition-colors"><i class="fas fa-trash"></i></a>
@@ -263,7 +294,7 @@
                             <span class="text-xs text-slate-500 data-font">UID: {{ t.uid }}</span>
                             <span class="ml-2 text-xs font-bold {% if t.status == 'open' %}text-amber-400{% else %}text-emerald-400{% endif %} uppercase">{{ t.status }}</span>
                         </div>
-                        <a href="/delete_ticket/{{ t['_id'] }}" class="text-slate-500 hover:text-red-500"><i class="fas fa-trash"></i></a>
+                        <a href="/delete_ticket/{{ t['_id'] }}" class="text-slate-500 hover:text-red-500 transition-colors"><i class="fas fa-trash"></i></a>
                     </div>
                     <div class="text-white text-sm mb-4 bg-slate-900/50 p-3 rounded border border-slate-700/50 break-words">
                         <i class="fas fa-comment-dots text-sky-500/50 mr-2"></i> {{ t.msg }}
@@ -272,7 +303,7 @@
                     <form action="/reply_ticket" method="POST" class="flex flex-col sm:flex-row gap-2">
                         <input type="hidden" name="ticket_id" value="{{ t['_id'] }}">
                         <input type="hidden" name="uid" value="{{ t.uid }}">
-                        <input type="text" name="reply_msg" placeholder="Write reply..." required class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:border-sky-500 outline-none">
+                        <input type="text" name="reply_msg" placeholder="Write reply here..." required class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:border-sky-500 outline-none">
                         <button type="submit" class="bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold px-4 py-2 rounded text-sm transition-colors">Reply</button>
                     </form>
                     {% else %}
@@ -283,7 +314,10 @@
                 </div>
                 {% endfor %}
                 {% if not tickets %}
-                <div class="col-span-full text-center text-slate-500 py-10 glass-card">No open tickets.</div>
+                <div class="col-span-full text-center text-slate-500 py-10 glass-card">
+                    <i class="fas fa-check-circle text-4xl mb-3 opacity-50"></i>
+                    <p>No open tickets. All good!</p>
+                </div>
                 {% endif %}
             </div>
         </div>
@@ -306,7 +340,7 @@
                             <label class="block text-xs text-slate-400 font-bold mb-1 uppercase">Usage Limit</label>
                             <input type="number" name="limit" placeholder="10" required class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white focus:border-sky-500 outline-none data-font">
                         </div>
-                        <button type="submit" class="w-full bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold py-2 rounded transition-colors">Generate Voucher</button>
+                        <button type="submit" class="w-full bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold py-2 rounded transition-colors shadow-[0_0_10px_rgba(56,189,248,0.3)]">Generate Voucher</button>
                     </form>
                 </div>
                 <div class="lg:col-span-2 space-y-4 max-h-[70vh] overflow-y-auto pr-2">
@@ -324,40 +358,80 @@
                     </div>
                     {% endfor %}
                     {% if not vouchers %}
-                    <div class="text-center text-slate-500 py-10 glass-card">No active vouchers.</div>
+                    <div class="text-center text-slate-500 py-10 glass-card">No active vouchers right now.</div>
                     {% endif %}
                 </div>
             </div>
         </div>
 
-        <div id="tab-settings" class="tab-content hidden animate-[fadeIn_0.3s_ease-out]">
-            <h2 class="text-2xl font-bold mb-6 text-white border-b border-slate-700 pb-2"><i class="fas fa-cogs text-sky-400 mr-2"></i> Application Settings</h2>
+        <div id="tab-settings" class="tab-content hidden animate-[fadeIn_0.3s_ease-out] pb-12">
+            <h2 class="text-2xl font-bold mb-6 text-white border-b border-slate-700 pb-2"><i class="fas fa-cogs text-sky-400 mr-2"></i> Advanced Settings</h2>
             
-            <form action="/settings" method="POST" class="space-y-6 max-w-5xl pb-10">
+            <form action="/settings" method="POST" class="space-y-6 max-w-5xl">
+                
+                <div class="glass-card p-4 md:p-6 border-t-4 border-rose-500">
+                    <h3 class="text-lg font-bold text-white mb-4"><i class="fas fa-magic mr-2 text-rose-400"></i> Cyber Box Proof Engine</h3>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                        <div>
+                            <label class="block text-sm text-sky-400 font-bold mb-1 uppercase">Proof Channel ID (e.g. @NexusProofs)</label>
+                            <input type="text" name="proof_channel" value="{{ s.get('proof_channel', '') }}" placeholder="Channel for Real & Fake Proofs" class="w-full bg-slate-900 border border-sky-500/50 rounded-lg px-4 py-3 text-white data-font outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-slate-400 font-bold mb-1 uppercase">Posts Frequency (Per Hour)</label>
+                            <input type="number" name="fake_frequency" value="{{ s.get('fake_frequency', 2) }}" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white data-font outline-none">
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                        <div>
+                            <label class="block text-xs text-slate-400 mb-1 font-bold uppercase">Dep Min ($)</label>
+                            <input type="number" step="0.1" name="fake_deposit_min" value="{{ s.get('fake_deposit_min', 1.0) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-slate-400 mb-1 font-bold uppercase">Dep Max ($)</label>
+                            <input type="number" step="0.1" name="fake_deposit_max" value="{{ s.get('fake_deposit_max', 20.0) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-slate-400 mb-1 font-bold uppercase">Ord Min ($)</label>
+                            <input type="number" step="0.1" name="fake_order_min" value="{{ s.get('fake_order_min', 0.5) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-slate-400 mb-1 font-bold uppercase">Ord Max ($)</label>
+                            <input type="number" step="0.1" name="fake_order_max" value="{{ s.get('fake_order_max', 10.0) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="bg-slate-900/50 p-4 rounded border border-slate-700 flex justify-between items-center transition-colors hover:border-rose-500/50">
+                            <label class="text-rose-400 text-sm font-bold cursor-pointer">Auto Fake Engine (ON/OFF)</label>
+                            <input type="checkbox" name="fake_proof_status" {% if s.get('fake_proof_status') %}checked{% endif %} class="w-6 h-6 accent-rose-500 cursor-pointer">
+                        </div>
+                        <div class="bg-slate-900/50 p-4 rounded border border-slate-700 flex justify-between items-center transition-colors hover:border-indigo-500/50">
+                            <label class="text-indigo-400 text-sm font-bold cursor-pointer">Night Mode (Sleep 2AM-8AM)</label>
+                            <input type="checkbox" name="night_mode" {% if s.get('night_mode') %}checked{% endif %} class="w-6 h-6 accent-indigo-500 cursor-pointer">
+                        </div>
+                    </div>
+                </div>
+
                 <div class="glass-card p-4 md:p-6 border-t-4 border-indigo-500">
-                    <h3 class="text-lg font-bold text-white mb-4"><i class="fas fa-sliders-h mr-2 text-indigo-400"></i> Core Configurations</h3>
+                    <h3 class="text-lg font-bold text-white mb-4"><i class="fas fa-sliders-h mr-2 text-indigo-400"></i> General Configs</h3>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                         <div>
-                            <label class="block text-sm text-slate-400 font-bold mb-2 uppercase">Profit Margin (%)</label>
-                            <input type="number" step="0.1" name="profit_margin" value="{{ s.get('profit_margin', 20.0) }}" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white outline-none data-font text-lg">
+                            <label class="block text-sm text-slate-400 font-bold mb-1 uppercase">Profit Margin (%)</label>
+                            <input type="number" step="0.1" name="profit_margin" value="{{ s.get('profit_margin', 20.0) }}" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white data-font outline-none">
                         </div>
                         <div>
-                            <label class="block text-sm text-slate-400 font-bold mb-2 uppercase">Force Sub Channels</label>
-                            <input type="text" name="channels" value="{{ s.get('channels', []) | join(', ') }}" placeholder="@Channel1, @Channel2" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white outline-none data-font">
+                            <label class="block text-sm text-slate-400 font-bold mb-1 uppercase">Force Sub Channels</label>
+                            <input type="text" name="channels" value="{{ s.get('channels', []) | join(', ') }}" placeholder="@Channel1, @Channel2" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white outline-none">
                         </div>
                         <div class="md:col-span-2">
-                            <label class="block text-sm text-amber-400 font-bold mb-2 uppercase"><i class="fas fa-eye"></i> Live Log Channel ID</label>
-                            <input type="text" name="log_channel" value="{{ s.get('log_channel', '') }}" placeholder="e.g. -100123456789" class="w-full bg-slate-900 border border-amber-500/50 rounded-lg px-4 py-3 text-white outline-none data-font">
-                            <p class="text-xs text-slate-500 mt-1">Make bot admin in this channel to see user clicks live.</p>
+                            <label class="block text-sm text-amber-400 font-bold mb-1 uppercase">Admin Live Log Channel</label>
+                            <input type="text" name="log_channel" value="{{ s.get('log_channel', '') }}" placeholder="For spying on user actions" class="w-full bg-slate-900 border border-amber-500/50 rounded-lg px-4 py-3 text-white outline-none">
                         </div>
-                        <div class="md:col-span-2 bg-slate-900/50 p-4 rounded border border-slate-700 flex items-center justify-between mt-2">
-                            <div>
-                                <label class="text-white font-bold cursor-pointer"><i class="fas fa-tools text-red-400"></i> Maintenance Mode</label>
-                            </div>
-                            <label class="relative inline-flex items-center cursor-pointer">
-                                <input type="checkbox" name="maintenance" class="sr-only peer" {% if s.get('maintenance') %}checked{% endif %}>
-                                <div class="w-11 h-6 bg-slate-700 rounded-full peer peer-checked:bg-red-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
-                            </label>
+                        <div class="md:col-span-2 bg-slate-900/50 p-4 rounded border border-slate-700 flex justify-between items-center mt-2">
+                            <label class="text-red-400 text-sm font-bold cursor-pointer"><i class="fas fa-tools"></i> Maintenance Mode</label>
+                            <input type="checkbox" name="maintenance" {% if s.get('maintenance') %}checked{% endif %} class="w-6 h-6 accent-red-500 cursor-pointer">
                         </div>
                     </div>
                 </div>
@@ -369,22 +443,26 @@
                         <div class="flex flex-col sm:flex-row gap-3 payment-row bg-slate-900/50 p-3 rounded border border-slate-700/50 relative">
                             <div class="flex-1">
                                 <label class="text-xs text-slate-500 uppercase font-bold sm:hidden">Method Name</label>
-                                <input type="text" name="pay_name[]" value="{{ p.name }}" placeholder="Method Name (Bkash/Binance)" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white">
+                                <input type="text" name="pay_name[]" value="{{ p.name }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none">
                             </div>
                             <div class="w-full sm:w-1/3">
                                 <label class="text-xs text-slate-500 uppercase font-bold sm:hidden">Rate per $1</label>
-                                <input type="number" step="0.01" name="pay_rate[]" value="{{ p.rate }}" placeholder="Rate (120 or 1)" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white data-font">
+                                <input type="number" step="0.01" name="pay_rate[]" value="{{ p.rate }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white data-font outline-none">
                             </div>
-                            <button type="button" onclick="this.parentElement.remove()" class="absolute sm:static right-2 top-2 sm:mt-0 text-slate-500 hover:text-red-500 px-2 flex items-center justify-center"><i class="fas fa-times-circle text-xl sm:text-base"></i></button>
+                            <button type="button" onclick="this.parentElement.remove()" class="absolute sm:static right-2 top-2 sm:mt-0 text-slate-500 hover:text-red-500 px-2 flex items-center justify-center transition-colors">
+                                <i class="fas fa-times-circle text-xl sm:text-base"></i>
+                            </button>
                         </div>
                         {% endfor %}
                     </div>
-                    <button type="button" onclick="addPaymentRow()" class="mt-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-4 py-2 rounded text-sm w-full sm:w-auto transition-colors border border-slate-600"><i class="fas fa-plus mr-1"></i> Add Gateway</button>
+                    <button type="button" onclick="addPaymentRow()" class="mt-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-5 py-2 rounded text-sm transition-colors border border-slate-600">
+                        <i class="fas fa-plus mr-1"></i> Add Gateway
+                    </button>
                 </div>
 
-                <div class="flex justify-end pt-2">
-                    <button type="submit" class="bg-indigo-500 hover:bg-indigo-400 text-white font-bold px-8 py-3 rounded-lg w-full sm:w-auto shadow-[0_0_15px_rgba(99,102,241,0.4)] text-lg">
-                        <i class="fas fa-save mr-2"></i> Save Changes
+                <div class="flex justify-end pt-4">
+                    <button type="submit" class="bg-indigo-500 hover:bg-indigo-400 text-white font-bold px-8 py-3 rounded-lg w-full sm:w-auto shadow-[0_0_15px_rgba(99,102,241,0.4)] text-lg transition-all">
+                        <i class="fas fa-save mr-2"></i> Save All Changes
                     </button>
                 </div>
             </form>
@@ -392,54 +470,56 @@
     </main>
 
     <script>
-        // Toggle Mobile Menu
+        // Logic for Mobile 3-Dot Menu
         function toggleMobileMenu() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.getElementById('mobile-overlay');
             
-            // Toggle sidebar translate classes
             if (sidebar.classList.contains('-translate-x-full')) {
-                sidebar.classList.remove('-translate-x-full');
-                overlay.classList.remove('hidden');
+                sidebar.classList.remove('-translate-x-full'); 
+                overlay.classList.remove('hidden'); 
                 setTimeout(() => overlay.classList.remove('opacity-0'), 10);
             } else {
-                sidebar.classList.add('-translate-x-full');
-                overlay.classList.add('opacity-0');
+                sidebar.classList.add('-translate-x-full'); 
+                overlay.classList.add('opacity-0'); 
                 setTimeout(() => overlay.classList.add('hidden'), 300);
             }
         }
 
-        // Tab Switcher
+        // Logic for Tab Switching
         function switchTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
             document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active', 'border-l-4'));
-            document.getElementById('tab-' + tabId).classList.remove('hidden');
+            
+            document.getElementById('tab-' + tabId).classList.remove('hidden'); 
             document.getElementById('btn-' + tabId).classList.add('active');
             
-            // Auto-close mobile menu if open
-            if (window.innerWidth < 768) {
-                const sidebar = document.getElementById('sidebar');
+            // Auto close sidebar on mobile after clicking a tab
+            if (window.innerWidth < 768) { 
+                const sidebar = document.getElementById('sidebar'); 
                 if (!sidebar.classList.contains('-translate-x-full')) {
-                    toggleMobileMenu();
+                    toggleMobileMenu(); 
                 }
             }
         }
 
-        // Add Payment Row
+        // Logic for Adding New Payment Methods dynamically
         function addPaymentRow() {
             const container = document.getElementById('payment-methods');
             const row = document.createElement('div');
-            row.className = 'flex flex-col sm:flex-row gap-3 payment-row bg-slate-900/50 p-3 rounded border border-slate-700/50 relative mt-3';
+            row.className = 'flex flex-col sm:flex-row gap-3 payment-row bg-slate-900/50 p-3 rounded border border-slate-700/50 relative mt-3 animate-[fadeIn_0.2s_ease-out]';
             row.innerHTML = `
                 <div class="flex-1">
                     <label class="text-xs text-slate-500 uppercase font-bold sm:hidden">Method Name</label>
-                    <input type="text" name="pay_name[]" placeholder="e.g. USDT TRC20" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white" required>
+                    <input type="text" name="pay_name[]" placeholder="Method (e.g. bKash / Binance)" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none" required>
                 </div>
                 <div class="w-full sm:w-1/3">
                     <label class="text-xs text-slate-500 uppercase font-bold sm:hidden">Rate per $1</label>
-                    <input type="number" step="0.01" name="pay_rate[]" placeholder="e.g. 1" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white data-font" required>
+                    <input type="number" step="0.01" name="pay_rate[]" placeholder="Rate (e.g. 120 or 1)" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white data-font outline-none" required>
                 </div>
-                <button type="button" onclick="this.parentElement.remove()" class="absolute sm:static right-2 top-2 sm:mt-0 text-slate-500 hover:text-red-500 px-2 flex items-center justify-center"><i class="fas fa-times-circle text-xl sm:text-base"></i></button>
+                <button type="button" onclick="this.parentElement.remove()" class="absolute sm:static right-2 top-2 sm:mt-0 text-slate-500 hover:text-red-500 px-2 flex items-center justify-center transition-colors">
+                    <i class="fas fa-times-circle text-xl sm:text-base"></i>
+                </button>
             `;
             container.appendChild(row);
         }
