@@ -8,7 +8,7 @@ import re
 import random
 from datetime import datetime
 
-# ASCII Encoding Fix (Bangla Support & Box Designs)
+# ASCII Encoding Fix
 if sys.stdout.encoding != 'utf-8':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
@@ -19,7 +19,7 @@ from config import *
 import api
 
 # ==========================================
-# 1. CURRENCY ENGINE SETTINGS
+# 1. CURRENCY ENGINE & FAST SETTINGS CACHE
 # ==========================================
 BASE_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://smm-panel-g8ab.onrender.com')
 
@@ -34,36 +34,14 @@ def fmt_curr(usd_amount, curr_code="BDT"):
     decimals = 3 if curr_code == "USD" else 2
     return f"{sym}{val:.{decimals}f}"
 
-def update_spy(uid, action_text):
-    now = datetime.now()
-    try: 
-        users_col.update_one({"_id": uid}, {"$set": {"last_action": action_text, "last_active": now}})
-        log_ch = get_settings().get("log_channel")
-        if log_ch:
-            bot.send_message(log_ch, f"🕵️‍♂️ **LIVE LOG**\n👤 User: `{uid}`\n🎯 Action: {action_text}", parse_mode="Markdown")
-    except Exception: 
-        pass
-
-def check_spam(uid):
-    if str(uid) == str(ADMIN_ID): return False 
-    current_time = time.time()
-    
-    if uid in blocked_users:
-        if current_time < blocked_users[uid]: return True
-        else: del blocked_users[uid]
-        
-    if uid not in user_actions: user_actions[uid] = []
-    user_actions[uid].append(current_time)
-    user_actions[uid] = [t for t in user_actions[uid] if current_time - t < 3]
-    
-    if len(user_actions[uid]) > 5:
-        blocked_users[uid] = current_time + 300
-        try: bot.send_message(uid, "🛡 **ANTI-SPAM!** You are temporarily blocked.", parse_mode="Markdown")
-        except Exception: pass
-        return True
-    return False
+# 🔥 SETTINGS RAM CACHE (No Database Delay)
+SETTINGS_CACHE = {"data": None, "time": 0}
 
 def get_settings():
+    global SETTINGS_CACHE
+    if SETTINGS_CACHE["data"] and time.time() - SETTINGS_CACHE["time"] < 30:
+        return SETTINGS_CACHE["data"]
+    
     s = config_col.find_one({"_id": "settings"})
     if not s:
         s = {
@@ -75,7 +53,38 @@ def get_settings():
             "reward_top1": 10.0, "reward_top2": 5.0, "reward_top3": 2.0
         }
         config_col.insert_one(s)
+    
+    SETTINGS_CACHE["data"] = s
+    SETTINGS_CACHE["time"] = time.time()
     return s
+
+# 🔥 BACKGROUND SPY THREAD (Zero Lag for Users)
+def _spy_bg_task(uid, action_text):
+    try: 
+        users_col.update_one({"_id": uid}, {"$set": {"last_action": action_text, "last_active": datetime.now()}})
+        log_ch = get_settings().get("log_channel")
+        if log_ch:
+            bot.send_message(log_ch, f"🕵️‍♂️ **LIVE LOG**\n👤 User: `{uid}`\n🎯 Action: {action_text}", parse_mode="Markdown")
+    except Exception: pass
+
+def update_spy(uid, action_text):
+    threading.Thread(target=_spy_bg_task, args=(uid, action_text), daemon=True).start()
+
+def check_spam(uid):
+    if str(uid) == str(ADMIN_ID): return False 
+    current_time = time.time()
+    if uid in blocked_users:
+        if current_time < blocked_users[uid]: return True
+        else: del blocked_users[uid]
+    if uid not in user_actions: user_actions[uid] = []
+    user_actions[uid].append(current_time)
+    user_actions[uid] = [t for t in user_actions[uid] if current_time - t < 3]
+    if len(user_actions[uid]) > 5:
+        blocked_users[uid] = current_time + 300
+        try: bot.send_message(uid, "🛡 **ANTI-SPAM!** You are temporarily blocked.", parse_mode="Markdown")
+        except Exception: pass
+        return True
+    return False
 
 def check_maintenance(chat_id):
     s = get_settings()
@@ -100,14 +109,13 @@ def auto_sync_services_cron():
                 config_col.update_one({"_id": "api_cache"}, {"$set": {"data": res, "time": time.time()}}, upsert=True)
         except Exception: 
             pass
-        time.sleep(600) # Syncs every 10 minutes silently
+        time.sleep(600)
 
 threading.Thread(target=auto_sync_services_cron, daemon=True).start()
 
 def get_cached_services():
     global GLOBAL_SERVICES_CACHE
     if GLOBAL_SERVICES_CACHE: return GLOBAL_SERVICES_CACHE
-    
     cache = config_col.find_one({"_id": "api_cache"})
     if cache and cache.get('data'):
         GLOBAL_SERVICES_CACHE = cache.get('data')
@@ -133,13 +141,11 @@ def identify_platform(cat_name):
     if 'twitter' in cat or ' x ' in cat: return "🐦 Twitter"
     return "🌐 Other Services"
 
-# 🔥 SMART EMOJI CLEANER ENGINE
 def clean_service_name(raw_name):
     try:
         n = str(raw_name)
         emojis = ""
         n_lower = n.lower()
-        
         if "instant" in n_lower or "fast" in n_lower: emojis += "⚡"
         if "non drop" in n_lower or "norefill" in n_lower or "no refill" in n_lower: emojis += "💎"
         elif "refill" in n_lower: emojis += "♻️"
@@ -148,18 +154,13 @@ def clean_service_name(raw_name):
         
         n = re.sub(r'(?i)speed\s*[:\-]?\s*', '', n)
         n = re.sub(r'📍?\s*\d+(-\d+)?[KkMm]?/[Dd]\s*', '', n)
-        
         words = ["Telegram", "TG", "Instagram", "IG", "Facebook", "FB", "YouTube", "YT", "TikTok", "Twitter", 
                  "1xpanel", "Instant", "fast", "NoRefill", "No refill", "Refill", "Stable", "price", "Non drop", "real"]
-        for w in words:
-            n = re.sub(r'(?i)\b' + re.escape(w) + r'\b', '', n)
-            
+        for w in words: n = re.sub(r'(?i)\b' + re.escape(w) + r'\b', '', n)
         n = re.sub(r'[-|:._/]+', ' ', n)
         n = " ".join(n.split()).strip()
-        
         return f"{n[:45]} {emojis}".strip() if n else f"Premium Service {emojis}"
-    except Exception: 
-        return str(raw_name)[:50]
+    except Exception: return str(raw_name)[:50]
 
 def get_user_tier(spent):
     if spent >= 50: return "🥇 Gold VIP", 5 
@@ -341,7 +342,6 @@ def start_ord(call):
     users_col.update_one({"_id": call.message.chat.id}, {"$set": {"step": "awaiting_link", "temp_sid": sid}})
     bot.send_message(call.message.chat.id, "🔗 **Paste the Target Link:**\n_(Reply with your link)_", parse_mode="Markdown")
 
-# 🔥 REAL ORDER CHANNEL POST LOGIC
 @bot.callback_query_handler(func=lambda c: c.data == "PLACE_ORD")
 def final_ord(call):
     bot.answer_callback_query(call.id)
@@ -359,14 +359,12 @@ def final_ord(call):
     srv = next((x for x in services if str(x['service']) == str(draft['sid'])), None)
     srv_name = clean_service_name(srv['name']) if srv else f"ID: {draft['sid']}"
     
-    # 🎨 আপনার স্পেশাল বক্স ডিজাইন (Real Orders)
     masked_id = f"***{str(uid)[-4:]}"
     short_srv = srv_name[:22] + ".." if len(srv_name) > 22 else srv_name
     qty_int = int(draft['qty'])
     cost_str = fmt_curr(draft['cost'], curr)
     
     channel_post = f"```text\n╔════ 🟢 𝗡𝗘𝗪 𝗢𝗥𝗗𝗘𝗥 ════╗\n║ 👤 𝗜𝗗: {masked_id}\n║ 🚀 𝗦𝗲𝗿𝘃𝗶𝗰𝗲: {short_srv}\n║ 📦 𝗤𝘁𝘆: {qty_int}\n║ 💵 𝗖𝗼𝘀𝘁: {cost_str}\n╚════════════════════╝\n```"
-
     s = get_settings()
     proof_ch = s.get('proof_channel', '')
 
@@ -389,7 +387,6 @@ def final_ord(call):
         
         receipt = f"🧾 **OFFICIAL INVOICE**\n━━━━━━━━━━━━━━━━━━━━\n✅ **Status:** Order Placed Successfully\n🆔 **Order ID:** `{res['order']}`\n🔗 **Link:** {draft['link']}\n🔢 **Quantity:** {draft['qty']}\n💳 **Paid:** `{cost_str}`\n━━━━━━━━━━━━━━━━━━━━"
         bot.edit_message_text(receipt, uid, call.message.message_id, parse_mode="Markdown", disable_web_page_preview=True)
-        # 📢 Real Order Channel Post happens here!
         if proof_ch:
             try: bot.send_message(proof_ch, channel_post, parse_mode="Markdown")
             except: pass
@@ -472,17 +469,13 @@ def pay_details(call):
     bot.answer_callback_query(call.id)
     _, amt_usd, method = call.data.split("|")
     amt_usd = float(amt_usd)
-    
     s = get_settings()
     pay_data = next((p for p in s.get('payments', []) if p['name'] == method), None)
-    address = pay_data.get('address', 'Contact Admin for Details') if pay_data else 'Contact Admin'
+    address = pay_data.get('address', 'Contact Admin') if pay_data else 'Contact Admin'
     rate = pay_data.get('rate', 120) if pay_data else 120
-    
     is_crypto = any(x in method.lower() for x in ['usdt', 'binance', 'crypto', 'btc', 'pm', 'perfect', 'payeer'])
     display_amt = f"${amt_usd:.2f}" if is_crypto else f"{round(amt_usd * float(rate), 2)} Local Currency"
-    
     txt = f"🏦 **{method} Payment Details**\n━━━━━━━━━━━━━━━━━━━━\n💵 **Amount to Send:** `{display_amt}`\n📍 **Account / Address:** `{address}`\n━━━━━━━━━━━━━━━━━━━━\n⚠️ Send the exact amount to the address above, then reply to this message with your **TrxID / Transaction ID**:"
-    
     users_col.update_one({"_id": call.message.chat.id}, {"$set": {"step": "awaiting_trx", "temp_dep_amt": amt_usd, "temp_dep_method": method}})
     bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, parse_mode="Markdown")
 
@@ -498,7 +491,6 @@ def add_to_favorites(call):
 def universal_buttons(message):
     update_spy(message.chat.id, f"Clicked {message.text}")
     users_col.update_one({"_id": message.chat.id}, {"$unset": {"step": "", "temp_sid": "", "temp_link": ""}})
-    
     if check_spam(message.chat.id) or check_maintenance(message.chat.id) or not check_sub(message.chat.id): return
     u = users_col.find_one({"_id": message.chat.id})
     curr = u.get("currency", "BDT") if u else "BDT"
@@ -582,6 +574,9 @@ def admin_callbacks(call):
         s = get_settings()
         ns = not s.get('maintenance', False)
         config_col.update_one({"_id": "settings"}, {"$set": {"maintenance": ns}})
+        # Update RAM cache instantly
+        global SETTINGS_CACHE
+        if SETTINGS_CACHE["data"]: SETTINGS_CACHE["data"]["maintenance"] = ns
         bot.answer_callback_query(call.id, f"Maintenance: {'ON' if ns else 'OFF'}", show_alert=True)
     elif call.data == "ADM_PROFIT":
         users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_profit"}})
@@ -589,18 +584,16 @@ def admin_callbacks(call):
         bot.answer_callback_query(call.id)
 
 # ==========================================
-# 8. MASTER ROUTER (NO AI, FULL ATOMIC LOGIC)
+# 8. MASTER ROUTER
 # ==========================================
 @bot.message_handler(func=lambda m: True)
 def text_router(message):
     uid = message.chat.id
     text = message.text.strip() if message.text else ""
-    
     if text.startswith('/'): return
+    update_spy(uid, f"Clicked {text}" if len(text) < 20 else "Typing...")
     
-    update_spy(uid, "Sending Message")
     if check_spam(uid) or check_maintenance(uid) or not check_sub(uid): return
-    
     if text in ["⭐ Favorites", "🏆 Leaderboard", "📦 Orders", "💰 Deposit", "🎧 Support Ticket", "🔍 Smart Search", "🤝 Affiliate", "🎟️ Voucher"]:
         return universal_buttons(message)
     
@@ -620,6 +613,8 @@ def text_router(message):
             try:
                 v = float(text)
                 config_col.update_one({"_id": "settings"}, {"$set": {"profit_margin": v}})
+                global SETTINGS_CACHE
+                if SETTINGS_CACHE["data"]: SETTINGS_CACHE["data"]["profit_margin"] = v
                 users_col.update_one({"_id": uid}, {"$unset": {"step": ""}})
                 return bot.send_message(uid, f"✅ **Profit Margin set to {v}%**")
             except: return bot.send_message(uid, "❌ Enter a valid number!")
@@ -645,8 +640,7 @@ def text_router(message):
         s = next((x for x in services if str(x['service']) == str(sid)), None)
         if not s: return bot.send_message(uid, "❌ Service not found.")
             
-        try:
-            s_min, s_max = int(s.get('min', 0)), int(s.get('max', 99999999))
+        try: s_min, s_max = int(s.get('min', 0)), int(s.get('max', 99999999))
         except: s_min, s_max = 0, 99999999
             
         if qty < s_min or qty > s_max: return bot.send_message(uid, f"❌ Invalid Quantity! Allowed: {s_min} - {s_max}")
