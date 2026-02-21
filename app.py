@@ -6,7 +6,7 @@ from datetime import datetime
 from flask import Flask, request, render_template, redirect, url_for, session, jsonify
 import telebot
 from bson.objectid import ObjectId
-
+import handlers  # 🔥 জাস্ট এই জাদুকরী লাইনটা বসিয়ে দিন! এটার জন্যই সব আটকে ছিল!
 # Import from loader and config
 from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col
 from config import BOT_TOKEN, ADMIN_ID, ADMIN_PASSWORD
