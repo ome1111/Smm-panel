@@ -179,7 +179,8 @@ def check_sub(chat_id):
 def start(message):
     uid = message.chat.id
     update_spy(uid, "Bot Started")
-    users_col.update_one({"_id": uid}, {"$unset": {"step": "", "step_data": ""}})
+    # Reset any hanging states safely
+    users_col.update_one({"_id": uid}, {"$unset": {"step": "", "temp_sid": "", "temp_link": "", "temp_dep_amt": "", "temp_dep_method": ""}})
     bot.clear_step_handler_by_chat_id(uid)
     
     if check_spam(uid) or check_maintenance(uid): return
@@ -253,7 +254,7 @@ def sub_callback(call):
 @bot.message_handler(func=lambda m: m.text == "🚀 New Order")
 def new_order_start(message):
     update_spy(message.chat.id, "Browsing Platforms")
-    users_col.update_one({"_id": message.chat.id}, {"$unset": {"step": "", "step_data": ""}})
+    users_col.update_one({"_id": message.chat.id}, {"$unset": {"step": "", "temp_sid": "", "temp_link": ""}})
     
     if check_spam(message.chat.id) or check_maintenance(message.chat.id) or not check_sub(message.chat.id): return
     
@@ -345,12 +346,12 @@ def info_card(call):
     if call.message.text and "YOUR ORDERS" in call.message.text: bot.send_message(call.message.chat.id, txt, reply_markup=markup, parse_mode="Markdown")
     else: bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
-# 🔥 100% FIXED ORDER LOGIC (State Machine without AI)
+# 🔥 100% FIXED ORDER LOGIC (Flat Atomic Database Logic)
 @bot.callback_query_handler(func=lambda c: c.data.startswith("ORD|"))
 def start_ord(call):
     bot.answer_callback_query(call.id)
     sid = call.data.split("|")[1]
-    users_col.update_one({"_id": call.message.chat.id}, {"$set": {"step": "awaiting_link", "step_data": {"sid": sid}}})
+    users_col.update_one({"_id": call.message.chat.id}, {"$set": {"step": "awaiting_link", "temp_sid": sid}})
     bot.send_message(call.message.chat.id, "🔗 **Paste the Target Link:**\n_(Reply with your link)_", parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data == "PLACE_ORD")
@@ -361,7 +362,7 @@ def final_ord(call):
     curr = user.get("currency", "BDT")
     draft = user.get('draft')
     
-    if not draft or user['balance'] < draft['cost']: 
+    if not draft or user.get('balance', 0) < draft['cost']: 
         return bot.send_message(uid, "❌ Session expired or low balance.")
     
     show_loading(uid, call.message.message_id, ["🛒 Preparing...", "🛒📦 Sending to API...", "✅ Order Placed!"])
@@ -387,7 +388,7 @@ def final_ord(call):
 @bot.callback_query_handler(func=lambda c: c.data == "CANCEL_ORD")
 def cancel_ord(call):
     bot.answer_callback_query(call.id)
-    users_col.update_one({"_id": call.message.chat.id}, {"$unset": {"draft": "", "step": "", "step_data": ""}})
+    users_col.update_one({"_id": call.message.chat.id}, {"$unset": {"draft": "", "step": "", "temp_sid": "", "temp_link": ""}})
     bot.edit_message_text("🚫 **Order Cancelled.**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
 
 # ==========================================
@@ -396,7 +397,7 @@ def cancel_ord(call):
 @bot.message_handler(func=lambda m: m.text == "👤 Profile")
 def profile(message):
     update_spy(message.chat.id, "Viewing Profile")
-    users_col.update_one({"_id": message.chat.id}, {"$unset": {"step": "", "step_data": ""}})
+    users_col.update_one({"_id": message.chat.id}, {"$unset": {"step": "", "temp_sid": "", "temp_link": "", "temp_dep_amt": "", "temp_dep_method": ""}})
     if check_spam(message.chat.id) or check_maintenance(message.chat.id) or not check_sub(message.chat.id): return
     
     msg = bot.send_message(message.chat.id, "⭐ Loading Profile.")
@@ -462,10 +463,9 @@ def ask_refill(call):
 # ==========================================
 # 6. UNIVERSAL MENUS & MONTHLY LEADERBOARD 🏆
 # ==========================================
-@bot.message_handler(func=lambda m: m.text in ["⭐ Favorites", "🏆 Leaderboard", "📦 Orders", "💰 Deposit", "🎧 Support Ticket", "🔍 Smart Search", "🤝 Affiliate", "🎟️ Voucher"])
 def universal_buttons(message):
     update_spy(message.chat.id, f"Clicked {message.text}")
-    users_col.update_one({"_id": message.chat.id}, {"$unset": {"step": "", "step_data": ""}})
+    users_col.update_one({"_id": message.chat.id}, {"$unset": {"step": "", "temp_sid": "", "temp_link": "", "temp_dep_amt": "", "temp_dep_method": ""}})
     
     if check_spam(message.chat.id) or check_maintenance(message.chat.id) or not check_sub(message.chat.id): return
     u = users_col.find_one({"_id": message.chat.id})
@@ -553,7 +553,7 @@ def pay_details(call):
     
     txt = f"🏦 **{method} Payment Details**\n━━━━━━━━━━━━━━━━━━━━\n💵 **Amount to Send:** `{display_amt}`\n📍 **Account / Address:** `{address}`\n━━━━━━━━━━━━━━━━━━━━\n⚠️ Send the exact amount to the address above, then reply to this message with your **TrxID / Transaction ID**:"
     
-    users_col.update_one({"_id": call.message.chat.id}, {"$set": {"step": "awaiting_trx", "step_data": {"amt": amt_usd, "method": method}}})
+    users_col.update_one({"_id": call.message.chat.id}, {"$set": {"step": "awaiting_trx", "temp_dep_amt": amt_usd, "temp_dep_method": method}})
     bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("FAV_ADD|"))
@@ -563,7 +563,7 @@ def add_to_favorites(call):
     users_col.update_one({"_id": call.message.chat.id}, {"$addToSet": {"favorites": sid}})
 
 # ==========================================
-# 8. THE MASTER STATE MACHINE (100% FIXED)
+# 8. THE MASTER STATE MACHINE (100% BULLETPROOF)
 # ==========================================
 @bot.message_handler(func=lambda m: True)
 def text_router(message):
@@ -573,7 +573,7 @@ def text_router(message):
     update_spy(uid, "Sending Message")
     if check_spam(uid) or check_maintenance(uid) or not check_sub(uid): return
     
-    # Check if universal button was clicked
+    # Handle Universal Buttons Direct
     if text in ["⭐ Favorites", "🏆 Leaderboard", "📦 Orders", "💰 Deposit", "🎧 Support Ticket", "🔍 Smart Search", "🤝 Affiliate", "🎟️ Voucher"]:
         return universal_buttons(message)
     
@@ -582,11 +582,13 @@ def text_router(message):
     
     step = u.get("step")
     
+    # No Step = Fallback Command Message
+    if not step:
+        return bot.send_message(uid, "❌ **Unknown Command.** Please select an option from the menu below:", reply_markup=main_menu(), parse_mode="Markdown")
+    
     # 🔥 STATE 1: ORDER LINK INPUT
     if step == "awaiting_link":
-        sd = u.get("step_data", {})
-        sd["link"] = text
-        users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_qty", "step_data": sd}})
+        users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_qty", "temp_link": text}})
         return bot.send_message(uid, "🔢 **Enter Quantity (Numbers only):**", parse_mode="Markdown")
         
     # 🔥 STATE 2: ORDER QTY INPUT
@@ -596,19 +598,19 @@ def text_router(message):
         except ValueError:
             return bot.send_message(uid, "⚠️ **Numbers only! Enter valid quantity:**", parse_mode="Markdown")
             
-        sd = u.get("step_data", {})
-        sid = sd.get("sid")
-        link = sd.get("link")
+        sid = u.get("temp_sid")
+        link = u.get("temp_link")
+        
+        # CLEAR STATE TO PREVENT LOOPING
+        users_col.update_one({"_id": uid}, {"$unset": {"step": "", "temp_sid": "", "temp_link": ""}})
         
         if not sid or not link:
-            users_col.update_one({"_id": uid}, {"$unset": {"step": "", "step_data": ""}})
             return bot.send_message(uid, "❌ Session expired. Please try ordering again.")
             
         services = get_cached_services()
         s = next((x for x in services if str(x['service']) == str(sid)), None)
         
         if not s:
-            users_col.update_one({"_id": uid}, {"$unset": {"step": "", "step_data": ""}})
             return bot.send_message(uid, "❌ Service not found.")
             
         try:
@@ -623,8 +625,6 @@ def text_router(message):
         curr = u.get("currency", "BDT")
         rate_usd = calculate_price(s['rate'], u.get('spent', 0), u.get('custom_discount', 0))
         cost_usd = (rate_usd / 1000) * qty
-        
-        users_col.update_one({"_id": uid}, {"$unset": {"step": "", "step_data": ""}})
         
         if u.get('balance', 0) < cost_usd:
             return bot.send_message(uid, f"❌ **Insufficient Balance!** Need `{fmt_curr(cost_usd, curr)}`.", parse_mode="Markdown")
@@ -656,11 +656,10 @@ def text_router(message):
     # 🔥 STATE 4: DEPOSIT TRXID INPUT
     elif step == "awaiting_trx":
         tid = text
-        sd = u.get("step_data", {})
-        amt = sd.get("amt")
-        method_name = sd.get("method")
+        amt = u.get("temp_dep_amt", 0.0)
+        method_name = u.get("temp_dep_method", "Unknown")
         
-        users_col.update_one({"_id": uid}, {"$unset": {"step": "", "step_data": ""}})
+        users_col.update_one({"_id": uid}, {"$unset": {"step": "", "temp_dep_amt": "", "temp_dep_method": ""}})
         
         msg = bot.send_message(uid, "🪙 Initializing...")
         show_loading(uid, msg.message_id, ["🪙 Initializing...", "💰 Verifying Payment...", "💳 Securing TrxID...", "✅ Submitted!"])
@@ -716,5 +715,3 @@ def text_router(message):
         for s in results: markup.add(types.InlineKeyboardButton(f"⚡ ID:{s['service']} | {clean_service_name(s['name'])[:25]}", callback_data=f"INFO|{s['service']}"))
         return bot.edit_message_text(f"🔍 **Top Results:**", uid, msg.message_id, reply_markup=markup, parse_mode="Markdown")
 
-    # 🔥 FALLBACK (Since AI is removed)
-    bot.send_message(uid, "❌ **Unknown Command.** Please select an option from the menu below:", reply_markup=main_menu(), parse_mode="Markdown")
