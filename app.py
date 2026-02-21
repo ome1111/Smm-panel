@@ -83,7 +83,6 @@ def auto_refund_and_notification_cron():
             active_orders = orders_col.find({"status": {"$in": ["pending", "processing", "in progress"]}})
             
             for order in active_orders:
-                # Skip shadow banned orders (they are ghost orders)
                 if order.get('is_shadow'): 
                     continue
                     
@@ -93,46 +92,34 @@ def auto_refund_and_notification_cron():
                     new_status = str(res['status']).lower()
                     old_status = str(order.get('status', 'pending')).lower()
                     
-                    # 1. Error / Cancelled / Partial Logic
                     if new_status in ['canceled', 'partial', 'error', 'fail']:
                         attempts = order.get('attempts', 0) + 1
-                        
                         if attempts >= 3:
-                            # Full Refund
                             users_col.update_one({"_id": order['uid']}, {"$inc": {"balance": order['cost'], "spent": -order['cost']}})
                             orders_col.update_one({"_id": order['_id']}, {"$set": {"status": "refunded", "attempts": attempts}})
-                            
-                            # SMS: Refund Notification
                             try: 
                                 msg = f"⚠️ **ORDER REFUNDED / CANCELED**\n━━━━━━━━━━━━━━━━━━━━\n🆔 **Order ID:** `{order['oid']}`\n💰 **Refund Amount:** `${order['cost']}`\n📊 **Status:** Order could not be fully completed by the server. The amount has been added back to your wallet.\n━━━━━━━━━━━━━━━━━━━━"
                                 bot.send_message(order['uid'], msg, parse_mode="Markdown")
                             except Exception: pass
                         else:
-                            # Retry placing the order silently
                             new_res = api.place_order(order.get('sid'), order.get('link'), order.get('qty'))
                             if new_res and 'order' in new_res:
                                 orders_col.update_one({"_id": order['_id']}, {"$set": {"oid": new_res['order'], "attempts": attempts}})
                             else:
                                 orders_col.update_one({"_id": order['_id']}, {"$set": {"attempts": attempts}})
                     
-                    # 2. Status Changed Notification (Processing, Completed)
                     elif new_status != old_status:
                         orders_col.update_one({"_id": order['_id']}, {"$set": {"status": new_status}})
-                        
                         try:
                             if new_status == 'completed':
                                 msg = f"✅ **ORDER SUCCESSFULLY COMPLETED!**\n━━━━━━━━━━━━━━━━━━━━\n🆔 **Order ID:** `{order['oid']}`\n📦 **Quantity:** {order.get('qty', 'N/A')}\n💳 **Cost:** `${order['cost']}`\n📊 **Status:** Mission Accomplished! The requested amount has been fully delivered.\n━━━━━━━━━━━━━━━━━━━━"
                                 bot.send_message(order['uid'], msg, parse_mode="Markdown")
-                                
                             elif new_status in ['processing', 'in progress']:
                                 msg = f"🔄 **ORDER UPDATE: PROCESSING**\n━━━━━━━━━━━━━━━━━━━━\n🆔 **Order ID:** `{order['oid']}`\n🔗 **Link:** {str(order.get('link', 'N/A'))[:25]}...\n📊 **Status:** Your order has been picked up by the server and is currently being processed!\n━━━━━━━━━━━━━━━━━━━━"
                                 bot.send_message(order['uid'], msg, parse_mode="Markdown", disable_web_page_preview=True)
-                        except Exception:
-                            pass
-        except Exception: 
-            pass
-            
-        time.sleep(120) # Checks every 2 minutes for faster updates
+                        except Exception: pass
+        except Exception: pass
+        time.sleep(120)
 
 threading.Thread(target=auto_refund_and_notification_cron, daemon=True).start()
 
@@ -169,10 +156,8 @@ def auto_fake_deposit_cron():
                 freq = max(1, int(s.get('fake_dep_freq', 2)))
                 avg_sleep = 3600 / freq
                 time.sleep(random.randint(int(avg_sleep * 0.7), int(avg_sleep * 1.3)))
-            else: 
-                time.sleep(300)
-        except Exception: 
-            time.sleep(300)
+            else: time.sleep(300)
+        except Exception: time.sleep(300)
 
 def auto_fake_order_cron():
     while True:
@@ -205,10 +190,8 @@ def auto_fake_order_cron():
                 freq = max(1, int(s.get('fake_ord_freq', 3)))
                 avg_sleep = 3600 / freq
                 time.sleep(random.randint(int(avg_sleep * 0.7), int(avg_sleep * 1.3)))
-            else: 
-                time.sleep(300)
-        except Exception: 
-            time.sleep(300)
+            else: time.sleep(300)
+        except Exception: time.sleep(300)
 
 threading.Thread(target=auto_fake_deposit_cron, daemon=True).start()
 threading.Thread(target=auto_fake_order_cron, daemon=True).start()
@@ -274,42 +257,73 @@ def admin_dashboard():
 def update_settings():
     if not session.get('logged_in'): return redirect(url_for('login'))
     
+    pay_names = request.form.getlist('pay_name[]')
+    pay_rates = request.form.getlist('pay_rate[]')
+    pay_addresses = request.form.getlist('pay_address[]')
+    payments_list = []
+    
+    for i in range(len(pay_names)):
+        n = pay_names[i] if i < len(pay_names) else ""
+        r = pay_rates[i] if i < len(pay_rates) else 1
+        a = pay_addresses[i] if i < len(pay_addresses) else ""
+        if n: payments_list.append({"name": n, "rate": float(r), "address": a})
+
     config_col.update_one({"_id": "settings"}, {"$set": {
         "profit_margin": float(request.form.get('profit_margin', 20)),
         "maintenance": request.form.get('maintenance') == 'on',
         "maintenance_msg": request.form.get('maintenance_msg', 'Bot is upgrading.'),
         "log_channel": request.form.get('log_channel', '').strip(),
         "proof_channel": request.form.get('proof_channel', '').strip(),
-        
         "flash_sale_active": request.form.get('flash_sale_active') == 'on',
         "flash_sale_discount": float(request.form.get('flash_sale_discount', 0.0)),
-        
         "welcome_bonus_active": request.form.get('welcome_bonus_active') == 'on',
         "welcome_bonus": float(request.form.get('welcome_bonus', 0.0)),
         "ref_bonus": float(request.form.get('ref_bonus', 0.05)),
         "dep_commission": float(request.form.get('dep_commission', 5.0)),
-        
         "reward_top1": float(request.form.get('reward_top1', 10.0)),
         "reward_top2": float(request.form.get('reward_top2', 5.0)),
         "reward_top3": float(request.form.get('reward_top3', 2.0)),
-        
         "fake_proof_status": request.form.get('fake_proof_status') == 'on',
         "night_mode": request.form.get('night_mode') == 'on',
         "fake_deposit_min": float(request.form.get('fake_deposit_min', 0.01)),
-        "fake_deposit_max": float(request.form.get('fake_deposit_max', 20)),
+        "fake_deposit_max": float(request.form.get('fake_deposit_max', 20.0)),
         "fake_order_min": float(request.form.get('fake_order_min', 0.01)),
-        "fake_order_max": float(request.form.get('fake_order_max', 10)),
+        "fake_order_max": float(request.form.get('fake_order_max', 10.0)),
         "fake_dep_freq": int(request.form.get('fake_dep_freq', 2)),
         "fake_ord_freq": int(request.form.get('fake_ord_freq', 3)),
-        
         "channels": [c.strip() for c in request.form.get('channels', '').split(',') if c.strip()],
-        "payments": [{"name": n, "rate": float(r)} for n, r in zip(request.form.getlist('pay_name[]'), request.form.getlist('pay_rate[]')) if n and r]
+        "payments": payments_list
     }})
     return redirect(url_for('admin_dashboard'))
 
 # ==========================================
 # 7. GOD MODE & REWARDS ROUTES
 # ==========================================
+@app.route('/distribute_rewards')
+def distribute_rewards():
+    """1-Click Monthly Reward Distribution"""
+    if not session.get('logged_in'): return redirect(url_for('login'))
+    s = get_settings()
+    rewards = [float(s.get('reward_top1', 10)), float(s.get('reward_top2', 5)), float(s.get('reward_top3', 2))]
+    
+    # Process Top 3 Spenders (Real Users Only)
+    top_spenders = list(users_col.find({"spent": {"$gt": 0}, "is_fake": {"$ne": True}}).sort("spent", -1).limit(3))
+    for i, u in enumerate(top_spenders):
+        users_col.update_one({"_id": u['_id']}, {"$inc": {"balance": rewards[i]}})
+        try: bot.send_message(u['_id'], f"🏆 **CONGRATULATIONS!**\nYou ranked #{i+1} as a Top Spender this month!\n🎁 Reward: `${rewards[i]}` added to your wallet.", parse_mode="Markdown")
+        except: pass
+        
+    # Process Top 3 Affiliates (Real Users Only)
+    top_refs = list(users_col.find({"ref_earnings": {"$gt": 0}, "is_fake": {"$ne": True}}).sort("ref_earnings", -1).limit(3))
+    for i, u in enumerate(top_refs):
+        users_col.update_one({"_id": u['_id']}, {"$inc": {"balance": rewards[i]}})
+        try: bot.send_message(u['_id'], f"🏆 **CONGRATULATIONS!**\nYou ranked #{i+1} as a Top Affiliate this month!\n🎁 Reward: `${rewards[i]}` added to your wallet.", parse_mode="Markdown")
+        except: pass
+
+    try: bot.send_message(ADMIN_ID, "✅ **Rewards Distributed Successfully to Top 3 Spenders & Affiliates!**")
+    except: pass
+    return redirect(url_for('admin_dashboard'))
+
 @app.route('/reset_monthly')
 def reset_monthly():
     if not session.get('logged_in'): return redirect(url_for('login'))
@@ -320,17 +334,32 @@ def reset_monthly():
 
 @app.route('/edit_user', methods=['POST'])
 def edit_user():
+    """Advanced Add/Subtract/Set User Logic"""
     if not session.get('logged_in'): return redirect(url_for('login'))
     uid = int(request.form.get('user_id'))
+    
+    # Balance Logic
+    bal_action = request.form.get('bal_action', 'set')
+    bal_val = float(request.form.get('balance_val', 0))
+    if bal_action == 'add': users_col.update_one({"_id": uid}, {"$inc": {"balance": bal_val}})
+    elif bal_action == 'sub': users_col.update_one({"_id": uid}, {"$inc": {"balance": -bal_val}})
+    else: users_col.update_one({"_id": uid}, {"$set": {"balance": bal_val}})
+        
     tier_override = request.form.get('tier_override', '')
     if tier_override == "none": tier_override = None
+    
     users_col.update_one({"_id": uid}, {"$set": {
-        "balance": float(request.form.get('balance', 0)),
         "spent": float(request.form.get('spent', 0)),
         "ref_earnings": float(request.form.get('ref_earnings', 0)),
         "custom_discount": float(request.form.get('custom_discount', 0)),
         "tier_override": tier_override
     }})
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/delete_user/<int:uid>')
+def delete_user(uid):
+    if not session.get('logged_in'): return redirect(url_for('login'))
+    users_col.delete_one({"_id": uid})
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/toggle_shadow_ban/<int:uid>')
@@ -389,12 +418,9 @@ def approve_dep(uid, amt, tid):
         user_id, amount = int(uid), float(amt)
         users_col.update_one({"_id": user_id}, {"$inc": {"balance": amount}})
         bot.send_message(user_id, f"✅ **DEPOSIT APPROVED!**\nAmount: `${amount}` added.\nTrxID: `{tid}`", parse_mode="Markdown")
-        bot.send_message(ADMIN_ID, f"✅ Approved ${amount} for User ID: {uid}")
         
         s = get_settings()
         user = users_col.find_one({"_id": user_id})
-        
-        # Affiliate Deposit Commission
         if user and user.get("ref_by"):
             comm_pct = s.get('dep_commission', 0.0)
             if comm_pct > 0:
@@ -403,7 +429,6 @@ def approve_dep(uid, amt, tid):
                 try: bot.send_message(user["ref_by"], f"🎉 **LIFETIME COMMISSION!**\nYour referral `{user_id}` deposited funds. You earned `${comm_amt:.3f}`!", parse_mode="Markdown")
                 except Exception: pass
 
-        # Real Proof to Channel
         proof_ch = s.get('proof_channel')
         if proof_ch:
             text = f"> ╔═══ 💳 𝗡𝗘𝗪 𝗗𝗘𝗣𝗢𝗦𝗜𝗧 ═══╗\n> ║ 👤 𝗜𝗗: `***{str(uid)[-4:]}`\n> ║ 🏦 𝗚𝗮𝘁𝗲: Verified User\n> ║ 💵 𝗙𝘂𝗻𝗱: `${amount}`\n> ╚════════════════════╝"
