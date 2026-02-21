@@ -1,15 +1,14 @@
 import sys
 import io
-import csv
 import math
 import time
 import os
 import threading
 import re
 import random
-from datetime import datetime, timedelta
+from datetime import datetime
 
-# ASCII Encoding Fix (Bangla Support)
+# ASCII Encoding Fix (Bangla Support & Box Designs)
 if sys.stdout.encoding != 'utf-8':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
@@ -141,24 +140,20 @@ def clean_service_name(raw_name):
         emojis = ""
         n_lower = n.lower()
         
-        # 1. Map features to clear emojis
         if "instant" in n_lower or "fast" in n_lower: emojis += "⚡"
         if "non drop" in n_lower or "norefill" in n_lower or "no refill" in n_lower: emojis += "💎"
         elif "refill" in n_lower: emojis += "♻️"
         if "stable" in n_lower: emojis += "🛡️"
         if "real" in n_lower: emojis += "👤"
         
-        # 2. Strip Speed texts (e.g. "Speed : 📍30-50K/D", "1-2M/D")
         n = re.sub(r'(?i)speed\s*[:\-]?\s*', '', n)
         n = re.sub(r'📍?\s*\d+(-\d+)?[KkMm]?/[Dd]\s*', '', n)
         
-        # 3. Remove dirty words & Platform names
         words = ["Telegram", "TG", "Instagram", "IG", "Facebook", "FB", "YouTube", "YT", "TikTok", "Twitter", 
                  "1xpanel", "Instant", "fast", "NoRefill", "No refill", "Refill", "Stable", "price", "Non drop", "real"]
         for w in words:
             n = re.sub(r'(?i)\b' + re.escape(w) + r'\b', '', n)
             
-        # 4. Clean up leftover garbage symbols
         n = re.sub(r'[-|:._/]+', ' ', n)
         n = " ".join(n.split()).strip()
         
@@ -210,7 +205,8 @@ def start(message):
 
     user = users_col.find_one({"_id": uid})
     if not user:
-        users_col.insert_one({"_id": uid, "name": message.from_user.first_name, "balance": 0.0, "spent": 0.0, "currency": "BDT", "ref_by": referrer, "ref_paid": False, "ref_earnings": 0.0, "joined": datetime.now(), "favorites": [], "custom_discount": 0.0, "shadow_banned": False, "tier_override": None, "welcome_paid": False})
+        users_col.insert_one={"_id": uid, "name": message.from_user.first_name, "balance": 0.0, "spent": 0.0, "currency": "BDT", "ref_by": referrer, "ref_paid": False, "ref_earnings": 0.0, "joined": datetime.now(), "favorites": [], "custom_discount": 0.0, "shadow_banned": False, "tier_override": None, "welcome_paid": False}
+        users_col.insert_one(users_col.insert_one)
         user = users_col.find_one({"_id": uid})
     
     if not check_sub(uid):
@@ -255,7 +251,6 @@ def new_order_start(message):
     users_col.update_one({"_id": message.chat.id}, {"$unset": {"step": "", "temp_sid": "", "temp_link": ""}})
     if check_spam(message.chat.id) or check_maintenance(message.chat.id) or not check_sub(message.chat.id): return
     
-    # ⚡ Instant Load from RAM Cache
     services = get_cached_services()
     if not services: 
         return bot.send_message(message.chat.id, "⏳ **API Syncing...** Please try again in 5 seconds.", parse_mode="Markdown")
@@ -347,6 +342,7 @@ def start_ord(call):
     users_col.update_one({"_id": call.message.chat.id}, {"$set": {"step": "awaiting_link", "temp_sid": sid}})
     bot.send_message(call.message.chat.id, "🔗 **Paste the Target Link:**\n_(Reply with your link)_", parse_mode="Markdown")
 
+# 🔥 REAL ORDER BOX DESIGN LOGIC
 @bot.callback_query_handler(func=lambda c: c.data == "PLACE_ORD")
 def final_ord(call):
     bot.answer_callback_query(call.id)
@@ -358,19 +354,45 @@ def final_ord(call):
     if not draft or user.get('balance', 0) < draft['cost']: 
         return bot.edit_message_text("❌ Session expired or low balance.", uid, call.message.message_id)
 
+    bot.edit_message_text("🛒 **Processing Order...**", uid, call.message.message_id, parse_mode="Markdown")
+
+    services = get_cached_services()
+    srv = next((x for x in services if str(x['service']) == str(draft['sid'])), None)
+    srv_name = clean_service_name(srv['name']) if srv else f"ID: {draft['sid']}"
+    
+    # ASCII Box Design Formatting
+    masked_id = f"***{str(uid)[-4:]}"
+    short_srv = srv_name[:22] + ".." if len(srv_name) > 22 else srv_name
+    qty_int = int(draft['qty'])
+    cost_str = fmt_curr(draft['cost'], curr)
+    
+    channel_post = f"```text\n╔════ 🟢 𝗡𝗘𝗪 𝗢𝗥𝗗𝗘𝗥 ════╗\n║ 👤 𝗜𝗗: {masked_id}\n║ 🚀 𝗦𝗲𝗿𝘃𝗶𝗰𝗲: {short_srv}\n║ 📦 𝗤𝘁𝘆: {qty_int}\n║ 💵 𝗖𝗼𝘀𝘁: {cost_str}\n╚════════════════════╝\n```"
+
+    s = get_settings()
+    proof_ch = s.get('proof_channel', '')
+
     if user.get('shadow_banned'):
         fake_oid = random.randint(100000, 999999)
         users_col.update_one({"_id": uid}, {"$inc": {"balance": -draft['cost'], "spent": draft['cost']}, "$unset": {"draft": ""}})
         orders_col.insert_one({"oid": fake_oid, "uid": uid, "sid": draft['sid'], "link": draft['link'], "qty": draft['qty'], "cost": draft['cost'], "status": "pending", "date": datetime.now(), "is_shadow": True})
-        receipt = f"""🧾 **OFFICIAL INVOICE**\n━━━━━━━━━━━━━━━━━━━━\n✅ **Status:** Order Placed Successfully\n🆔 **Order ID:** `{fake_oid}`\n🔗 **Link:** {draft['link']}\n🔢 **Quantity:** {draft['qty']}\n💳 **Paid:** `{fmt_curr(draft['cost'], curr)}`\n━━━━━━━━━━━━━━━━━━━━"""
-        return bot.edit_message_text(receipt, uid, call.message.message_id, parse_mode="Markdown", disable_web_page_preview=True)
+        
+        receipt = f"🧾 **OFFICIAL INVOICE**\n━━━━━━━━━━━━━━━━━━━━\n✅ **Status:** Order Placed Successfully\n🆔 **Order ID:** `{fake_oid}`\n🔗 **Link:** {draft['link']}\n🔢 **Quantity:** {draft['qty']}\n💳 **Paid:** `{cost_str}`\n━━━━━━━━━━━━━━━━━━━━"
+        bot.edit_message_text(receipt, uid, call.message.message_id, parse_mode="Markdown", disable_web_page_preview=True)
+        if proof_ch:
+            try: bot.send_message(proof_ch, channel_post, parse_mode="Markdown")
+            except: pass
+        return
 
     res = api.place_order(draft['sid'], draft['link'], draft['qty'])
     if res and 'order' in res:
         users_col.update_one({"_id": uid}, {"$inc": {"balance": -draft['cost'], "spent": draft['cost']}, "$unset": {"draft": ""}})
         orders_col.insert_one({"oid": res['order'], "uid": uid, "sid": draft['sid'], "link": draft['link'], "qty": draft['qty'], "cost": draft['cost'], "status": "pending", "date": datetime.now()})
-        receipt = f"""🧾 **OFFICIAL INVOICE**\n━━━━━━━━━━━━━━━━━━━━\n✅ **Status:** Order Placed Successfully\n🆔 **Order ID:** `{res['order']}`\n🔗 **Link:** {draft['link']}\n🔢 **Quantity:** {draft['qty']}\n💳 **Paid:** `{fmt_curr(draft['cost'], curr)}`\n━━━━━━━━━━━━━━━━━━━━"""
+        
+        receipt = f"🧾 **OFFICIAL INVOICE**\n━━━━━━━━━━━━━━━━━━━━\n✅ **Status:** Order Placed Successfully\n🆔 **Order ID:** `{res['order']}`\n🔗 **Link:** {draft['link']}\n🔢 **Quantity:** {draft['qty']}\n💳 **Paid:** `{cost_str}`\n━━━━━━━━━━━━━━━━━━━━"
         bot.edit_message_text(receipt, uid, call.message.message_id, parse_mode="Markdown", disable_web_page_preview=True)
+        if proof_ch:
+            try: bot.send_message(proof_ch, channel_post, parse_mode="Markdown")
+            except: pass
     else:
         bot.edit_message_text(f"❌ **Error:** {res.get('error', 'API Timeout')}", uid, call.message.message_id, parse_mode="Markdown")
 
@@ -574,7 +596,6 @@ def text_router(message):
     uid = message.chat.id
     text = message.text.strip() if message.text else ""
     
-    # Let commands pass
     if text.startswith('/'): return
     
     update_spy(uid, "Sending Message")
@@ -587,12 +608,11 @@ def text_router(message):
     if not u: return
     step = u.get("step")
     
-    # 👑 ADMIN STATES
     if str(uid) == str(ADMIN_ID):
         if step == "awaiting_bc":
             users_col.update_one({"_id": uid}, {"$unset": {"step": ""}})
             c = 0
-            for usr in users_col.find({}, {"_id": 1}):
+            for usr in users_col.find({"is_fake": {"$ne": True}}):
                 try: bot.send_message(usr["_id"], f"📢 **MESSAGE FROM ADMIN**\n━━━━━━━━━━━━━━━━━━━━\n{text}", parse_mode="Markdown"); c+=1
                 except: pass
             return bot.send_message(uid, f"✅ Broadcast sent to `{c}` users!")
@@ -607,12 +627,10 @@ def text_router(message):
     if not step:
         return bot.send_message(uid, "❌ **Unknown Command.** Please select from menu:", reply_markup=main_menu(), parse_mode="Markdown")
     
-    # 🛒 ORDER STATE 1: LINK
     if step == "awaiting_link":
         users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_qty", "temp_link": text}})
         return bot.send_message(uid, "🔢 **Enter Quantity (Numbers only):**", parse_mode="Markdown")
         
-    # 🛒 ORDER STATE 2: QUANTITY
     elif step == "awaiting_qty":
         try: qty = int(text)
         except ValueError: return bot.send_message(uid, "⚠️ **Numbers only! Enter valid quantity:**", parse_mode="Markdown")
@@ -644,7 +662,6 @@ def text_router(message):
         markup = types.InlineKeyboardMarkup(row_width=2).add(types.InlineKeyboardButton("✅ CONFIRM", callback_data="PLACE_ORD"), types.InlineKeyboardButton("❌ CANCEL", callback_data="CANCEL_ORD"))
         return bot.send_message(uid, txt, reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
 
-    # 💳 DEPOSIT STATE 1: AMOUNT
     elif step == "awaiting_deposit_amt":
         try:
             amt = float(text)
@@ -660,7 +677,6 @@ def text_router(message):
             return bot.send_message(uid, "💳 **Select Gateway:**", reply_markup=markup, parse_mode="Markdown")
         except ValueError: return bot.send_message(uid, "⚠️ Invalid amount. Numbers only.")
 
-    # 💳 DEPOSIT STATE 2: TRXID
     elif step == "awaiting_trx":
         tid = text
         amt = u.get("temp_dep_amt", 0.0)
@@ -675,7 +691,6 @@ def text_router(message):
         try: bot.send_message(ADMIN_ID, admin_txt, reply_markup=markup, parse_mode="Markdown")
         except: pass
 
-    # 🔄 OTHER STATES
     elif step == "awaiting_refill":
         users_col.update_one({"_id": uid}, {"$unset": {"step": ""}})
         bot.send_message(uid, "✅ Refill Requested! Admin will check it.")
