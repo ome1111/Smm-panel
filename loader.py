@@ -14,3 +14,4 @@ orders_col = db['orders']
 config_col = db['settings']
 tickets_col = db['tickets']
 vouchers_col = db['vouchers']
+logs_col = db['logs']  # 🔥 এই লাইনটি অ্যাড করা হয়েছে!
