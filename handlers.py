@@ -6,6 +6,7 @@ import math
 import time
 import os
 import threading
+import re  # 🔥 নতুন অ্যাড করা হয়েছে সার্ভিসের নাম ক্লিন করার জন্য
 from datetime import datetime
 from google import genai
 
@@ -84,7 +85,7 @@ def get_cached_services():
     return cache.get('data', [])
 
 # ==========================================
-# ৩. UI LOGIC & CATEGORY IDENTIFIER
+# ৩. UI LOGIC & SMART SERVICE CLEANER
 # ==========================================
 def identify_platform(cat_name):
     cat = cat_name.lower()
@@ -97,9 +98,18 @@ def identify_platform(cat_name):
     return "🌐 Other Services"
 
 def clean_service_name(raw_name):
-    n = raw_name.replace("Telegram", "").replace("TG", "").replace("Instagram", "").replace("IG", "").replace("YouTube", "").strip()
+    n = raw_name
+    # 🔥 যে শব্দগুলো হাইড করতে চান তার লিস্ট
+    words_to_remove = ["Telegram", "TG", "Instagram", "IG", "Facebook", "FB", "YouTube", "YT", "TikTok", "Twitter", "X", "1xpanel", "1xPanel", "1XPANEL"]
+    
+    for word in words_to_remove:
+        n = re.sub(word, "", n, flags=re.IGNORECASE)
+    
+    n = n.strip(" -|:._/\\")
+    n = n.strip()
+    
     badge = " 💎" if "non drop" in raw_name.lower() else " ⚡" if "fast" in raw_name.lower() or "instant" in raw_name.lower() else ""
-    return f"{n[:22]}{badge}"
+    return f"{n[:50]}{badge}"  # 🔥 ফুল সার্ভিস নেম শো করার জন্য 50 দেওয়া হয়েছে
 
 def get_user_tier(spent):
     if spent >= 50: return "🥇 Gold VIP", 5 
@@ -157,7 +167,7 @@ def sub_callback(call):
     else: bot.send_message(call.message.chat.id, "❌ **Please join all channels first!**")
 
 # ==========================================
-# ৫. FAST ORDERING SYSTEM (NO FREEZE)
+# ৫. FAST ORDERING SYSTEM
 # ==========================================
 @bot.message_handler(func=lambda m: m.text == "🚀 New Order")
 def new_order_start(message):
@@ -259,7 +269,7 @@ def info_card(call):
     speed = "🚀 Speed: 10K - 50K / Day" if "fast" in s['name'].lower() or "instant" in s['name'].lower() else "🐢 Speed: 1K - 5K / Day"
     start_time = "⏱️ Start Time: 0-30 Minutes" if "instant" in s['name'].lower() else "⏱️ Start Time: 1-6 Hours"
 
-    txt = (f"ℹ️ **SERVICE DETAILS**\n━━━━━━━━━━━━━━━━━━━━\n🏷 **Name:** {s['name']}\n🆔 **ID:** `{sid}`\n💰 **Price:** `{rate_str}` per 1000\n📉 **Min:** {s['min']} | 📈 **Max:** {s['max']}\n\n{start_time}\n{speed}\n━━━━━━━━━━━━━━━━━━━━\n⚠️ *Make sure your account/post is public!*")
+    txt = (f"ℹ️ **SERVICE DETAILS**\n━━━━━━━━━━━━━━━━━━━━\n🏷 **Name:** {clean_service_name(s['name'])}\n🆔 **ID:** `{sid}`\n💰 **Price:** `{rate_str}` per 1000\n📉 **Min:** {s['min']} | 📈 **Max:** {s['max']}\n\n{start_time}\n{speed}\n━━━━━━━━━━━━━━━━━━━━\n⚠️ *Make sure your account/post is public!*")
     
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(types.InlineKeyboardButton("🛒 Order Now", callback_data=f"ORD|{sid}"), types.InlineKeyboardButton("⭐ Fav", callback_data=f"FAV_ADD|{sid}"))
@@ -448,7 +458,7 @@ def process_smart_search(message):
     results = [s for s in services if str(s['service']) not in hidden and (query in s['name'].lower() or query in s['category'].lower())][:10]
     if not results: return bot.send_message(message.chat.id, "❌ No related services found.")
     markup = types.InlineKeyboardMarkup(row_width=1)
-    for s in results: markup.add(types.InlineKeyboardButton(f"⚡ ID:{s['service']} | {s['name'][:25]}", callback_data=f"INFO|{s['service']}"))
+    for s in results: markup.add(types.InlineKeyboardButton(f"⚡ ID:{s['service']} | {clean_service_name(s['name'])[:25]}", callback_data=f"INFO|{s['service']}"))
     bot.send_message(message.chat.id, f"🔍 **Top Results:**", reply_markup=markup, parse_mode="Markdown")
 
 def process_amt(message, curr_code):
@@ -539,7 +549,7 @@ def universal_buttons(message):
         services, markup = get_cached_services(), types.InlineKeyboardMarkup(row_width=1)
         for sid in favs:
             s = next((x for x in services if str(x['service']) == str(sid)), None)
-            if s: markup.add(types.InlineKeyboardButton(f"⭐ ID:{s['service']} | {s['name'][:25]}", callback_data=f"INFO|{s['service']}"))
+            if s: markup.add(types.InlineKeyboardButton(f"⭐ ID:{s['service']} | {clean_service_name(s['name'])[:25]}", callback_data=f"INFO|{s['service']}"))
         bot.send_message(message.chat.id, "⭐ **Your Favorites:**", reply_markup=markup, parse_mode="Markdown")
 
 # ==========================================
@@ -562,7 +572,7 @@ def ai_chat(message):
         results = [s for s in services if any(k in s['name'].lower() for k in text.split())][:5]
         if results:
             markup = types.InlineKeyboardMarkup()
-            for s in results: markup.add(types.InlineKeyboardButton(f"⚡ {s['name'][:25]}", callback_data=f"INFO|{s['service']}"))
+            for s in results: markup.add(types.InlineKeyboardButton(f"⚡ {clean_service_name(s['name'])[:25]}", callback_data=f"INFO|{s['service']}"))
             return bot.send_message(message.chat.id, "🤖 **Nexus AI:** I found these premium services for you:", reply_markup=markup, parse_mode="Markdown")
 
     bot.send_chat_action(message.chat.id, 'typing')
