@@ -2,17 +2,15 @@ import telebot
 from pymongo import MongoClient
 from config import BOT_TOKEN, MONGO_URL
 
-# Bot Initializer
+# Webhook এর জন্য threaded=False রাখা হয়েছে
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 
-# Database Connection
-client = MongoClient(MONGO_URL)
+# MongoDB কানেকশন লিমিট (OOM Memory Crash ফিক্স করার জন্য)
+client = MongoClient(MONGO_URL + ("&maxPoolSize=20" if "?" in MONGO_URL else "?maxPoolSize=20"))
 db = client['smm_database']
 
-# Collections
 users_col = db['users']
 orders_col = db['orders']
 config_col = db['settings']
 tickets_col = db['tickets']
 vouchers_col = db['vouchers']
-logs_col = db['logs']
