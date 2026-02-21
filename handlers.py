@@ -58,17 +58,8 @@ def get_settings():
     SETTINGS_CACHE["time"] = time.time()
     return s
 
-# 🔥 BACKGROUND SPY THREAD (Zero Lag for Users)
-def _spy_bg_task(uid, action_text):
-    try: 
-        users_col.update_one({"_id": uid}, {"$set": {"last_action": action_text, "last_active": datetime.now()}})
-        log_ch = get_settings().get("log_channel")
-        if log_ch:
-            bot.send_message(log_ch, f"🕵️‍♂️ **LIVE LOG**\n👤 User: `{uid}`\n🎯 Action: {action_text}", parse_mode="Markdown")
-    except Exception: pass
-
-def update_spy(uid, action_text):
-    threading.Thread(target=_spy_bg_task, args=(uid, action_text), daemon=True).start()
+# def update_spy(uid, action_text):
+    pass  # 🚀 লগস পুরোপুরি বন্ধ! এখন সার্ভার কোনো এক্সট্রা কাজ করবে না, শুধু ফোকাস করবে স্পিডে!
 
 def check_spam(uid):
     if str(uid) == str(ADMIN_ID): return False 
