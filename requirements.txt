@@ -1,7 +1,7 @@
+flask
 pyTelegramBotAPI
-Flask
 pymongo
-dnspython
 requests
-google-genai>=0.2.0
 gunicorn
+google-genai>=0.2.0
+dnspython
