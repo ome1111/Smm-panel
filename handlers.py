@@ -17,6 +17,7 @@ from telebot import types
 from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col
 from config import *
 import api
+
 def update_spy(uid, action_text):
     pass
 
@@ -60,7 +61,6 @@ def get_settings():
     SETTINGS_CACHE["time"] = time.time()
     return s
 
-# 
 def check_spam(uid):
     if str(uid) == str(ADMIN_ID): return False 
     current_time = time.time()
@@ -86,7 +86,7 @@ def check_maintenance(chat_id):
     return False
 
 # ==========================================
-# 2. PRO-LEVEL CACHE ENGINE (INSTANT LOAD)
+# 2. PRO-LEVEL CACHE ENGINE & AUTO SYNC
 # ==========================================
 GLOBAL_SERVICES_CACHE = []
 
@@ -103,6 +103,47 @@ def auto_sync_services_cron():
         time.sleep(600)
 
 threading.Thread(target=auto_sync_services_cron, daemon=True).start()
+
+# 🔥 AUTO ORDER STATUS SYNC ENGINE (1xpanel Sync)
+def auto_sync_orders_cron():
+    while True:
+        try:
+            active_orders = list(orders_col.find({"status": {"$nin": ["completed", "canceled", "refunded", "fail", "partial"]}}))
+            for o in active_orders:
+                if o.get("is_shadow"): 
+                    continue
+                
+                try:
+                    res = api.check_order_status(o['oid'])
+                except AttributeError:
+                    continue # API code missing warning bypass
+                    
+                if res and 'status' in res:
+                    new_status = res['status'].lower()
+                    old_status = str(o.get('status', '')).lower()
+                    
+                    if new_status != old_status and new_status != 'error':
+                        orders_col.update_one({"_id": o["_id"]}, {"$set": {"status": new_status}})
+                        
+                        try:
+                            msg = f"🔔 **ORDER UPDATE!**\n━━━━━━━━━━━━━━━━━━━━\n🆔 Order ID: `{o['oid']}`\n🔗 Link: {str(o.get('link', 'N/A'))[:25]}...\n📦 Status: **{new_status.upper()}**"
+                            bot.send_message(o['uid'], msg, parse_mode="Markdown")
+                        except: pass
+                        
+                        if new_status in ['canceled', 'refunded', 'fail']:
+                            u = users_col.find_one({"_id": o['uid']})
+                            curr = u.get("currency", "BDT") if u else "BDT"
+                            cost_str = fmt_curr(o['cost'], curr)
+                            
+                            users_col.update_one({"_id": o['uid']}, {"$inc": {"balance": o['cost'], "spent": -o['cost']}})
+                            try:
+                                bot.send_message(o['uid'], f"💰 **ORDER REFUNDED!**\nOrder `{o['oid']}` canceled. `{cost_str}` added back to your balance.", parse_mode="Markdown")
+                            except: pass
+        except Exception:
+            pass
+        time.sleep(120)
+
+threading.Thread(target=auto_sync_orders_cron, daemon=True).start()
 
 def get_cached_services():
     global GLOBAL_SERVICES_CACHE
@@ -502,14 +543,18 @@ def universal_buttons(message):
     elif message.text == "🏆 Leaderboard":
         s = get_settings()
         r1, r2, r3 = s.get('reward_top1', 10.0), s.get('reward_top2', 5.0), s.get('reward_top3', 2.0)
-        top_spenders = list(users_col.find({"spent": {"$gt": 0}, "is_fake": {"$ne": True}}).sort("spent", -1).limit(5))
+        
+        # 🔥 FAKE USERS NOW INCLUDED IN LEADERBOARD
+        top_spenders = list(users_col.find({"spent": {"$gt": 0}}).sort("spent", -1).limit(5))
         txt = "🏆 **MONTHLY TOP SPENDERS**\n━━━━━━━━━━━━━━━━━━━━\n"
         if not top_spenders: txt += "No spenders this month yet!\n"
         else:
             for i, tu in enumerate(top_spenders):
                 rt = f" 🎁 Reward: ${[r1, r2, r3][i]}" if i < 3 else ""
                 txt += f"{i+1}. {tu.get('name', 'N/A')} - Spent: `{fmt_curr(tu.get('spent', 0), curr)}`{rt}\n"
-        top_refs = list(users_col.find({"ref_earnings": {"$gt": 0}, "is_fake": {"$ne": True}}).sort("ref_earnings", -1).limit(5))
+                
+        # 🔥 FAKE USERS NOW INCLUDED IN LEADERBOARD
+        top_refs = list(users_col.find({"ref_earnings": {"$gt": 0}}).sort("ref_earnings", -1).limit(5))
         txt += "\n👥 **MONTHLY TOP AFFILIATES**\n━━━━━━━━━━━━━━━━━━━━\n"
         if not top_refs: txt += "No affiliates this month yet!\n"
         else:
@@ -517,6 +562,7 @@ def universal_buttons(message):
                 rt = f" 🎁 Reward: ${[r1, r2, r3][i]}" if i < 3 else ""
                 txt += f"{i+1}. {tu.get('name', 'N/A')} - Earned: `{fmt_curr(tu.get('ref_earnings', 0), curr)}`{rt}\n"
         bot.send_message(message.chat.id, txt + "\n_Note: Leaderboard resets monthly! Top 3 users get wallet cash._", parse_mode="Markdown")
+        
     elif message.text == "🔍 Smart Search":
         users_col.update_one({"_id": message.chat.id}, {"$set": {"step": "awaiting_search"}})
         bot.send_message(message.chat.id, "🔍 **Smart Search**\nEnter Keyword or Service ID:", parse_mode="Markdown")
@@ -565,7 +611,6 @@ def admin_callbacks(call):
         s = get_settings()
         ns = not s.get('maintenance', False)
         config_col.update_one({"_id": "settings"}, {"$set": {"maintenance": ns}})
-        # Update RAM cache instantly
         global SETTINGS_CACHE
         if SETTINGS_CACHE["data"]: SETTINGS_CACHE["data"]["maintenance"] = ns
         bot.answer_callback_query(call.id, f"Maintenance: {'ON' if ns else 'OFF'}", show_alert=True)
