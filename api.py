@@ -32,8 +32,8 @@ def place_order(sid, link, qty):
     """আসল প্যানেলে অর্ডার প্লেস করা"""
     return _make_request('add', timeout=15, service=sid, link=link, quantity=qty)
 
-def get_order_status(order_id):
-    """অর্ডারের বর্তমান স্ট্যাটাস চেক করা (Auto-Refund এর জন্য)"""
+def check_order_status(order_id):
+    """অর্ডারের বর্তমান স্ট্যাটাস চেক করা (Auto-Refund এবং Sync এর জন্য)"""
     return _make_request('status', timeout=10, order=order_id)
 
 def get_balance():
