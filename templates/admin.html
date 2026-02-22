@@ -425,6 +425,18 @@
                         <div><label class="block text-[10px] text-slate-300 font-bold mb-1 uppercase">🥈 Top 2 Reward ($)</label><input type="number" step="0.1" name="reward_top2" value="{{ s.get('reward_top2', 5.0) }}" class="w-full bg-slate-900 border border-slate-500/50 rounded px-3 py-2 text-white outline-none focus:border-slate-400"></div>
                         <div><label class="block text-[10px] text-orange-400 font-bold mb-1 uppercase">🥉 Top 3 Reward ($)</label><input type="number" step="0.1" name="reward_top3" value="{{ s.get('reward_top3', 2.0) }}" class="w-full bg-slate-900 border border-orange-500/50 rounded px-3 py-2 text-white outline-none focus:border-orange-500"></div>
                     </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-slate-700/50">
+                        <div>
+                            <label class="block text-[10px] text-sky-400 font-bold mb-1 uppercase">Points Earned Per $1 Spent</label>
+                            <input type="number" name="points_per_usd" value="{{ s.get('points_per_usd', 100) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none focus:border-sky-500">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] text-emerald-400 font-bold mb-1 uppercase">Points Needed for $1 Reward</label>
+                            <input type="number" name="points_to_usd_rate" value="{{ s.get('points_to_usd_rate', 1000) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none focus:border-emerald-500">
+                        </div>
+                    </div>
+
                 </div>
 
                 <div class="glass-card p-4 md:p-6 border-t-4 border-rose-500">
@@ -517,11 +529,9 @@
     </main>
 
     <script>
-        // 1. Mobile Menu Toggle (Sticky)
         function toggleMobileMenu() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.getElementById('mobile-overlay');
-            
             if (sidebar.classList.contains('-translate-x-full')) {
                 sidebar.classList.remove('-translate-x-full'); 
                 overlay.classList.remove('hidden'); 
@@ -533,31 +543,24 @@
             }
         }
 
-        // 2. Tab Switcher
         function switchTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
             document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active', 'border-l-4'));
-            
             document.getElementById('tab-' + tabId).classList.remove('hidden'); 
             document.getElementById('btn-' + tabId).classList.add('active');
-            
             if (window.innerWidth < 768) { 
                 const sidebar = document.getElementById('sidebar'); 
                 if (!sidebar.classList.contains('-translate-x-full')) toggleMobileMenu(); 
             }
         }
 
-        // 3. User Edit Modal Logic (Updated to receive 'points')
         function openUserModal(uid, bal, spent, refEarn, discount, tier, points) {
             document.getElementById('modal_uid').value = uid;
             document.getElementById('modal_uid_display').innerText = `(${uid})`;
             document.getElementById('modal_balance_val').value = parseFloat(bal).toFixed(3);
             document.getElementById('modal_spent').value = parseFloat(spent).toFixed(3);
             document.getElementById('modal_ref').value = parseFloat(refEarn).toFixed(3);
-            
-            // 🔥 NEW: Set Points in the modal
             document.getElementById('modal_points').value = points;
-            
             document.getElementById('modal_discount').value = discount;
             document.getElementById('modal_tier').value = tier;
             
@@ -580,7 +583,6 @@
             setTimeout(() => modal.classList.add('hidden'), 300);
         }
 
-        // 4. Generate Rivals Logic (Automated Fake Users)
         async function generateRivals() {
             const btn = document.getElementById('btn_rivals');
             btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Adding...';
@@ -598,13 +600,11 @@
             location.reload();
         }
 
-        // 5. Fake Live Users Counter Logic
         setInterval(() => {
             let count = Math.floor(Math.random() * (120 - 45 + 1)) + 45;
             document.getElementById('live_users_count').innerText = count;
         }, 12000); 
 
-        // 6. Dynamic Payments UI
         function addPaymentRow() {
             const container = document.getElementById('payment-methods');
             const row = document.createElement('div');
@@ -616,7 +616,7 @@
                 </div>
                 <div class="flex gap-2 items-center">
                     <input type="text" name="pay_address[]" placeholder="Account Number or Crypto Address" class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none" required>
-                    <button type="button" onclick="this.closest('.payment-row').remove()" class="text-slate-500 hover:text-red-500 px-3 transition-colors"><i class="fas fa-trash text-lg"></i></button>
+                    <button type="button" onclick="this.closest('.payment-row').remove()" class="text-slate-50 hover:text-red-500 px-3 transition-colors"><i class="fas fa-trash text-lg"></i></button>
                 </div>
             `;
             container.appendChild(row);
