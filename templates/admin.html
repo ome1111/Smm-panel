@@ -332,6 +332,7 @@
 
         <div id="tab-orders" class="tab-content hidden animate-[fadeIn_0.3s_ease-out]">
             <h2 class="text-2xl font-bold mb-6 text-white border-b border-slate-700 pb-2"><i class="fas fa-dolly text-sky-400 mr-2"></i> Force Orders Engine</h2>
+            
             <div class="glass-card overflow-hidden">
                 <div class="overflow-x-auto max-h-[75vh]">
                     <table class="w-full text-left border-collapse whitespace-nowrap">
@@ -396,7 +397,8 @@
                     <div class="text-white text-sm mb-4 bg-slate-900/50 p-3 rounded border border-slate-700/50 break-words"><i class="fas fa-comment-dots text-sky-500/50 mr-2"></i> {{ t.msg }}</div>
                     {% if t.status == 'open' %}
                     <form action="/reply_ticket" method="POST" class="flex flex-col sm:flex-row gap-2">
-                        <input type="hidden" name="ticket_id" value="{{ t['_id'] }}"><input type="hidden" name="uid" value="{{ t.uid }}">
+                        <input type="hidden" name="ticket_id" value="{{ t['_id'] }}">
+                        <input type="hidden" name="uid" value="{{ t.uid }}">
                         <input type="text" name="reply_msg" placeholder="Write reply..." required class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:border-sky-500 outline-none">
                         <button type="submit" class="bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold px-4 py-2 rounded text-sm">Reply</button>
                     </form>
@@ -436,6 +438,7 @@
             <h2 class="text-2xl font-bold mb-6 text-white border-b border-slate-700 pb-2"><i class="fas fa-cogs text-sky-400 mr-2"></i> Master Settings</h2>
             
             <form action="/settings" method="POST" class="space-y-6 max-w-6xl">
+                
                 <div class="glass-card p-4 md:p-6 border-t-4 border-amber-500">
                     <h3 class="text-lg font-bold text-white mb-4"><i class="fas fa-bullhorn mr-2 text-amber-400"></i> Marketing & Rewards</h3>
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4 pb-4 border-b border-slate-700/50">
@@ -537,37 +540,46 @@
         const allServicesJSON = {{ services_json | safe }};
         const savedServiceOrders = {{ saved_service_orders | safe }};
 
-        // Tab Switching
-        function switchTab(tabId) {
-            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
-            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active', 'border-l-4'));
-            
-            document.getElementById('tab-' + tabId).classList.remove('hidden'); 
-            document.getElementById('btn-' + tabId).classList.add('active');
-            
-            if (window.innerWidth < 768) { 
-                const sidebar = document.getElementById('sidebar'); 
-                if (!sidebar.classList.contains('-translate-x-full')) toggleMobileMenu(); 
-            }
-        }
-
+        // 1. Mobile Menu Logic (100% Working 3-Dot Menu)
         function toggleMobileMenu() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.getElementById('mobile-overlay');
+            
             if (sidebar.classList.contains('-translate-x-full')) {
+                // Open Menu
                 sidebar.classList.remove('-translate-x-full'); 
                 overlay.classList.remove('hidden'); 
+                // Small delay for smooth opacity transition
                 setTimeout(() => overlay.classList.remove('opacity-0'), 10);
             } else {
+                // Close Menu
                 sidebar.classList.add('-translate-x-full'); 
                 overlay.classList.add('opacity-0'); 
+                // Wait for transition before hiding
                 setTimeout(() => overlay.classList.add('hidden'), 300);
             }
         }
 
-        // ==========================================
-        // 🔥 DRAG AND DROP SERVICE LOGIC
-        // ==========================================
+        // 2. Tab Switching Logic
+        function switchTab(tabId) {
+            // Hide all tabs and remove active state from buttons
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active', 'border-l-4'));
+            
+            // Show targeted tab
+            document.getElementById('tab-' + tabId).classList.remove('hidden'); 
+            document.getElementById('btn-' + tabId).classList.add('active');
+            
+            // Auto close mobile menu after clicking a tab
+            if (window.innerWidth < 768) { 
+                const sidebar = document.getElementById('sidebar'); 
+                if (!sidebar.classList.contains('-translate-x-full')) {
+                    toggleMobileMenu(); 
+                }
+            }
+        }
+
+        // 3. 🔥 DRAG AND DROP SERVICE LOGIC
         let sortableInstance = null;
 
         function loadCategoryServices() {
@@ -644,7 +656,7 @@
             }).catch(err => alert('Network Error!'));
         }
 
-        // Modals & Payments UI
+        // 4. User Edit Modals
         function openUserModal(uid, bal, spent, refEarn, discount, tier) {
             document.getElementById('modal_uid').value = uid;
             document.getElementById('modal_uid_display').innerText = `(${uid})`;
@@ -668,6 +680,7 @@
             setTimeout(() => modal.classList.add('hidden'), 300);
         }
 
+        // 5. Automated Fake Rivals Generator
         async function generateRivals() {
             const btn = document.getElementById('btn_rivals');
             btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Adding...';
@@ -683,8 +696,10 @@
             location.reload();
         }
 
+        // 6. Fake Live Users Count Update
         setInterval(() => { document.getElementById('live_users_count').innerText = Math.floor(Math.random() * (120 - 45 + 1)) + 45; }, 12000); 
 
+        // 7. Dynamic Payment Row Generator
         function addPaymentRow() {
             const container = document.getElementById('payment-methods');
             const row = document.createElement('div');
