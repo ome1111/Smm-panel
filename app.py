@@ -2,8 +2,10 @@ import os
 import time
 import random
 import threading
+import csv
+from io import StringIO
 from datetime import datetime
-from flask import Flask, request, render_template, redirect, url_for, session, jsonify
+from flask import Flask, request, render_template, redirect, url_for, session, jsonify, Response
 import telebot
 from bson.objectid import ObjectId
 
@@ -87,14 +89,10 @@ def auto_fake_proof_cron():
 
             # 🛒 FAKE ORDER GENERATOR
             if random.random() < (ord_freq / 60):
-                # 🔥 QTY FIX: ১০০, ১৫০, ২০০, ৫০০, ১২৫০ এরকম রাউন্ড ফিগার আসবে
                 qty = random.randrange(100, 5050, 50) 
-                
-                # কস্ট যেন রিয়েল লাগে তাই কোয়ান্টিটির সাথে সামঞ্জস্য রেখে ডলার হবে
                 amt = round((qty / 1000) * random.uniform(0.5, 2.5), 2)
-                if amt < 0.1: amt = 0.12 # মিনিমাম 0.12$
+                if amt < 0.1: amt = 0.12 
                 
-                # Fetching Real Services from 1xpanel RAM Cache
                 cached_services = handlers.get_cached_services()
                 if cached_services:
                     srv = random.choice(cached_services)
@@ -103,14 +101,13 @@ def auto_fake_proof_cron():
                     srv_name = "Premium Service ⚡"
                     
                 short_srv = srv_name[:22] + ".." if len(srv_name) > 22 else srv_name
-                
                 fake_uid = str(random.randint(1000000, 9999999))
                 masked_id = f"***{fake_uid[-4:]}"
                 
                 msg = f"```text\n╔════ 🟢 𝗡𝗘𝗪 𝗢𝗥𝗗𝗘𝗥 ════╗\n║ 👤 𝗜𝗗: {masked_id}\n║ 🚀 𝗦𝗲𝗿𝘃𝗶𝗰𝗲: {short_srv}\n║ 📦 𝗤𝘁𝘆: {qty}\n║ 💵 𝗖𝗼𝘀𝘁: ${amt}\n╚════════════════════╝\n```"
                 bot.send_message(proof_channel, msg, parse_mode="Markdown")
 
-        except Exception as e:
+        except Exception:
             pass
         time.sleep(60)
 
@@ -135,7 +132,17 @@ def index():
     orders = list(orders_col.find().sort("_id", -1).limit(100))
     tickets = list(tickets_col.find().sort("_id", -1))
     vouchers = list(vouchers_col.find().sort("_id", -1))
-    return render_template('admin.html', **stats, users=users, orders=orders, tickets=tickets, vouchers=vouchers)
+    
+    # 📁 Category Sorting Logic
+    services = handlers.get_cached_services()
+    raw_cats = list(set(s['category'] for s in services)) if services else []
+    cat_order_doc = config_col.find_one({"_id": "category_order"}) or {"order": []}
+    saved_order = cat_order_doc.get("order", [])
+    
+    # Sort categories based on saved drag-and-drop order
+    categories = sorted(raw_cats, key=lambda x: saved_order.index(x) if x in saved_order else 999)
+
+    return render_template('admin.html', **stats, users=users, orders=orders, tickets=tickets, vouchers=vouchers, categories=categories)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -153,6 +160,49 @@ def login():
 def logout():
     session.pop('admin', None)
     return redirect(url_for('login'))
+
+# 📊 Fetaure: EXPORT USERS TO CSV
+@app.route('/export_users')
+def export_users():
+    if 'admin' not in session: return redirect(url_for('login'))
+    
+    users = list(users_col.find().sort("spent", -1))
+    
+    si = StringIO()
+    cw = csv.writer(si)
+    # Write Headers
+    cw.writerow(['User ID', 'Name', 'Balance (App Curr)', 'Spent (App Curr)', 'Currency', 'Referral Earnings', 'Joined Date', 'Last Active', 'Is Fake User'])
+    
+    for u in users:
+        joined_date = u.get('joined', 'N/A')
+        if isinstance(joined_date, datetime): joined_date = joined_date.strftime("%Y-%m-%d %H:%M")
+        
+        last_active = u.get('last_active', 'N/A')
+        if isinstance(last_active, datetime): last_active = last_active.strftime("%Y-%m-%d %H:%M")
+            
+        cw.writerow([
+            u.get('_id', 'N/A'),
+            str(u.get('name', 'N/A')),
+            round(u.get('balance', 0.0), 3),
+            round(u.get('spent', 0.0), 3),
+            u.get('currency', 'BDT'),
+            round(u.get('ref_earnings', 0.0), 3),
+            joined_date,
+            last_active,
+            "Yes" if u.get('is_fake', False) else "No"
+        ])
+        
+    output = Response(si.getvalue(), mimetype='text/csv')
+    output.headers["Content-Disposition"] = f"attachment; filename=nexus_users_export_{datetime.now().strftime('%Y%m%d')}.csv"
+    return output
+
+# 📁 Feature: SAVE DRAG & DROP CATEGORY ORDER
+@app.route('/save_category_order', methods=['POST'])
+def save_category_order():
+    if 'admin' not in session: return jsonify({"status": "error", "msg": "Unauthorized"})
+    order = request.json.get('order', [])
+    config_col.update_one({"_id": "category_order"}, {"$set": {"order": order}}, upsert=True)
+    return jsonify({"status": "success"})
 
 @app.route('/settings', methods=['POST'])
 def save_settings():
@@ -270,18 +320,20 @@ def distribute_rewards():
     s = config_col.find_one({"_id": "settings"}) or {}
     r1, r2, r3 = s.get('reward_top1', 10.0), s.get('reward_top2', 5.0), s.get('reward_top3', 2.0)
     
-    top_spenders = list(users_col.find({"spent": {"$gt": 0}, "is_fake": {"$ne": True}}).sort("spent", -1).limit(3))
+    top_spenders = list(users_col.find({"spent": {"$gt": 0}}).sort("spent", -1).limit(3))
     rewards = [r1, r2, r3]
     for i, u in enumerate(top_spenders):
-        users_col.update_one({"_id": u["_id"]}, {"$inc": {"balance": rewards[i]}})
-        try: bot.send_message(u["_id"], f"🎉 **CONGRATULATIONS!**\nYou ranked #{i+1} Top Spender! Reward `${rewards[i]}` added.", parse_mode="Markdown")
-        except: pass
+        if not u.get('is_fake'):
+            users_col.update_one({"_id": u["_id"]}, {"$inc": {"balance": rewards[i]}})
+            try: bot.send_message(u["_id"], f"🎉 **CONGRATULATIONS!**\nYou ranked #{i+1} Top Spender! Reward `${rewards[i]}` added.", parse_mode="Markdown")
+            except: pass
         
-    top_refs = list(users_col.find({"ref_earnings": {"$gt": 0}, "is_fake": {"$ne": True}}).sort("ref_earnings", -1).limit(3))
+    top_refs = list(users_col.find({"ref_earnings": {"$gt": 0}}).sort("ref_earnings", -1).limit(3))
     for i, u in enumerate(top_refs):
-        users_col.update_one({"_id": u["_id"]}, {"$inc": {"balance": rewards[i]}})
-        try: bot.send_message(u["_id"], f"🎉 **CONGRATULATIONS!**\nYou ranked #{i+1} Top Affiliate! Reward `${rewards[i]}` added.", parse_mode="Markdown")
-        except: pass
+        if not u.get('is_fake'):
+            users_col.update_one({"_id": u["_id"]}, {"$inc": {"balance": rewards[i]}})
+            try: bot.send_message(u["_id"], f"🎉 **CONGRATULATIONS!**\nYou ranked #{i+1} Top Affiliate! Reward `${rewards[i]}` added.", parse_mode="Markdown")
+            except: pass
         
     return redirect(url_for('index'))
 
