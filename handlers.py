@@ -108,11 +108,9 @@ threading.Thread(target=auto_sync_services_cron, daemon=True).start()
 def auto_sync_orders_cron():
     while True:
         try:
-            # 🧹 Clean Old Orders (10 days old)
             ten_days_ago = datetime.now() - timedelta(days=10)
             orders_col.delete_many({"status": {"$in": ["canceled", "refunded", "fail"]}, "date": {"$lt": ten_days_ago}})
             
-            # 🥺 Miss You Automation (7 Days Inactive)
             seven_days_ago = datetime.now() - timedelta(days=7)
             inactive_users = list(users_col.find({"last_active": {"$lt": seven_days_ago}, "miss_you_sent": {"$ne": True}, "is_fake": {"$ne": True}}).limit(30))
             for iu in inactive_users:
@@ -121,7 +119,6 @@ def auto_sync_orders_cron():
                     users_col.update_one({"_id": iu["_id"]}, {"$set": {"miss_you_sent": True}})
                 except: pass
 
-            # 🔄 Order Sync
             active_orders = list(orders_col.find({"status": {"$nin": ["completed", "canceled", "refunded", "fail", "partial"]}}))
             for o in active_orders:
                 if o.get("is_shadow"): continue
@@ -280,7 +277,7 @@ def sub_callback(call):
     else: bot.send_message(uid, "❌ You haven't joined all channels. Please join and try again.")
 
 # ==========================================
-# 4. SUPER FAST ORDERING ENGINE (Drag & Drop + Best Choice)
+# 4. SUPER FAST ORDERING ENGINE
 # ==========================================
 @bot.message_handler(func=lambda m: m.text == "🚀 New Order")
 def new_order_start(message):
@@ -297,7 +294,6 @@ def new_order_start(message):
     s = get_settings()
     hidden = s.get("hidden_services", [])
     
-    # 🔥 Sorted Categories via Admin Panel Drag & Drop
     cat_order_doc = config_col.find_one({"_id": "category_order"}) or {"order": []}
     saved_cat_order = cat_order_doc.get("order", [])
     
@@ -306,20 +302,71 @@ def new_order_start(message):
     
     markup = types.InlineKeyboardMarkup(row_width=2)
     
-    # 🔥 Admin Best Choice (Replaces Trending)
+    # 🔥 FIX: Admin Best Choice is now a CLICKABLE BUTTON
     best_sids = s.get("best_choice_sids", [])
     if best_sids:
-        markup.add(types.InlineKeyboardButton("🌟 ADMIN BEST CHOICE 🌟", callback_data="IGNORE"))
-        for tsid in best_sids:
-            srv = next((x for x in services if str(x['service']) == str(tsid)), None)
-            if srv and str(tsid) not in hidden:
-                markup.add(types.InlineKeyboardButton(f"⚡ {clean_service_name(srv['name'])[:25]}", callback_data=f"INFO|{tsid}"))
+        markup.add(types.InlineKeyboardButton("🌟 ADMIN BEST CHOICE 🌟", callback_data="SHOW_BEST_CHOICE"))
 
     # Platforms
     for p in platforms: markup.add(types.InlineKeyboardButton(p, callback_data=f"PLAT|{p}|0"))
     
     banner = f"⚡ **FLASH SALE ACTIVE: {s.get('flash_sale_discount')}% OFF!**\n" if s.get('flash_sale_active') else ""
     bot.send_message(uid, f"{banner}━━━━━━━━━━━━━━━━━━━━\n📂 **Select a Platform:**", reply_markup=markup, parse_mode="Markdown")
+
+# 🔥 FIX: Handler to route back to Main Menu from Best Choice
+@bot.callback_query_handler(func=lambda c: c.data == "NEW_ORDER_MAIN")
+def back_to_main_order(call):
+    bot.answer_callback_query(call.id)
+    uid = call.message.chat.id
+    services = get_cached_services()
+    if not services: return
+    
+    s = get_settings()
+    hidden = s.get("hidden_services", [])
+    cat_order_doc = config_col.find_one({"_id": "category_order"}) or {"order": []}
+    saved_cat_order = cat_order_doc.get("order", [])
+    
+    raw_platforms = list(set(identify_platform(srv['category']) for srv in services if str(srv['service']) not in hidden))
+    platforms = sorted(raw_platforms, key=lambda x: saved_cat_order.index(x) if x in saved_cat_order else 999)
+    
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    
+    best_sids = s.get("best_choice_sids", [])
+    if best_sids:
+        markup.add(types.InlineKeyboardButton("🌟 ADMIN BEST CHOICE 🌟", callback_data="SHOW_BEST_CHOICE"))
+
+    for p in platforms: markup.add(types.InlineKeyboardButton(p, callback_data=f"PLAT|{p}|0"))
+    
+    banner = f"⚡ **FLASH SALE ACTIVE: {s.get('flash_sale_discount')}% OFF!**\n" if s.get('flash_sale_active') else ""
+    bot.edit_message_text(f"{banner}━━━━━━━━━━━━━━━━━━━━\n📂 **Select a Platform:**", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+
+# 🔥 FIX: Handler to display Best Choice Services when button is clicked
+@bot.callback_query_handler(func=lambda c: c.data == "SHOW_BEST_CHOICE")
+def show_best_choices(call):
+    bot.answer_callback_query(call.id)
+    services = get_cached_services()
+    s_settings = get_settings()
+    hidden = s_settings.get("hidden_services", [])
+    best_sids = s_settings.get("best_choice_sids", [])
+    
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    user = users_col.find_one({"_id": call.message.chat.id})
+    curr = user.get("currency", "BDT") if user else "BDT"
+    
+    added_count = 0
+    for tsid in best_sids:
+        srv = next((x for x in services if str(x['service']) == str(tsid)), None)
+        if srv and str(tsid) not in hidden:
+            rate_usd = calculate_price(srv['rate'], user.get('spent', 0), user.get('custom_discount', 0))
+            markup.add(types.InlineKeyboardButton(f"ID:{srv['service']} | {fmt_curr(rate_usd, curr)} | {clean_service_name(srv['name'])}", callback_data=f"INFO|{tsid}"))
+            added_count += 1
+            
+    if added_count == 0:
+        markup.add(types.InlineKeyboardButton("No premium services available right now.", callback_data="IGNORE"))
+        
+    markup.add(types.InlineKeyboardButton("🔙 Back to Platforms", callback_data="NEW_ORDER_MAIN"))
+    
+    bot.edit_message_text("🌟 **ADMIN BEST CHOICE** 🌟\n━━━━━━━━━━━━━━━━━━━━\n💎 Handpicked premium services for you:\n", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("PLAT|"))
 def show_cats(call):
@@ -329,7 +376,6 @@ def show_cats(call):
     services = get_cached_services()
     hidden = get_settings().get("hidden_services", [])
     
-    # 🔥 Sorted Categories
     cat_order_doc = config_col.find_one({"_id": "category_order"}) or {"order": []}
     saved_cat_order = cat_order_doc.get("order", [])
     
@@ -348,6 +394,10 @@ def show_cats(call):
     if page > 0: nav.append(types.InlineKeyboardButton("⬅️ Prev", callback_data=f"PLAT|{platform_name}|{page-1}"))
     if end_idx < len(all_cats): nav.append(types.InlineKeyboardButton("Next ➡️", callback_data=f"PLAT|{platform_name}|{page+1}"))
     if nav: markup.row(*nav)
+    
+    # Add Back Button to Main Menu
+    markup.add(types.InlineKeyboardButton("🔙 Back to Platforms", callback_data="NEW_ORDER_MAIN"))
+    
     bot.edit_message_text(f"📍 **Home** ➔ **{platform_name}**\n━━━━━━━━━━━━━━━━━━━━\n📂 **Choose Category:**", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("CAT|"))
@@ -362,7 +412,6 @@ def list_servs(call):
     
     filtered = [s for s in services if s['category'] == cat_name and str(s['service']) not in hidden]
     
-    # 🔥 Sorted Services inside Category via Admin Panel Drag & Drop
     service_orders_doc = config_col.find_one({"_id": "service_orders"}) or {}
     saved_srv_order = service_orders_doc.get("orders", {}).get(cat_name, [])
     
@@ -381,7 +430,7 @@ def list_servs(call):
     if page > 0: nav.append(types.InlineKeyboardButton("⬅️ Prev", callback_data=f"CAT|{cat_idx}|{page-1}"))
     if end_idx < len(filtered): nav.append(types.InlineKeyboardButton("Next ➡️", callback_data=f"CAT|{cat_idx}|{page+1}"))
     if nav: markup.row(*nav)
-    markup.add(types.InlineKeyboardButton("🔙 Back", callback_data=f"PLAT|{identify_platform(cat_name)}|0"))
+    markup.add(types.InlineKeyboardButton("🔙 Back to Categories", callback_data=f"PLAT|{identify_platform(cat_name)}|0"))
     bot.edit_message_text(f"📍 **{identify_platform(cat_name)}** ➔ **{cat_name[:20]}**\n━━━━━━━━━━━━━━━━━━━━\n📦 **Select Service:**", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("INFO|") or c.data.startswith("REORDER|"))
@@ -403,7 +452,7 @@ def info_card(call):
     markup.add(types.InlineKeyboardButton("🛒 Order Now", callback_data=f"ORD|{sid}"), types.InlineKeyboardButton("⭐ Fav", callback_data=f"FAV_ADD|{sid}"))
     try: cat_idx = sorted(list(set(x['category'] for x in services))).index(s['category'])
     except: cat_idx = 0
-    markup.add(types.InlineKeyboardButton("🔙 Back", callback_data=f"CAT|{cat_idx}|0"))
+    markup.add(types.InlineKeyboardButton("🔙 Back to Services", callback_data=f"CAT|{cat_idx}|0"))
     
     if call.message.text and "YOUR ORDERS" in call.message.text: bot.send_message(call.message.chat.id, txt, reply_markup=markup, parse_mode="Markdown")
     else: bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
@@ -677,7 +726,6 @@ def text_router(message):
     try: users_col.update_one({"_id": uid}, {"$set": {"last_active": datetime.now()}})
     except Exception: pass
     
-    # 🔥 Live Chat Reply By Admin
     if str(uid) == str(ADMIN_ID) and message.reply_to_message:
         reply_text = message.reply_to_message.text
         if "ID: `" in reply_text:
