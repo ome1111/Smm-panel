@@ -53,7 +53,8 @@ def get_settings():
             "payments": [], "ref_bonus": 0.05, "dep_commission": 5.0, 
             "welcome_bonus_active": False, "welcome_bonus": 0.0,
             "flash_sale_active": False, "flash_sale_discount": 0.0,
-            "reward_top1": 10.0, "reward_top2": 5.0, "reward_top3": 2.0
+            "reward_top1": 10.0, "reward_top2": 5.0, "reward_top3": 2.0,
+            "best_choice_sids": []
         }
         config_col.insert_one(s)
     
@@ -107,11 +108,11 @@ threading.Thread(target=auto_sync_services_cron, daemon=True).start()
 def auto_sync_orders_cron():
     while True:
         try:
-            # 🧹 ফিচার: ১০ দিনের পুরোনো ক্যান্সেল অর্ডার ডাটাবেস থেকে ডিলিট করা
+            # 🧹 Clean Old Orders (10 days old)
             ten_days_ago = datetime.now() - timedelta(days=10)
             orders_col.delete_many({"status": {"$in": ["canceled", "refunded", "fail"]}, "date": {"$lt": ten_days_ago}})
             
-            # 🥺 ফিচার: Miss You Automation (৭ দিন ইনঅ্যাকটিভ থাকলে মেসেজ)
+            # 🥺 Miss You Automation (7 Days Inactive)
             seven_days_ago = datetime.now() - timedelta(days=7)
             inactive_users = list(users_col.find({"last_active": {"$lt": seven_days_ago}, "miss_you_sent": {"$ne": True}, "is_fake": {"$ne": True}}).limit(30))
             for iu in inactive_users:
@@ -120,7 +121,7 @@ def auto_sync_orders_cron():
                     users_col.update_one({"_id": iu["_id"]}, {"$set": {"miss_you_sent": True}})
                 except: pass
 
-            # 🔄 Order Sync (1xpanel Update & Auto-Refund)
+            # 🔄 Order Sync
             active_orders = list(orders_col.find({"status": {"$nin": ["completed", "canceled", "refunded", "fail", "partial"]}}))
             for o in active_orders:
                 if o.get("is_shadow"): continue
@@ -209,7 +210,7 @@ def main_menu():
     markup.add("🔍 Smart Search", "📦 Orders")
     markup.add("💰 Deposit", "🤝 Affiliate")
     markup.add("👤 Profile", "🎟️ Voucher")
-    markup.add("🏆 Leaderboard", "💬 Live Chat") # 🔥 ফিচার: Live Chat
+    markup.add("🏆 Leaderboard", "💬 Live Chat") 
     return markup
 
 # ==========================================
@@ -279,7 +280,7 @@ def sub_callback(call):
     else: bot.send_message(uid, "❌ You haven't joined all channels. Please join and try again.")
 
 # ==========================================
-# 4. SUPER FAST ORDERING ENGINE
+# 4. SUPER FAST ORDERING ENGINE (Drag & Drop + Best Choice)
 # ==========================================
 @bot.message_handler(func=lambda m: m.text == "🚀 New Order")
 def new_order_start(message):
@@ -293,25 +294,30 @@ def new_order_start(message):
     if not services: 
         return bot.send_message(uid, "⏳ **API Syncing...** Please try again in 5 seconds.", parse_mode="Markdown")
         
-    hidden = get_settings().get("hidden_services", [])
-    platforms = sorted(list(set(identify_platform(s['category']) for s in services if str(s['service']) not in hidden)))
+    s = get_settings()
+    hidden = s.get("hidden_services", [])
+    
+    # 🔥 Sorted Categories via Admin Panel Drag & Drop
+    cat_order_doc = config_col.find_one({"_id": "category_order"}) or {"order": []}
+    saved_cat_order = cat_order_doc.get("order", [])
+    
+    raw_platforms = list(set(identify_platform(srv['category']) for srv in services if str(srv['service']) not in hidden))
+    platforms = sorted(raw_platforms, key=lambda x: saved_cat_order.index(x) if x in saved_cat_order else 999)
+    
     markup = types.InlineKeyboardMarkup(row_width=2)
     
-    # 🔥 ফিচার: Trending Category (গত ২৪ ঘণ্টায় সবচেয়ে বেশি অর্ডার হওয়া টপ ৩ সার্ভিস)
-    yesterday = datetime.now() - timedelta(days=1)
-    pipeline = [{"$match": {"date": {"$gte": yesterday}, "is_shadow": {"$ne": True}}}, {"$group": {"_id": "$sid", "count": {"$sum": 1}}}, {"$sort": {"count": -1}}, {"$limit": 3}]
-    trending_sids = [doc['_id'] for doc in orders_col.aggregate(pipeline)]
-    if trending_sids:
-        markup.add(types.InlineKeyboardButton("🔥 TRENDING TOP 3 🔥", callback_data="IGNORE"))
-        for tsid in trending_sids:
-            s = next((x for x in services if str(x['service']) == str(tsid)), None)
-            if s and str(tsid) not in hidden:
-                markup.add(types.InlineKeyboardButton(f"⚡ {clean_service_name(s['name'])[:25]}", callback_data=f"INFO|{tsid}"))
+    # 🔥 Admin Best Choice (Replaces Trending)
+    best_sids = s.get("best_choice_sids", [])
+    if best_sids:
+        markup.add(types.InlineKeyboardButton("🌟 ADMIN BEST CHOICE 🌟", callback_data="IGNORE"))
+        for tsid in best_sids:
+            srv = next((x for x in services if str(x['service']) == str(tsid)), None)
+            if srv and str(tsid) not in hidden:
+                markup.add(types.InlineKeyboardButton(f"⚡ {clean_service_name(srv['name'])[:25]}", callback_data=f"INFO|{tsid}"))
 
     # Platforms
     for p in platforms: markup.add(types.InlineKeyboardButton(p, callback_data=f"PLAT|{p}|0"))
     
-    s = get_settings()
     banner = f"⚡ **FLASH SALE ACTIVE: {s.get('flash_sale_discount')}% OFF!**\n" if s.get('flash_sale_active') else ""
     bot.send_message(uid, f"{banner}━━━━━━━━━━━━━━━━━━━━\n📂 **Select a Platform:**", reply_markup=markup, parse_mode="Markdown")
 
@@ -322,7 +328,14 @@ def show_cats(call):
     page = int(page)
     services = get_cached_services()
     hidden = get_settings().get("hidden_services", [])
-    all_cats = sorted(list(set(s['category'] for s in services if identify_platform(s['category']) == platform_name and str(s['service']) not in hidden)))
+    
+    # 🔥 Sorted Categories
+    cat_order_doc = config_col.find_one({"_id": "category_order"}) or {"order": []}
+    saved_cat_order = cat_order_doc.get("order", [])
+    
+    raw_cats = list(set(s['category'] for s in services if identify_platform(s['category']) == platform_name and str(s['service']) not in hidden))
+    all_cats = sorted(raw_cats, key=lambda x: saved_cat_order.index(x) if x in saved_cat_order else 999)
+    
     start_idx, end_idx = page * 15, page * 15 + 15
     markup = types.InlineKeyboardMarkup(row_width=1)
     
@@ -346,9 +359,16 @@ def list_servs(call):
     hidden = get_settings().get("hidden_services", [])
     all_cat_names = sorted(list(set(s['category'] for s in services)))
     cat_name = all_cat_names[cat_idx]
-    filtered = [s for s in services if s['category'] == cat_name and str(s['service']) not in hidden]
-    start_idx, end_idx = page * 10, page * 10 + 10
     
+    filtered = [s for s in services if s['category'] == cat_name and str(s['service']) not in hidden]
+    
+    # 🔥 Sorted Services inside Category via Admin Panel Drag & Drop
+    service_orders_doc = config_col.find_one({"_id": "service_orders"}) or {}
+    saved_srv_order = service_orders_doc.get("orders", {}).get(cat_name, [])
+    
+    filtered = sorted(filtered, key=lambda x: saved_srv_order.index(str(x['service'])) if str(x['service']) in saved_srv_order else 9999)
+    
+    start_idx, end_idx = page * 10, page * 10 + 10
     user = users_col.find_one({"_id": call.message.chat.id})
     curr = user.get("currency", "BDT")
     markup = types.InlineKeyboardMarkup(row_width=1)
@@ -376,7 +396,6 @@ def info_card(call):
     curr = user.get("currency", "BDT")
     rate_usd = calculate_price(s['rate'], user.get('spent', 0), user.get('custom_discount', 0))
     
-    # 🔥 ফিচার: Estimated Start Time
     est_start = "Instant - 10 Mins ⚡" if any(x in s['name'].lower() for x in ['instant', 'fast']) else "1 - 12 Hours ⏳"
     
     txt = f"ℹ️ **SERVICE DETAILS**\n━━━━━━━━━━━━━━━━━━━━\n🏷 **Name:** {clean_service_name(s['name'])}\n🆔 **ID:** `{sid}`\n💰 **Price:** `{fmt_curr(rate_usd, curr)}` / 1000\n📉 **Min:** {s.get('min','0')} | 📈 **Max:** {s.get('max','0')}\n⏱ **Est. Start:** `{est_start}`\n━━━━━━━━━━━━━━━━━━━━"
@@ -495,7 +514,6 @@ def fetch_orders_page(chat_id, page=0):
         st_txt = f"✅ {st.upper()}" if st == 'completed' else f"❌ {st.upper()}" if st in ['canceled', 'refunded', 'fail'] else f"⏳ {st.upper()}"
         txt += f"🆔 `{o['oid']}` | 💰 `{fmt_curr(o['cost'], curr)}`\n🔗 {str(o.get('link', 'N/A'))[:25]}...\n🏷 Status: {st_txt}\n\n"
         
-        # 🔥 ফিচার: Auto-Refill Button in Orders
         row_btns = [types.InlineKeyboardButton(f"🔁 Reorder", callback_data=f"REORDER|{o.get('sid', 0)}")]
         if st in ['completed', 'partial'] and not o.get("is_shadow"):
             row_btns.append(types.InlineKeyboardButton(f"♻️ Refill", callback_data=f"REFILL_ORD|{o['oid']}"))
@@ -514,16 +532,12 @@ def my_orders_pagination(call):
     txt, markup = fetch_orders_page(call.message.chat.id, page)
     bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
 
-# 🔥 Auto-Refill API Call Handler
 @bot.callback_query_handler(func=lambda c: c.data.startswith("REFILL_ORD|"))
 def auto_refill_req(call):
     oid = call.data.split("|")[1]
     res = api.send_refill(oid)
-    if res and 'refill' in res:
-        bot.answer_callback_query(call.id, f"✅ Refill Requested! Refill ID: {res['refill']}", show_alert=True)
-    else:
-        err = res.get('error', 'Service not eligible for refill.')
-        bot.answer_callback_query(call.id, f"❌ Refill Error: {err}", show_alert=True)
+    if res and 'refill' in res: bot.answer_callback_query(call.id, f"✅ Refill Requested! ID: {res['refill']}", show_alert=True)
+    else: bot.answer_callback_query(call.id, f"❌ Refill Error: Service not eligible.", show_alert=True)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("PAY|"))
 def pay_details(call):
@@ -574,7 +588,7 @@ def universal_buttons(message):
     elif message.text == "🏆 Leaderboard":
         s = get_settings()
         r1, r2, r3 = s.get('reward_top1', 10.0), s.get('reward_top2', 5.0), s.get('reward_top3', 2.0)
-        medals = ['🥇', '🥈', '🥉', '4.', '5.'] # 🔥 ফিচার: Leaderboard Trophies
+        medals = ['🥇', '🥈', '🥉', '4.', '5.']
         
         top_spenders = list(users_col.find({"spent": {"$gt": 0}}).sort("spent", -1).limit(5))
         txt = "🏆 **MONTHLY TOP SPENDERS**\n━━━━━━━━━━━━━━━━━━━━\n"
@@ -597,7 +611,6 @@ def universal_buttons(message):
         users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_search"}})
         bot.send_message(uid, "🔍 **Smart Search**\nEnter Keyword or Service ID:", parse_mode="Markdown")
     
-    # 🔥 ফিচার: Live Chat Routing (For User)
     elif message.text == "💬 Live Chat":
         users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_live_chat"}})
         bot.send_message(uid, "💬 **LIVE CHAT SUPPORT**\n━━━━━━━━━━━━━━━━━━━━\nSend your message here. The Admin will reply to you directly!", parse_mode="Markdown")
@@ -664,7 +677,7 @@ def text_router(message):
     try: users_col.update_one({"_id": uid}, {"$set": {"last_active": datetime.now()}})
     except Exception: pass
     
-    # 🔥 ফিচার: Live Chat Reply By Admin
+    # 🔥 Live Chat Reply By Admin
     if str(uid) == str(ADMIN_ID) and message.reply_to_message:
         reply_text = message.reply_to_message.text
         if "ID: `" in reply_text:
@@ -766,7 +779,6 @@ def text_router(message):
         try: bot.send_message(ADMIN_ID, admin_txt, reply_markup=markup, parse_mode="Markdown")
         except: pass
 
-    # 🔥 ফিচার: Live Chat Forwarding to Admin
     elif step == "awaiting_live_chat":
         users_col.update_one({"_id": uid}, {"$unset": {"step": ""}})
         msg_text = f"💬 **NEW MESSAGE FROM USER**\n👤 ID: `{uid}`\n📝 Msg: {text}\n\n_Reply to this message directly in Telegram to send back text._"
