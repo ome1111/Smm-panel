@@ -1,44 +1,59 @@
 import requests
+import time
 from config import API_KEY, API_URL
 
 # ==========================================
-# ⚡ UNIVERSAL REQUEST HANDLER (ANTI-FREEZE)
+# ⚡ SMART API ENGINE (Cloudflare Bypass + Auto-Retry)
 # ==========================================
-def _make_request(action, timeout=12, **kwargs):
+def _make_request(action, timeout=15, retries=3, **kwargs):
     """
-    এই ফাংশনটি সব এপিআই রিকোয়েস্ট হ্যান্ডল করবে এবং সার্ভার ফ্রিজ হওয়া রোধ করবে।
+    Ei function ti API request handle korbe, Cloudflare bypass korbe 
+    ebong server slow thakle 3 bar auto retry korbe.
     """
     payload = {'key': API_KEY, 'action': action}
     payload.update(kwargs)
     
-    try:
-        response = requests.post(API_URL, data=payload, timeout=timeout)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.Timeout:
-        return {"error": "API Connection Timeout. Main panel is too slow."}
-    except Exception as e:
-        return {"error": str(e)}
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
+    
+    for attempt in range(retries):
+        try:
+            response = requests.post(API_URL, data=payload, headers=headers, timeout=timeout)
+            try:
+                return response.json()
+            except ValueError:
+                response.raise_for_status()
+                return {"error": f"Invalid response from main panel. Status: {response.status_code}"}
+        except requests.exceptions.Timeout:
+            if attempt < retries - 1:
+                time.sleep(2) # ২ সেকেন্ড ওয়েট করে আবার ট্রাই করবে
+                continue
+            return {"error": "API Connection Timeout. Main panel is too slow."}
+        except Exception as e:
+            if attempt < retries - 1:
+                time.sleep(2)
+                continue
+            return {"error": f"API Error: {str(e)}"}
 
 # ==========================================
 # 📦 SMM PANEL API FUNCTIONS
 # ==========================================
 def get_services():
-    """প্যানেল থেকে সব সার্ভিসের লিস্ট আনা"""
-    res = _make_request('services', timeout=15)
+    res = _make_request('services', timeout=20)
     return res if isinstance(res, list) else []
 
 def place_order(sid, link, qty):
-    """আসল প্যানেলে অর্ডার প্লেস করা"""
-    return _make_request('add', timeout=15, service=sid, link=link, quantity=qty)
+    return _make_request('add', timeout=20, service=sid, link=link, quantity=qty)
 
 def check_order_status(order_id):
-    """অর্ডারের বর্তমান স্ট্যাটাস চেক করা (Auto-Refund এবং Sync এর জন্য)"""
-    return _make_request('status', timeout=10, order=order_id)
+    return _make_request('status', timeout=15, order=order_id)
+
+def send_refill(order_id):
+    return _make_request('refill', timeout=15, order=order_id)
 
 def get_balance():
-    """আপনার প্যানেলের মেইন ব্যালেন্স চেক করা (অ্যাডমিন প্যানেলের জন্য)"""
-    res = _make_request('balance', timeout=10)
+    res = _make_request('balance', timeout=15)
     if isinstance(res, dict):
         return f"{res.get('balance', '0.00')} {res.get('currency', 'USD')}"
     return "N/A"
