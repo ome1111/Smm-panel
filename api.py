@@ -36,6 +36,10 @@ def check_order_status(order_id):
     """অর্ডারের বর্তমান স্ট্যাটাস চেক করা (Auto-Refund এবং Sync এর জন্য)"""
     return _make_request('status', timeout=10, order=order_id)
 
+def send_refill(order_id):
+    """1xpanel এ অটো রিফিল রিকোয়েস্ট পাঠানো (New Feature)"""
+    return _make_request('refill', timeout=10, order=order_id)
+
 def get_balance():
     """আপনার প্যানেলের মেইন ব্যালেন্স চেক করা (অ্যাডমিন প্যানেলের জন্য)"""
     res = _make_request('balance', timeout=10)
