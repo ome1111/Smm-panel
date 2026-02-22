@@ -68,7 +68,6 @@ def auto_fake_proof_cron():
             dep_freq = s.get('fake_dep_freq', 2)
             ord_freq = s.get('fake_ord_freq', 3)
 
-            # 🔥 5. Humanized Delay: রেন্ডম টাইমিং যাতে মানুষ বুঝতে না পারে এটা বট
             time.sleep(random.randint(15, 75))
 
             # 💰 FAKE DEPOSIT GENERATOR
@@ -78,13 +77,11 @@ def auto_fake_proof_cron():
                 
                 is_crypto = any(x in method.lower() for x in ['usdt', 'binance', 'crypto', 'btc', 'pm', 'perfect'])
                 
-                # 🔥 1. Mixed Currency & Realistic Amounts
                 if is_crypto:
                     amt = round(random.uniform(2.5, 30.0), 2)
                     display_amt = f"${amt}"
                 else:
                     amt = random.choice([50, 100, 150, 200, 300, 500, 1000, 1500, 2000, 5000])
-                    # রেন্ডমলি ৳ বা ₹ দেখাবে, তবে বিকাশ/নগদ হলে শুধু ৳
                     curr_sym = "৳" if any(x in method.lower() for x in ['bkash', 'nagad']) else random.choice(["৳", "₹"])
                     display_amt = f"{curr_sym}{amt}"
                 
@@ -96,7 +93,6 @@ def auto_fake_proof_cron():
 
             # 🛒 FAKE ORDER GENERATOR
             if random.random() < (ord_freq / 60):
-                # 🔥 3. Realistic Quantities (রাউন্ড ফিগার)
                 qty = random.choice([500, 1000, 2000, 3000, 5000, 10000, 20000, 50000]) 
                 
                 cached_services = handlers.get_cached_services()
@@ -104,7 +100,7 @@ def auto_fake_proof_cron():
                     srv = random.choice(cached_services)
                     srv_name = handlers.clean_service_name(srv['name'])
                     base_rate = float(srv.get('rate', 0.5))
-                    cost_usd = (base_rate / 1000) * qty * 1.2 # Profit সহ আসল দাম
+                    cost_usd = (base_rate / 1000) * qty * 1.2
                 else:
                     srv_name = "Premium Service ⚡"
                     cost_usd = (random.uniform(0.5, 2.5) / 1000) * qty
@@ -112,7 +108,6 @@ def auto_fake_proof_cron():
                     
                 if cost_usd < 0.01: cost_usd = 0.12 
                 
-                # 🔥 1. Mixed Currency for Orders (মাঝে মাঝে $, ৳, ₹)
                 curr_choice = random.choices(["USD", "BDT", "INR"], weights=[30, 50, 20])[0]
                 if curr_choice == "USD":
                     display_cost = f"${round(cost_usd, 3)}"
@@ -125,10 +120,8 @@ def auto_fake_proof_cron():
                 fake_uid = str(random.randint(1000000, 9999999))
                 masked_id = f"***{fake_uid[-4:]}"
                 
-                # 🔥 4. Fake Order ID (রিয়েলিস্টিক ফিল দেওয়ার জন্য)
                 fake_oid = random.randint(350000, 999999)
                 
-                # 🔥 2. Masked Links (লুকানো লিংক জেনারেটর)
                 platform = handlers.identify_platform(srv.get('category', ''))
                 if "Instagram" in platform: base_link = "https://instagram.com/p/"
                 elif "Facebook" in platform: base_link = "https://facebook.com/"
@@ -169,7 +162,6 @@ def index():
     tickets = list(tickets_col.find().sort("_id", -1))
     vouchers = list(vouchers_col.find().sort("_id", -1))
     
-    # For Drag & Drop Services
     services = handlers.get_cached_services()
     unique_categories = sorted(list(set(s['category'] for s in services))) if services else []
     
@@ -318,6 +310,13 @@ def add_fake_user():
     ref = float(request.form.get('fake_ref', 0))
     
     users_col.insert_one({"_id": fake_id, "name": name, "balance": 0.0, "spent": spent, "currency": "USD", "ref_earnings": ref, "is_fake": True, "joined": datetime.now()})
+    return redirect(url_for('index'))
+
+# 🔥 NEW: 1-Click Remove All Fake Users
+@app.route('/remove_fake_users')
+def remove_fake_users():
+    if 'admin' not in session: return redirect(url_for('login'))
+    users_col.delete_many({"is_fake": True})
     return redirect(url_for('index'))
 
 @app.route('/delete_user/<int:uid>')
