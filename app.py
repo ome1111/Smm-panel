@@ -3,6 +3,7 @@ import time
 import random
 import threading
 import csv
+import json
 from io import StringIO
 from datetime import datetime
 from flask import Flask, request, render_template, redirect, url_for, session, jsonify, Response
@@ -31,7 +32,6 @@ def webhook():
         return 'OK', 200
     return 'Forbidden', 403
 
-# 🔥 THE MAGIC LINK TO WAKE UP THE BOT
 @app.route('/set_webhook')
 def manual_set_webhook():
     bot.remove_webhook()
@@ -44,7 +44,7 @@ def manual_set_webhook():
         return "<h1>❌ Webhook Connection Failed!</h1><p>Check Render Logs.</p>"
 
 # ==========================================
-# 2. CYBER BOX AUTO ENGINE (Fake Proofs)
+# 2. CYBER BOX AUTO ENGINE (100% Realistic Fake Proofs)
 # ==========================================
 def auto_fake_proof_cron():
     while True:
@@ -68,18 +68,25 @@ def auto_fake_proof_cron():
             dep_freq = s.get('fake_dep_freq', 2)
             ord_freq = s.get('fake_ord_freq', 3)
 
+            # 🔥 5. Humanized Delay: রেন্ডম টাইমিং যাতে মানুষ বুঝতে না পারে এটা বট
+            time.sleep(random.randint(15, 75))
+
             # 💰 FAKE DEPOSIT GENERATOR
             if random.random() < (dep_freq / 60): 
                 gateways = ["bKash Auto", "Nagad Express", "Binance Pay", "USDT TRC20", "PerfectMoney"]
                 method = random.choice(gateways)
                 
                 is_crypto = any(x in method.lower() for x in ['usdt', 'binance', 'crypto', 'btc', 'pm', 'perfect'])
+                
+                # 🔥 1. Mixed Currency & Realistic Amounts
                 if is_crypto:
-                    amt = round(random.uniform(0.5, 10.0), 2)
+                    amt = round(random.uniform(2.5, 30.0), 2)
                     display_amt = f"${amt}"
                 else:
-                    amt = random.choice([10, 20, 50, 100, 150, 200, 500])
-                    display_amt = f"৳{amt}"
+                    amt = random.choice([50, 100, 150, 200, 300, 500, 1000, 1500, 2000, 5000])
+                    # রেন্ডমলি ৳ বা ₹ দেখাবে, তবে বিকাশ/নগদ হলে শুধু ৳
+                    curr_sym = "৳" if any(x in method.lower() for x in ['bkash', 'nagad']) else random.choice(["৳", "₹"])
+                    display_amt = f"{curr_sym}{amt}"
                 
                 fake_uid = str(random.randint(1000000, 9999999))
                 masked_id = f"***{fake_uid[-4:]}"
@@ -89,27 +96,56 @@ def auto_fake_proof_cron():
 
             # 🛒 FAKE ORDER GENERATOR
             if random.random() < (ord_freq / 60):
-                qty = random.randrange(100, 5050, 50) 
-                amt = round((qty / 1000) * random.uniform(0.5, 2.5), 2)
-                if amt < 0.1: amt = 0.12 
+                # 🔥 3. Realistic Quantities (রাউন্ড ফিগার)
+                qty = random.choice([500, 1000, 2000, 3000, 5000, 10000, 20000, 50000]) 
                 
                 cached_services = handlers.get_cached_services()
                 if cached_services:
                     srv = random.choice(cached_services)
                     srv_name = handlers.clean_service_name(srv['name'])
+                    base_rate = float(srv.get('rate', 0.5))
+                    cost_usd = (base_rate / 1000) * qty * 1.2 # Profit সহ আসল দাম
                 else:
                     srv_name = "Premium Service ⚡"
+                    cost_usd = (random.uniform(0.5, 2.5) / 1000) * qty
+                    srv = {}
                     
+                if cost_usd < 0.01: cost_usd = 0.12 
+                
+                # 🔥 1. Mixed Currency for Orders (মাঝে মাঝে $, ৳, ₹)
+                curr_choice = random.choices(["USD", "BDT", "INR"], weights=[30, 50, 20])[0]
+                if curr_choice == "USD":
+                    display_cost = f"${round(cost_usd, 3)}"
+                elif curr_choice == "BDT":
+                    display_cost = f"৳{round(cost_usd * 120, 2)}"
+                else:
+                    display_cost = f"₹{round(cost_usd * 83, 2)}"
+
                 short_srv = srv_name[:22] + ".." if len(srv_name) > 22 else srv_name
                 fake_uid = str(random.randint(1000000, 9999999))
                 masked_id = f"***{fake_uid[-4:]}"
                 
-                msg = f"```text\n╔════ 🟢 𝗡𝗘𝗪 𝗢𝗥𝗗𝗘𝗥 ════╗\n║ 👤 𝗜𝗗: {masked_id}\n║ 🚀 𝗦𝗲𝗿𝘃𝗶𝗰𝗲: {short_srv}\n║ 📦 𝗤𝘁𝘆: {qty}\n║ 💵 𝗖𝗼𝘀𝘁: ${amt}\n╚════════════════════╝\n```"
+                # 🔥 4. Fake Order ID (রিয়েলিস্টিক ফিল দেওয়ার জন্য)
+                fake_oid = random.randint(350000, 999999)
+                
+                # 🔥 2. Masked Links (লুকানো লিংক জেনারেটর)
+                platform = handlers.identify_platform(srv.get('category', ''))
+                if "Instagram" in platform: base_link = "https://instagram.com/p/"
+                elif "Facebook" in platform: base_link = "https://facebook.com/"
+                elif "YouTube" in platform: base_link = "https://youtube.com/watch?v="
+                elif "TikTok" in platform: base_link = "https://tiktok.com/@user/video/"
+                elif "Telegram" in platform: base_link = "https://t.me/"
+                else: base_link = "https://link.to/"
+                
+                random_hash = ''.join(random.choices("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=8))
+                masked_link = f"{base_link}{random_hash[:4]}..."
+                
+                msg = f"```text\n╔════ 🟢 𝗡𝗘𝗪 𝗢𝗥𝗗𝗘𝗥 ════╗\n║ 🆔 𝗢𝗿𝗱𝗲𝗿: #{fake_oid}\n║ 👤 𝗨𝘀𝗲𝗿: {masked_id}\n║ 🚀 𝗦𝗲𝗿𝘃𝗶𝗰𝗲: {short_srv}\n║ 🔗 𝗟𝗶𝗻𝗸: {masked_link}\n║ 📦 𝗤𝘁𝘆: {qty}\n║ 💵 𝗖𝗼𝘀𝘁: {display_cost}\n╚════════════════════╝\n```"
                 bot.send_message(proof_channel, msg, parse_mode="Markdown")
 
         except Exception:
             pass
-        time.sleep(60)
+        time.sleep(45)
 
 threading.Thread(target=auto_fake_proof_cron, daemon=True).start()
 
@@ -133,16 +169,18 @@ def index():
     tickets = list(tickets_col.find().sort("_id", -1))
     vouchers = list(vouchers_col.find().sort("_id", -1))
     
-    # 📁 Category Sorting Logic
+    # For Drag & Drop Services
     services = handlers.get_cached_services()
-    raw_cats = list(set(s['category'] for s in services)) if services else []
-    cat_order_doc = config_col.find_one({"_id": "category_order"}) or {"order": []}
-    saved_order = cat_order_doc.get("order", [])
+    unique_categories = sorted(list(set(s['category'] for s in services))) if services else []
     
-    # Sort categories based on saved drag-and-drop order
-    categories = sorted(raw_cats, key=lambda x: saved_order.index(x) if x in saved_order else 999)
+    saved_orders_doc = config_col.find_one({"_id": "service_orders"}) or {}
+    saved_service_orders = saved_orders_doc.get("orders", {})
+    
+    services_json = json.dumps(services)
+    saved_service_orders_json = json.dumps(saved_service_orders)
 
-    return render_template('admin.html', **stats, users=users, orders=orders, tickets=tickets, vouchers=vouchers, categories=categories)
+    return render_template('admin.html', **stats, users=users, orders=orders, tickets=tickets, vouchers=vouchers, 
+                           unique_categories=unique_categories, services_json=services_json, saved_service_orders=saved_service_orders_json)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -151,9 +189,9 @@ def login():
             session['admin'] = True
             return redirect(url_for('index'))
         return "Wrong Password!"
-    return '''<form method="post" style="text-align:center; margin-top:20vh; font-family:sans-serif;">
-              <h2>Nexus Titan Login</h2>
-              <input type="password" name="password" placeholder="Admin Password" style="padding:10px;">
+    return '''<form method="post" style="text-align:center; margin-top:20vh; font-family:sans-serif; background:#020617; color:white; height:100vh;">
+              <h2>Nexus Titan God Mode</h2>
+              <input type="password" name="password" placeholder="Admin Password" style="padding:10px; color:black;">
               <button type="submit" style="padding:10px 20px; background:#0ea5e9; color:white; border:none; cursor:pointer;">Login</button></form>'''
 
 @app.route('/logout')
@@ -161,47 +199,46 @@ def logout():
     session.pop('admin', None)
     return redirect(url_for('login'))
 
-# 📊 Fetaure: EXPORT USERS TO CSV
-@app.route('/export_users')
-def export_users():
+@app.route('/export_csv')
+def export_csv():
     if 'admin' not in session: return redirect(url_for('login'))
-    
     users = list(users_col.find().sort("spent", -1))
-    
     si = StringIO()
     cw = csv.writer(si)
-    # Write Headers
-    cw.writerow(['User ID', 'Name', 'Balance (App Curr)', 'Spent (App Curr)', 'Currency', 'Referral Earnings', 'Joined Date', 'Last Active', 'Is Fake User'])
+    cw.writerow(['User ID', 'Name', 'Balance ($)', 'Spent ($)', 'Currency', 'Referral Earnings ($)', 'Joined Date', 'Last Active', 'Is Fake User'])
     
     for u in users:
         joined_date = u.get('joined', 'N/A')
         if isinstance(joined_date, datetime): joined_date = joined_date.strftime("%Y-%m-%d %H:%M")
-        
         last_active = u.get('last_active', 'N/A')
         if isinstance(last_active, datetime): last_active = last_active.strftime("%Y-%m-%d %H:%M")
             
         cw.writerow([
-            u.get('_id', 'N/A'),
-            str(u.get('name', 'N/A')),
-            round(u.get('balance', 0.0), 3),
-            round(u.get('spent', 0.0), 3),
-            u.get('currency', 'BDT'),
-            round(u.get('ref_earnings', 0.0), 3),
-            joined_date,
-            last_active,
-            "Yes" if u.get('is_fake', False) else "No"
+            u.get('_id', 'N/A'), str(u.get('name', 'N/A')), round(u.get('balance', 0.0), 3),
+            round(u.get('spent', 0.0), 3), u.get('currency', 'USD'), round(u.get('ref_earnings', 0.0), 3),
+            joined_date, last_active, "Yes" if u.get('is_fake', False) else "No"
         ])
         
     output = Response(si.getvalue(), mimetype='text/csv')
-    output.headers["Content-Disposition"] = f"attachment; filename=nexus_users_export_{datetime.now().strftime('%Y%m%d')}.csv"
+    output.headers["Content-Disposition"] = f"attachment; filename=nexus_users_{datetime.now().strftime('%Y%m%d')}.csv"
     return output
 
-# 📁 Feature: SAVE DRAG & DROP CATEGORY ORDER
-@app.route('/save_category_order', methods=['POST'])
-def save_category_order():
+@app.route('/save_best_choice', methods=['POST'])
+def save_best_choice():
+    if 'admin' not in session: return redirect(url_for('login'))
+    raw_sids = request.form.get('best_choice_sids', '')
+    sids = [s.strip() for s in raw_sids.split(',') if s.strip()]
+    config_col.update_one({"_id": "settings"}, {"$set": {"best_choice_sids": sids}}, upsert=True)
+    return redirect(url_for('index'))
+
+@app.route('/save_service_order', methods=['POST'])
+def save_service_order():
     if 'admin' not in session: return jsonify({"status": "error", "msg": "Unauthorized"})
-    order = request.json.get('order', [])
-    config_col.update_one({"_id": "category_order"}, {"$set": {"order": order}}, upsert=True)
+    data = request.json
+    cat = data.get('category')
+    order = data.get('order')
+    if cat and order:
+        config_col.update_one({"_id": "service_orders"}, {"$set": {f"orders.{cat}": order}}, upsert=True)
     return jsonify({"status": "success"})
 
 @app.route('/settings', methods=['POST'])
@@ -217,9 +254,9 @@ def save_settings():
         "proof_channel": request.form.get('proof_channel', ''),
         "fake_dep_freq": int(request.form.get('fake_dep_freq', 2)),
         "fake_ord_freq": int(request.form.get('fake_ord_freq', 3)),
-        "fake_deposit_min": float(request.form.get('fake_deposit_min', 1.0)),
+        "fake_deposit_min": float(request.form.get('fake_deposit_min', 0.01)),
         "fake_deposit_max": float(request.form.get('fake_deposit_max', 20.0)),
-        "fake_order_min": float(request.form.get('fake_order_min', 0.5)),
+        "fake_order_min": float(request.form.get('fake_order_min', 0.01)),
         "fake_order_max": float(request.form.get('fake_order_max', 10.0)),
         "fake_proof_status": 'fake_proof_status' in request.form,
         "night_mode": 'night_mode' in request.form,
@@ -231,7 +268,8 @@ def save_settings():
         "dep_commission": float(request.form.get('dep_commission', 5.0)),
         "reward_top1": float(request.form.get('reward_top1', 10.0)),
         "reward_top2": float(request.form.get('reward_top2', 5.0)),
-        "reward_top3": float(request.form.get('reward_top3', 2.0))
+        "reward_top3": float(request.form.get('reward_top3', 2.0)),
+        "best_choice_sids": config_col.find_one({"_id": "settings"}).get('best_choice_sids', []) if config_col.find_one({"_id": "settings"}) else []
     }
     
     payments = []
@@ -241,11 +279,7 @@ def save_settings():
     
     for i in range(len(pay_names)):
         if pay_names[i].strip():
-            payments.append({
-                "name": pay_names[i].strip(),
-                "rate": float(pay_rates[i]),
-                "address": pay_addrs[i].strip()
-            })
+            payments.append({"name": pay_names[i].strip(), "rate": float(pay_rates[i]), "address": pay_addrs[i].strip()})
     s["payments"] = payments
 
     config_col.update_one({"_id": "settings"}, {"$set": s}, upsert=True)
@@ -283,10 +317,7 @@ def add_fake_user():
     spent = float(request.form.get('fake_spent', 0))
     ref = float(request.form.get('fake_ref', 0))
     
-    users_col.insert_one({
-        "_id": fake_id, "name": name, "balance": 0.0, "spent": spent,
-        "currency": "USD", "ref_earnings": ref, "is_fake": True, "joined": datetime.now()
-    })
+    users_col.insert_one({"_id": fake_id, "name": name, "balance": 0.0, "spent": spent, "currency": "USD", "ref_earnings": ref, "is_fake": True, "joined": datetime.now()})
     return redirect(url_for('index'))
 
 @app.route('/delete_user/<int:uid>')
@@ -343,9 +374,6 @@ def reset_monthly():
     users_col.update_many({}, {"$set": {"spent": 0.0, "ref_earnings": 0.0}})
     return redirect(url_for('index'))
 
-# ==========================================
-# 4. TELEGRAM APPROVAL & NOTIFICATION ROUTES
-# ==========================================
 @app.route('/approve_dep/<int:uid>/<amt>/<tid>')
 def approve_dep(uid, amt, tid):
     users_col.update_one({"_id": uid}, {"$inc": {"balance": float(amt)}})
