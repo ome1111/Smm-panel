@@ -250,7 +250,19 @@ def start(message):
         bot.send_message(uid, "🛑 **ACCESS RESTRICTED**\nYou must join our official channels to unlock the bot.", reply_markup=markup, parse_mode="Markdown")
         return
 
-    bot.send_message(uid, f"{greeting}, {message.from_user.first_name}! 👋\n**WELCOME TO NEXUS SMM**\n━━━━━━━━━━━━━━━━━━━━\n🆔 **Your ID:** `{uid}`", reply_markup=main_menu(), parse_mode="Markdown")
+    # 🔥 New Cyberpunk Welcome Message
+    welcome_text = f"""{greeting}, {message.from_user.first_name}! ⚡️
+
+🚀 **𝗪𝗘𝗟𝗖𝗢𝗠𝗘 𝗧𝗢 𝗡𝗘𝗫𝗨𝗦 𝗦𝗠𝗠**
+_"Your Ultimate Social Growth Engine"_
+━━━━━━━━━━━━━━━━━━━━━
+👤 **𝗨𝘀𝗲𝗿:** {message.from_user.first_name}
+🆔 **𝗦𝘆𝘀𝘁𝗲𝗺 𝗜𝗗:** `{uid}`
+👑 **𝗦𝘁𝗮𝘁𝘂𝘀:** Connected 🟢
+━━━━━━━━━━━━━━━━━━━━━
+Let's boost your digital presence today! 👇"""
+
+    bot.send_message(uid, welcome_text, reply_markup=main_menu(), parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data == "CHECK_SUB")
 def sub_callback(call):
@@ -258,7 +270,23 @@ def sub_callback(call):
     uid = call.message.chat.id
     if check_sub(uid):
         bot.delete_message(uid, call.message.message_id)
-        bot.send_message(uid, "✅ **Access Granted! Welcome to the panel.**", reply_markup=main_menu())
+        
+        # Cyberpunk Welcome for successful verification
+        hour = datetime.now().hour
+        greeting = "🌅 Good Morning" if hour < 12 else "☀️ Good Afternoon" if hour < 18 else "🌙 Good Evening"
+        welcome_text = f"""{greeting}, {call.from_user.first_name}! ⚡️
+
+🚀 **𝗪𝗘𝗟𝗖𝗢𝗠𝗘 𝗧𝗢 𝗡𝗘𝗫𝗨𝗦 𝗦𝗠𝗠**
+_"Your Ultimate Social Growth Engine"_
+━━━━━━━━━━━━━━━━━━━━━
+👤 **𝗨𝘀𝗲𝗿:** {call.from_user.first_name}
+🆔 **𝗦𝘆𝘀𝘁𝗲𝗺 𝗜𝗗:** `{uid}`
+👑 **𝗦𝘁𝗮𝘁𝘂𝘀:** Connected 🟢
+━━━━━━━━━━━━━━━━━━━━━
+Let's boost your digital presence today! 👇"""
+
+        bot.send_message(uid, welcome_text, reply_markup=main_menu(), parse_mode="Markdown")
+        
         user = users_col.find_one({"_id": uid})
         s = get_settings()
         if s.get('welcome_bonus_active') and not user.get("welcome_paid"):
@@ -447,7 +475,7 @@ def info_card(call):
     markup.add(types.InlineKeyboardButton("🛒 Order Now", callback_data=f"ORD|{sid}"), types.InlineKeyboardButton("⭐ Fav", callback_data=f"FAV_ADD|{sid}"))
     try: cat_idx = sorted(list(set(x['category'] for x in services))).index(s['category'])
     except: cat_idx = 0
-    markup.add(types.InlineKeyboardButton("🔙 Back", callback_data=f"CAT|{cat_idx}|0"))
+    markup.add(types.InlineKeyboardButton("🔙 Back to Services", callback_data=f"CAT|{cat_idx}|0"))
     
     if call.message.text and "YOUR ORDERS" in call.message.text: bot.send_message(call.message.chat.id, txt, reply_markup=markup, parse_mode="Markdown")
     else: bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
