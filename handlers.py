@@ -302,18 +302,15 @@ def new_order_start(message):
     
     markup = types.InlineKeyboardMarkup(row_width=2)
     
-    # 🔥 FIX: Admin Best Choice is now a CLICKABLE BUTTON
     best_sids = s.get("best_choice_sids", [])
     if best_sids:
         markup.add(types.InlineKeyboardButton("🌟 ADMIN BEST CHOICE 🌟", callback_data="SHOW_BEST_CHOICE"))
 
-    # Platforms
     for p in platforms: markup.add(types.InlineKeyboardButton(p, callback_data=f"PLAT|{p}|0"))
     
     banner = f"⚡ **FLASH SALE ACTIVE: {s.get('flash_sale_discount')}% OFF!**\n" if s.get('flash_sale_active') else ""
     bot.send_message(uid, f"{banner}━━━━━━━━━━━━━━━━━━━━\n📂 **Select a Platform:**", reply_markup=markup, parse_mode="Markdown")
 
-# 🔥 FIX: Handler to route back to Main Menu from Best Choice
 @bot.callback_query_handler(func=lambda c: c.data == "NEW_ORDER_MAIN")
 def back_to_main_order(call):
     bot.answer_callback_query(call.id)
@@ -340,7 +337,6 @@ def back_to_main_order(call):
     banner = f"⚡ **FLASH SALE ACTIVE: {s.get('flash_sale_discount')}% OFF!**\n" if s.get('flash_sale_active') else ""
     bot.edit_message_text(f"{banner}━━━━━━━━━━━━━━━━━━━━\n📂 **Select a Platform:**", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
-# 🔥 FIX: Handler to display Best Choice Services when button is clicked
 @bot.callback_query_handler(func=lambda c: c.data == "SHOW_BEST_CHOICE")
 def show_best_choices(call):
     bot.answer_callback_query(call.id)
@@ -395,7 +391,6 @@ def show_cats(call):
     if end_idx < len(all_cats): nav.append(types.InlineKeyboardButton("Next ➡️", callback_data=f"PLAT|{platform_name}|{page+1}"))
     if nav: markup.row(*nav)
     
-    # Add Back Button to Main Menu
     markup.add(types.InlineKeyboardButton("🔙 Back to Platforms", callback_data="NEW_ORDER_MAIN"))
     
     bot.edit_message_text(f"📍 **Home** ➔ **{platform_name}**\n━━━━━━━━━━━━━━━━━━━━\n📂 **Choose Category:**", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
@@ -452,7 +447,7 @@ def info_card(call):
     markup.add(types.InlineKeyboardButton("🛒 Order Now", callback_data=f"ORD|{sid}"), types.InlineKeyboardButton("⭐ Fav", callback_data=f"FAV_ADD|{sid}"))
     try: cat_idx = sorted(list(set(x['category'] for x in services))).index(s['category'])
     except: cat_idx = 0
-    markup.add(types.InlineKeyboardButton("🔙 Back to Services", callback_data=f"CAT|{cat_idx}|0"))
+    markup.add(types.InlineKeyboardButton("🔙 Back", callback_data=f"CAT|{cat_idx}|0"))
     
     if call.message.text and "YOUR ORDERS" in call.message.text: bot.send_message(call.message.chat.id, txt, reply_markup=markup, parse_mode="Markdown")
     else: bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
@@ -726,14 +721,17 @@ def text_router(message):
     try: users_col.update_one({"_id": uid}, {"$set": {"last_active": datetime.now()}})
     except Exception: pass
     
+    # 🔥 FIXED: Live Chat Reply By Admin (No backtick issue)
     if str(uid) == str(ADMIN_ID) and message.reply_to_message:
         reply_text = message.reply_to_message.text
-        if "ID: `" in reply_text:
+        if reply_text and "ID: " in reply_text:
             try:
-                target_uid = int(reply_text.split("ID: `")[1].split("`")[0])
+                target_uid_str = reply_text.split("ID: ")[1].split("\n")[0].strip().replace("`", "")
+                target_uid = int(target_uid_str)
                 bot.send_message(target_uid, f"👨‍💻 **ADMIN REPLY:**\n{text}", parse_mode="Markdown")
                 return bot.send_message(ADMIN_ID, "✅ Reply sent successfully to user!")
-            except Exception: pass
+            except Exception as e: 
+                pass
             
     if check_spam(uid) or check_maintenance(uid) or not check_sub(uid): return
     if text in ["⭐ Favorites", "🏆 Leaderboard", "📦 Orders", "💰 Deposit", "💬 Live Chat", "🔍 Smart Search", "🤝 Affiliate", "🎟️ Voucher"]:
