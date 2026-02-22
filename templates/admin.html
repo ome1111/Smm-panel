@@ -8,7 +8,6 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     
     <style>
         body { font-family: 'Rajdhani', sans-serif; background-color: #020617; color: #e2e8f0; }
@@ -20,9 +19,6 @@
         
         #sidebar { transition: transform 0.3s ease-in-out; }
         #mobile-overlay { transition: opacity 0.3s ease-in-out; }
-        
-        /* Drag and Drop Ghost Class */
-        .ghost-item { opacity: 0.5; background-color: rgba(56, 189, 248, 0.2); border: 2px dashed #38bdf8; }
     </style>
 </head>
 <body class="flex flex-col md:flex-row h-screen overflow-hidden bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] relative">
@@ -53,9 +49,6 @@
             <nav class="p-4 space-y-2 overflow-y-auto max-h-[60vh]">
                 <button onclick="switchTab('dashboard')" id="btn-dashboard" class="tab-btn active w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-slate-800/50 hover:text-white font-bold">
                     <i class="fas fa-chart-pie w-5 text-center"></i> Dashboard
-                </button>
-                <button onclick="switchTab('services')" id="btn-services" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-slate-800/50 hover:text-white font-bold">
-                    <i class="fas fa-list-ul w-5 text-center text-amber-400"></i> Services Engine
                 </button>
                 <button onclick="switchTab('users')" id="btn-users" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-slate-800/50 hover:text-white font-bold">
                     <i class="fas fa-users-cog w-5 text-center"></i> Users Engine
@@ -89,7 +82,10 @@
             
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 mb-8">
                 <div class="glass-card p-6 border-l-4 border-rose-500 relative overflow-hidden bg-rose-500/5">
-                    <div class="absolute top-2 right-2 flex space-x-1"><span class="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span><span class="w-2 h-2 rounded-full bg-rose-500"></span></div>
+                    <div class="absolute top-2 right-2 flex space-x-1">
+                        <span class="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
+                        <span class="w-2 h-2 rounded-full bg-rose-500"></span>
+                    </div>
                     <i class="fas fa-eye absolute -right-4 -bottom-4 text-6xl text-rose-500/10"></i>
                     <h3 class="text-slate-400 text-sm font-bold uppercase tracking-wider mb-2">Live Users Online</h3>
                     <div class="text-4xl font-bold text-rose-400 data-font" id="live_users_count">74</div>
@@ -151,60 +147,15 @@
             </div>
         </div>
 
-        <div id="tab-services" class="tab-content hidden animate-[fadeIn_0.3s_ease-out]">
-            <h2 class="text-2xl font-bold mb-6 text-white border-b border-slate-700 pb-2"><i class="fas fa-list-ul text-amber-400 mr-2"></i> Services Engine</h2>
-
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-                <div class="glass-card p-6 border-t-4 border-t-rose-500 flex flex-col h-full">
-                    <div class="mb-4">
-                        <h3 class="text-xl font-bold text-rose-400"><i class="fas fa-fire mr-2"></i> Admin Best Choice</h3>
-                        <p class="text-sm text-slate-400 mt-1">Select services to display in the "🌟 ADMIN BEST CHOICE" category inside the bot.</p>
-                    </div>
-                    <form action="/save_best_choice" method="POST" class="flex flex-col gap-4 flex-grow">
-                        <div>
-                            <label class="block text-xs text-slate-400 font-bold uppercase mb-2">Service IDs (Comma Separated)</label>
-                            <textarea name="best_choice_sids" rows="3" placeholder="Example: 101, 205, 33, 401" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white data-font outline-none focus:border-rose-500 leading-relaxed">{{ s.get('best_choice_sids', []) | join(', ') }}</textarea>
-                        </div>
-                        <div class="mt-auto">
-                            <button type="submit" class="bg-rose-500 hover:bg-rose-400 text-slate-900 font-bold px-6 py-3 rounded-lg w-full transition-colors shadow-[0_0_15px_rgba(244,63,94,0.3)]"><i class="fas fa-save mr-2"></i> Save Best Choices</button>
-                        </div>
-                    </form>
-                </div>
-
-                <div class="glass-card p-6 border-t-4 border-t-sky-500 flex flex-col h-full">
-                    <div class="mb-4">
-                        <h3 class="text-xl font-bold text-sky-400"><i class="fas fa-sort-amount-down mr-2"></i> Service Ordering (Drag & Drop)</h3>
-                        <p class="text-sm text-slate-400 mt-1">Select a category, then drag and drop the services to reorder them in the bot.</p>
-                    </div>
-                    
-                    <div class="flex flex-col h-full">
-                        <select id="catSelect" onchange="loadCategoryServices()" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white outline-none focus:border-sky-500 mb-4 font-bold">
-                            <option value="">-- Select A Category --</option>
-                            {% for cat in unique_categories %}
-                            <option value="{{ cat }}">{{ cat }}</option>
-                            {% endfor %}
-                        </select>
-
-                        <div class="bg-slate-900/50 border border-slate-800 rounded-lg p-2 mb-4 flex-grow overflow-y-auto max-h-[300px]">
-                            <ul id="service-sort-list" class="space-y-2">
-                                <li class="text-center text-slate-500 py-4 text-sm">Please select a category above...</li>
-                            </ul>
-                        </div>
-
-                        <button onclick="saveServiceOrder()" class="bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold px-6 py-3 rounded-lg w-full transition-colors shadow-[0_0_15px_rgba(56,189,248,0.3)] mt-auto"><i class="fas fa-save mr-2"></i> Save Service Order</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
         <div id="tab-users" class="tab-content hidden animate-[fadeIn_0.3s_ease-out]">
             <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 border-b border-slate-700 pb-4 gap-4">
                 <h2 class="text-2xl font-bold text-white"><i class="fas fa-users-cog text-sky-400 mr-2"></i> Users Engine</h2>
+                
                 <div class="flex flex-wrap gap-2 w-full lg:w-auto">
-                    <a href="/distribute_rewards" class="flex-1 md:flex-none text-center bg-amber-500/10 border border-amber-500/50 hover:bg-amber-500 hover:text-slate-900 text-amber-400 text-sm font-bold px-4 py-2 rounded transition-all" onclick="return confirm('Send wallet cash to Top 3 Spenders and Affiliates?');">
+                    <a href="/distribute_rewards" class="flex-1 md:flex-none text-center bg-amber-500/10 border border-amber-500/50 hover:bg-amber-500 hover:text-slate-900 text-amber-400 text-sm font-bold px-4 py-2 rounded transition-all shadow-[0_0_10px_rgba(245,158,11,0.2)]" onclick="return confirm('Send wallet cash to Top 3 Spenders and Affiliates?');">
                         <i class="fas fa-gift mr-1"></i> Distribute Rewards
                     </a>
-                    <a href="/reset_monthly" class="flex-1 md:flex-none text-center bg-rose-500/10 border border-rose-500/50 hover:bg-rose-500 hover:text-white text-rose-400 text-sm font-bold px-4 py-2 rounded transition-all" onclick="return confirm('Are you sure you want to reset all spents and referral earnings to 0?');">
+                    <a href="/reset_monthly" class="flex-1 md:flex-none text-center bg-rose-500/10 border border-rose-500/50 hover:bg-rose-500 hover:text-white text-rose-400 text-sm font-bold px-4 py-2 rounded transition-all" onclick="return confirm('Are you sure you want to reset all spents and referral earnings to 0 for the new month?');">
                         <i class="fas fa-recycle mr-1"></i> Reset Board
                     </a>
                     <button onclick="generateRivals()" id="btn_rivals" class="flex-1 md:flex-none text-center bg-purple-500/10 border border-purple-500/50 hover:bg-purple-500 hover:text-white text-purple-400 text-sm font-bold px-4 py-2 rounded transition-all">
@@ -232,7 +183,7 @@
                         <thead>
                             <tr class="bg-slate-800/80 text-sky-400 text-sm uppercase tracking-wider">
                                 <th class="p-4 border-b border-slate-700 font-semibold">User ID & Name</th>
-                                <th class="p-4 border-b border-slate-700 font-semibold">Financials ($)</th>
+                                <th class="p-4 border-b border-slate-700 font-semibold">Financials ($ & Pts)</th>
                                 <th class="p-4 border-b border-slate-700 font-semibold">Status / Type</th>
                                 <th class="p-4 border-b border-slate-700 font-semibold text-right">Actions</th>
                             </tr>
@@ -246,7 +197,7 @@
                                 </td>
                                 <td class="p-4">
                                     <div class="text-green-400 font-bold data-font">Bal: ${{ "%.3f"|format(u.get('balance', 0)) }}</div>
-                                    <div class="text-sky-400 text-xs data-font mt-1">Spn: ${{ "%.3f"|format(u.get('spent', 0)) }} | Ref: ${{ "%.3f"|format(u.get('ref_earnings', 0)) }}</div>
+                                    <div class="text-sky-400 text-xs data-font mt-1">Spn: ${{ "%.3f"|format(u.get('spent', 0)) }} | Ref: ${{ "%.3f"|format(u.get('ref_earnings', 0)) }} | <span class="text-amber-400">Pts: {{ u.get('points', 0) }}</span></div>
                                 </td>
                                 <td class="p-4">
                                     {% if u.get('is_fake') %}
@@ -264,15 +215,17 @@
                                 <td class="p-4 text-right">
                                     <div class="flex items-center justify-end space-x-3 opacity-80 group-hover:opacity-100 transition-opacity">
                                         {% if not u.get('is_fake') %}
-                                            <button onclick="openUserModal('{{ u['_id'] }}', '{{ u.get('balance', 0) }}', '{{ u.get('spent', 0) }}', '{{ u.get('ref_earnings', 0) }}', '{{ u.get('custom_discount', 0) }}', '{{ u.get('tier_override', 'none') }}')" class="text-sky-400 hover:text-sky-300 transform hover:scale-110 transition-all" title="Edit Data"><i class="fas fa-pencil-alt text-lg"></i></button>
+                                            <button onclick="openUserModal('{{ u['_id'] }}', '{{ u.get('balance', 0) }}', '{{ u.get('spent', 0) }}', '{{ u.get('ref_earnings', 0) }}', '{{ u.get('custom_discount', 0) }}', '{{ u.get('tier_override', 'none') }}', '{{ u.get('points', 0) }}')" class="text-sky-400 hover:text-sky-300 transform hover:scale-110 transition-all" title="Edit Data"><i class="fas fa-pencil-alt text-lg"></i></button>
+                                            
                                             <a href="/toggle_shadow_ban/{{ u['_id'] }}" class="{% if u.get('shadow_banned') %}text-rose-500{% else %}text-slate-400 hover:text-rose-400{% endif %} transform hover:scale-110 transition-all" title="Toggle Shadow Ban"><i class="fas fa-ghost text-lg"></i></a>
+                                            
                                             {% if u.get('banned') %}
                                                 <a href="/unban_user/{{ u['_id'] }}" class="text-emerald-500 hover:text-emerald-400 transform hover:scale-110 transition-all" title="Unban"><i class="fas fa-check-circle text-lg"></i></a>
                                             {% else %}
                                                 <a href="/ban_user/{{ u['_id'] }}" class="text-red-500 hover:text-red-400 transform hover:scale-110 transition-all" title="Hard Ban"><i class="fas fa-ban text-lg"></i></a>
                                             {% endif %}
                                         {% endif %}
-                                        <a href="/delete_user/{{ u['_id'] }}" onclick="return confirm('Delete this user completely?');" class="text-red-500/70 hover:text-red-500 transform hover:scale-110 transition-all ml-2" title="Delete User"><i class="fas fa-trash-alt text-lg"></i></a>
+                                        <a href="/delete_user/{{ u['_id'] }}" onclick="return confirm('Are you sure you want to permanently delete this user?');" class="text-red-500/70 hover:text-red-500 transform hover:scale-110 transition-all ml-2" title="Delete User"><i class="fas fa-trash-alt text-lg"></i></a>
                                     </div>
                                 </td>
                             </tr>
@@ -287,8 +240,10 @@
             <div class="glass-card w-full max-w-md p-6 relative border-t-4 border-sky-500 transform scale-95 transition-transform duration-300" id="userEditBox">
                 <button onclick="closeUserModal()" class="absolute top-4 right-4 text-slate-400 hover:text-red-500 focus:outline-none"><i class="fas fa-times text-xl"></i></button>
                 <h3 class="text-xl font-bold text-white mb-4"><i class="fas fa-user-edit text-sky-400 mr-2"></i> Edit User <span id="modal_uid_display" class="text-sky-500 data-font text-sm ml-2"></span></h3>
+                
                 <form action="/edit_user" method="POST" class="space-y-4">
                     <input type="hidden" name="user_id" id="modal_uid">
+                    
                     <div>
                         <label class="block text-xs text-sky-400 font-bold uppercase mb-1">Balance ($)</label>
                         <div class="flex gap-2">
@@ -300,31 +255,38 @@
                             <input type="number" step="0.001" name="balance_val" id="modal_balance_val" class="w-2/3 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none focus:border-sky-500 data-font" required>
                         </div>
                     </div>
-                    <div class="grid grid-cols-2 gap-4">
+
+                    <div class="grid grid-cols-3 gap-2">
                         <div>
-                            <label class="block text-xs text-slate-400 font-bold uppercase mb-1">Total Spent ($)</label>
-                            <input type="number" step="0.001" name="spent" id="modal_spent" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none focus:border-sky-500 data-font" required>
+                            <label class="block text-[10px] text-slate-400 font-bold uppercase mb-1">Total Spent</label>
+                            <input type="number" step="0.001" name="spent" id="modal_spent" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-2 text-white outline-none focus:border-sky-500 data-font text-sm" required>
                         </div>
                         <div>
-                            <label class="block text-xs text-emerald-400 font-bold uppercase mb-1">Ref Earned ($)</label>
-                            <input type="number" step="0.001" name="ref_earnings" id="modal_ref" class="w-full bg-slate-900 border border-emerald-500/50 rounded px-3 py-2 text-white outline-none focus:border-emerald-500 data-font" required>
+                            <label class="block text-[10px] text-emerald-400 font-bold uppercase mb-1">Ref Earned</label>
+                            <input type="number" step="0.001" name="ref_earnings" id="modal_ref" class="w-full bg-slate-900 border border-emerald-500/50 rounded px-2 py-2 text-white outline-none focus:border-emerald-500 data-font text-sm" required>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] text-amber-400 font-bold uppercase mb-1">Points</label>
+                            <input type="number" name="points" id="modal_points" class="w-full bg-slate-900 border border-amber-500/50 rounded px-2 py-2 text-white outline-none focus:border-amber-500 data-font text-sm" required>
                         </div>
                     </div>
+                    
                     <div class="grid grid-cols-2 gap-4">
                         <div>
-                            <label class="block text-xs text-amber-400 font-bold uppercase mb-1"><i class="fas fa-gift"></i> Custom Off (%)</label>
-                            <input type="number" step="0.1" name="custom_discount" id="modal_discount" class="w-full bg-slate-900 border border-amber-500/50 rounded px-3 py-2 text-white outline-none focus:border-amber-500 data-font">
+                            <label class="block text-xs text-rose-400 font-bold uppercase mb-1"><i class="fas fa-gift"></i> Custom Off (%)</label>
+                            <input type="number" step="0.1" name="custom_discount" id="modal_discount" class="w-full bg-slate-900 border border-rose-500/50 rounded px-3 py-2 text-white outline-none focus:border-rose-500 data-font">
                         </div>
                         <div>
                             <label class="block text-xs text-purple-400 font-bold uppercase mb-1"><i class="fas fa-crown"></i> VIP Tier</label>
                             <select name="tier_override" id="modal_tier" class="w-full bg-slate-900 border border-purple-500/50 rounded px-3 py-2 text-white outline-none focus:border-purple-500 text-sm">
-                                <option value="none">Auto</option>
+                                <option value="none">Auto (By Spent)</option>
                                 <option value="💎 Diamond VIP">💎 Diamond VIP</option>
                                 <option value="🥇 Gold VIP">🥇 Gold VIP</option>
                                 <option value="🥈 Silver VIP">🥈 Silver VIP</option>
                             </select>
                         </div>
                     </div>
+                    
                     <button type="submit" class="w-full bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold py-2.5 rounded-lg mt-2 transition-colors shadow-[0_0_10px_rgba(56,189,248,0.3)]">Save Modifications</button>
                 </form>
             </div>
@@ -372,6 +334,7 @@
                                         <a href="/override_order/{{ o['oid'] }}/completed" class="inline-block text-xs bg-emerald-500/10 text-emerald-500 border border-emerald-500/30 hover:bg-emerald-500 hover:text-white px-2 py-1.5 rounded font-bold" title="Force Complete"><i class="fas fa-check-double"></i></a>
                                         <a href="/override_order/{{ o['oid'] }}/canceled" class="inline-block text-xs bg-red-500/10 text-red-500 border border-red-500/30 hover:bg-red-500 hover:text-white px-2 py-1.5 rounded font-bold" title="Force Cancel"><i class="fas fa-ban"></i></a>
                                     {% endif %}
+                                    
                                     {% if st not in ['refunded', 'canceled', 'error', 'fail'] and not o.get('is_shadow') %}
                                         <a href="/refund_order/{{ o['oid'] }}" class="inline-block text-xs bg-amber-500/10 text-amber-500 border border-amber-500/30 hover:bg-amber-500 hover:text-slate-900 px-3 py-1.5 rounded font-bold transition-colors">Refund</a>
                                     {% endif %}
@@ -397,8 +360,7 @@
                     <div class="text-white text-sm mb-4 bg-slate-900/50 p-3 rounded border border-slate-700/50 break-words"><i class="fas fa-comment-dots text-sky-500/50 mr-2"></i> {{ t.msg }}</div>
                     {% if t.status == 'open' %}
                     <form action="/reply_ticket" method="POST" class="flex flex-col sm:flex-row gap-2">
-                        <input type="hidden" name="ticket_id" value="{{ t['_id'] }}">
-                        <input type="hidden" name="uid" value="{{ t.uid }}">
+                        <input type="hidden" name="ticket_id" value="{{ t['_id'] }}"><input type="hidden" name="uid" value="{{ t.uid }}">
                         <input type="text" name="reply_msg" placeholder="Write reply..." required class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:border-sky-500 outline-none">
                         <button type="submit" class="bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold px-4 py-2 rounded text-sm">Reply</button>
                     </form>
@@ -440,25 +402,28 @@
             <form action="/settings" method="POST" class="space-y-6 max-w-6xl">
                 
                 <div class="glass-card p-4 md:p-6 border-t-4 border-amber-500">
-                    <h3 class="text-lg font-bold text-white mb-4"><i class="fas fa-bullhorn mr-2 text-amber-400"></i> Marketing & Rewards</h3>
+                    <h3 class="text-lg font-bold text-white mb-4"><i class="fas fa-bullhorn mr-2 text-amber-400"></i> Marketing, Affiliates & Rewards</h3>
+                    
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4 pb-4 border-b border-slate-700/50">
                         <div class="bg-slate-900/50 p-3 rounded border border-slate-700 flex flex-col justify-center">
-                            <label class="text-amber-400 text-xs font-bold mb-1">Flash Sale</label>
+                            <label class="text-amber-400 text-xs font-bold mb-1">Flash Sale (ON/OFF)</label>
                             <input type="checkbox" name="flash_sale_active" {% if s.get('flash_sale_active') %}checked{% endif %} class="w-5 h-5 accent-amber-500">
                         </div>
-                        <div><label class="block text-[10px] text-slate-400 font-bold mb-1 uppercase">Flash Discount (%)</label><input type="number" step="0.1" name="flash_sale_discount" value="{{ s.get('flash_sale_discount', 0.0) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white"></div>
+                        <div><label class="block text-[10px] text-slate-400 font-bold mb-1 uppercase">Flash Discount (%)</label><input type="number" step="0.1" name="flash_sale_discount" value="{{ s.get('flash_sale_discount', 0.0) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none focus:border-amber-500"></div>
                         <div class="bg-slate-900/50 p-3 rounded border border-slate-700 flex flex-col justify-center">
-                            <label class="text-emerald-400 text-xs font-bold mb-1">Join Bonus</label>
+                            <label class="text-emerald-400 text-xs font-bold mb-1">Join Bonus (ON/OFF)</label>
                             <input type="checkbox" name="welcome_bonus_active" {% if s.get('welcome_bonus_active') %}checked{% endif %} class="w-5 h-5 accent-emerald-500">
                         </div>
-                        <div><label class="block text-[10px] text-slate-400 font-bold mb-1 uppercase">Bonus ($)</label><input type="number" step="0.001" name="welcome_bonus" value="{{ s.get('welcome_bonus', 0.0) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white"></div>
+                        <div><label class="block text-[10px] text-slate-400 font-bold mb-1 uppercase">Welcome Bonus ($)</label><input type="number" step="0.001" name="welcome_bonus" value="{{ s.get('welcome_bonus', 0.0) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none focus:border-emerald-500"></div>
                     </div>
+
                     <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
-                        <div><label class="block text-[10px] text-slate-400 font-bold mb-1 uppercase">Ref Invite ($)</label><input type="number" step="0.001" name="ref_bonus" value="{{ s.get('ref_bonus', 0.05) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white"></div>
-                        <div><label class="block text-[10px] text-slate-400 font-bold mb-1 uppercase">Dep Com (%)</label><input type="number" step="0.1" name="dep_commission" value="{{ s.get('dep_commission', 5.0) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white"></div>
-                        <div><label class="block text-[10px] text-yellow-400 font-bold mb-1 uppercase">🏆 Top 1 ($)</label><input type="number" step="0.1" name="reward_top1" value="{{ s.get('reward_top1', 10.0) }}" class="w-full bg-slate-900 border border-yellow-500/50 rounded px-3 py-2 text-white"></div>
-                        <div><label class="block text-[10px] text-slate-300 font-bold mb-1 uppercase">🥈 Top 2 ($)</label><input type="number" step="0.1" name="reward_top2" value="{{ s.get('reward_top2', 5.0) }}" class="w-full bg-slate-900 border border-slate-500/50 rounded px-3 py-2 text-white"></div>
-                        <div><label class="block text-[10px] text-orange-400 font-bold mb-1 uppercase">🥉 Top 3 ($)</label><input type="number" step="0.1" name="reward_top3" value="{{ s.get('reward_top3', 2.0) }}" class="w-full bg-slate-900 border border-orange-500/50 rounded px-3 py-2 text-white"></div>
+                        <div><label class="block text-[10px] text-slate-400 font-bold mb-1 uppercase">Ref Invite Bonus ($)</label><input type="number" step="0.001" name="ref_bonus" value="{{ s.get('ref_bonus', 0.05) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none focus:border-amber-500"></div>
+                        <div><label class="block text-[10px] text-slate-400 font-bold mb-1 uppercase">Deposit Commission (%)</label><input type="number" step="0.1" name="dep_commission" value="{{ s.get('dep_commission', 5.0) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none focus:border-amber-500"></div>
+                        
+                        <div><label class="block text-[10px] text-yellow-400 font-bold mb-1 uppercase">🏆 Top 1 Reward ($)</label><input type="number" step="0.1" name="reward_top1" value="{{ s.get('reward_top1', 10.0) }}" class="w-full bg-slate-900 border border-yellow-500/50 rounded px-3 py-2 text-white outline-none focus:border-yellow-500"></div>
+                        <div><label class="block text-[10px] text-slate-300 font-bold mb-1 uppercase">🥈 Top 2 Reward ($)</label><input type="number" step="0.1" name="reward_top2" value="{{ s.get('reward_top2', 5.0) }}" class="w-full bg-slate-900 border border-slate-500/50 rounded px-3 py-2 text-white outline-none focus:border-slate-400"></div>
+                        <div><label class="block text-[10px] text-orange-400 font-bold mb-1 uppercase">🥉 Top 3 Reward ($)</label><input type="number" step="0.1" name="reward_top3" value="{{ s.get('reward_top3', 2.0) }}" class="w-full bg-slate-900 border border-orange-500/50 rounded px-3 py-2 text-white outline-none focus:border-orange-500"></div>
                     </div>
                 </div>
 
@@ -466,17 +431,25 @@
                     <h3 class="text-lg font-bold text-white mb-4"><i class="fas fa-magic mr-2 text-rose-400"></i> Cyber Box Auto Engine</h3>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                         <div>
-                            <label class="block text-sm text-sky-400 font-bold mb-1 uppercase">Proof Channel ID</label>
-                            <input type="text" name="proof_channel" value="{{ s.get('proof_channel', '') }}" class="w-full bg-slate-900 border border-sky-500/50 rounded-lg px-4 py-2 text-white data-font">
+                            <label class="block text-sm text-sky-400 font-bold mb-1 uppercase">Proof Channel ID (e.g. @NexusProofs)</label>
+                            <input type="text" name="proof_channel" value="{{ s.get('proof_channel', '') }}" placeholder="Channel ID for proofs" class="w-full bg-slate-900 border border-sky-500/50 rounded-lg px-4 py-2 text-white data-font outline-none">
                         </div>
                         <div class="grid grid-cols-2 gap-4">
-                            <div><label class="block text-[10px] text-slate-400 font-bold mb-1 uppercase">Dep/Hour</label><input type="number" name="fake_dep_freq" value="{{ s.get('fake_dep_freq', 2) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white"></div>
-                            <div><label class="block text-[10px] text-slate-400 font-bold mb-1 uppercase">Ord/Hour</label><input type="number" name="fake_ord_freq" value="{{ s.get('fake_ord_freq', 3) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white"></div>
+                            <div><label class="block text-[10px] text-slate-400 font-bold mb-1 uppercase">Dep Posts/Hour</label><input type="number" name="fake_dep_freq" value="{{ s.get('fake_dep_freq', 2) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none"></div>
+                            <div><label class="block text-[10px] text-slate-400 font-bold mb-1 uppercase">Ord Posts/Hour</label><input type="number" name="fake_ord_freq" value="{{ s.get('fake_ord_freq', 3) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none"></div>
                         </div>
                     </div>
+                    
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                        <div><label class="block text-[10px] text-slate-400 font-bold mb-1 uppercase">DEP MIN ($)</label><input type="number" step="0.01" name="fake_deposit_min" value="{{ s.get('fake_deposit_min', 0.01) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none"></div>
+                        <div><label class="block text-[10px] text-slate-400 font-bold mb-1 uppercase">DEP MAX ($)</label><input type="number" step="0.01" name="fake_deposit_max" value="{{ s.get('fake_deposit_max', 20.0) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none"></div>
+                        <div><label class="block text-[10px] text-slate-400 font-bold mb-1 uppercase">ORD MIN ($)</label><input type="number" step="0.01" name="fake_order_min" value="{{ s.get('fake_order_min', 0.01) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none"></div>
+                        <div><label class="block text-[10px] text-slate-400 font-bold mb-1 uppercase">ORD MAX ($)</label><input type="number" step="0.01" name="fake_order_max" value="{{ s.get('fake_order_max', 10.0) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none"></div>
+                    </div>
+                    
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div class="bg-slate-900/50 p-4 rounded border border-slate-700 flex justify-between items-center"><label class="text-rose-400 text-sm font-bold">Auto Fake Engine</label><input type="checkbox" name="fake_proof_status" {% if s.get('fake_proof_status') %}checked{% endif %} class="w-6 h-6 accent-rose-500"></div>
-                        <div class="bg-slate-900/50 p-4 rounded border border-slate-700 flex justify-between items-center"><label class="text-indigo-400 text-sm font-bold">Night Mode</label><input type="checkbox" name="night_mode" {% if s.get('night_mode') %}checked{% endif %} class="w-6 h-6 accent-indigo-500"></div>
+                        <div class="bg-slate-900/50 p-4 rounded border border-slate-700 flex justify-between items-center"><label class="text-rose-400 text-sm font-bold">Auto Fake Engine (ON/OFF)</label><input type="checkbox" name="fake_proof_status" {% if s.get('fake_proof_status') %}checked{% endif %} class="w-6 h-6 accent-rose-500"></div>
+                        <div class="bg-slate-900/50 p-4 rounded border border-slate-700 flex justify-between items-center"><label class="text-indigo-400 text-sm font-bold">Night Mode (Sleep 2AM-8AM)</label><input type="checkbox" name="night_mode" {% if s.get('night_mode') %}checked{% endif %} class="w-6 h-6 accent-indigo-500"></div>
                     </div>
                 </div>
 
@@ -485,22 +458,30 @@
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                         <div>
                             <label class="block text-sm text-slate-400 font-bold mb-1 uppercase">Global Profit Margin (%)</label>
-                            <input type="number" step="0.1" name="profit_margin" value="{{ s.get('profit_margin', 20.0) }}" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white data-font focus:border-indigo-500">
+                            <input type="number" step="0.1" name="profit_margin" value="{{ s.get('profit_margin', 20.0) }}" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white data-font outline-none focus:border-indigo-500">
                         </div>
+                        
                         <div>
-                            <label class="block text-sm text-sky-400 font-bold mb-1 uppercase">Force Sub Channels</label>
-                            <input type="text" name="channels" value="{{ s.get('channels', []) | join(', ') }}" class="w-full bg-slate-900 border border-sky-500/50 rounded-lg px-4 py-2 text-white focus:border-sky-500">
+                            <label class="block text-sm text-yellow-400 font-bold mb-1 uppercase"><i class="fas fa-star text-xs"></i> Best Choice SIDs</label>
+                            <input type="text" name="best_choice_sids" value="{{ s.get('best_choice_sids', []) | join(', ') }}" placeholder="Comma separated IDs e.g. 15, 23, 104" class="w-full bg-slate-900 border border-yellow-500/50 rounded-lg px-4 py-2 text-white outline-none focus:border-yellow-500">
                         </div>
+
+                        <div>
+                            <label class="block text-sm text-sky-400 font-bold mb-1 uppercase"><i class="fas fa-lock text-xs"></i> Force Sub Channels</label>
+                            <input type="text" name="channels" value="{{ s.get('channels', []) | join(', ') }}" placeholder="@Channel1, @Channel2" class="w-full bg-slate-900 border border-sky-500/50 rounded-lg px-4 py-2 text-white outline-none focus:border-sky-500">
+                        </div>
+                        
                         <div>
                             <label class="block text-sm text-amber-400 font-bold mb-1 uppercase">Admin Live Log Channel</label>
-                            <input type="text" name="log_channel" value="{{ s.get('log_channel', '') }}" class="w-full bg-slate-900 border border-amber-500/50 rounded-lg px-4 py-2 text-white">
+                            <input type="text" name="log_channel" value="{{ s.get('log_channel', '') }}" placeholder="To spy user actions" class="w-full bg-slate-900 border border-amber-500/50 rounded-lg px-4 py-2 text-white outline-none">
                         </div>
-                        <div class="bg-slate-900/50 p-4 rounded border border-slate-700 flex flex-col justify-center">
+                        
+                        <div class="bg-slate-900/50 p-4 rounded border border-slate-700 flex flex-col justify-center md:col-span-2">
                             <div class="flex justify-between items-center mb-2">
                                 <label class="text-red-400 text-sm font-bold"><i class="fas fa-tools"></i> Maintenance Mode</label>
                                 <input type="checkbox" name="maintenance" {% if s.get('maintenance') %}checked{% endif %} class="w-5 h-5 accent-red-500">
                             </div>
-                            <input type="text" name="maintenance_msg" value="{{ s.get('maintenance_msg', 'Bot is upgrading.') }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-1 text-xs text-slate-300">
+                            <input type="text" name="maintenance_msg" value="{{ s.get('maintenance_msg', 'Bot is upgrading.') }}" placeholder="Custom maintenance message..." class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-1 text-xs text-slate-300 outline-none">
                         </div>
                     </div>
                 </div>
@@ -509,13 +490,13 @@
                     <h3 class="text-lg font-bold text-white mb-4"><i class="fas fa-wallet mr-2 text-emerald-400"></i> Payment Gateways</h3>
                     <div id="payment-methods" class="space-y-3">
                         {% for p in s.get('payments', []) %}
-                        <div class="payment-row flex flex-col gap-2 bg-slate-900/50 p-3 rounded border border-slate-700/50">
+                        <div class="payment-row flex flex-col gap-2 bg-slate-900/50 p-3 rounded border border-slate-700/50 relative">
                             <div class="flex flex-col sm:flex-row gap-2">
-                                <input type="text" name="pay_name[]" value="{{ p.name }}" class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white" required>
-                                <input type="number" step="0.01" name="pay_rate[]" value="{{ p.rate }}" class="w-full sm:w-32 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white data-font" required>
+                                <input type="text" name="pay_name[]" value="{{ p.name }}" placeholder="Method Name (e.g. Bkash)" class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none" required>
+                                <input type="number" step="0.01" name="pay_rate[]" value="{{ p.rate }}" placeholder="Rate" class="w-full sm:w-32 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white data-font outline-none" required>
                             </div>
                             <div class="flex gap-2 items-center">
-                                <input type="text" name="pay_address[]" value="{{ p.address }}" class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white" required>
+                                <input type="text" name="pay_address[]" value="{{ p.address }}" placeholder="Account Number or Crypto Address" class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none" required>
                                 <button type="button" onclick="this.closest('.payment-row').remove()" class="text-slate-500 hover:text-red-500 px-3 transition-colors"><i class="fas fa-trash text-lg"></i></button>
                             </div>
                         </div>
@@ -536,156 +517,77 @@
     </main>
 
     <script>
-        // Data injected from backend for Drag & Drop
-        const allServicesJSON = {{ services_json | safe }};
-        const savedServiceOrders = {{ saved_service_orders | safe }};
-
-        // 1. Mobile Menu Logic (100% Working 3-Dot Menu)
+        // 1. Mobile Menu Toggle (Sticky)
         function toggleMobileMenu() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.getElementById('mobile-overlay');
             
             if (sidebar.classList.contains('-translate-x-full')) {
-                // Open Menu
                 sidebar.classList.remove('-translate-x-full'); 
                 overlay.classList.remove('hidden'); 
-                // Small delay for smooth opacity transition
                 setTimeout(() => overlay.classList.remove('opacity-0'), 10);
             } else {
-                // Close Menu
                 sidebar.classList.add('-translate-x-full'); 
                 overlay.classList.add('opacity-0'); 
-                // Wait for transition before hiding
                 setTimeout(() => overlay.classList.add('hidden'), 300);
             }
         }
 
-        // 2. Tab Switching Logic
+        // 2. Tab Switcher
         function switchTab(tabId) {
-            // Hide all tabs and remove active state from buttons
             document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
             document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active', 'border-l-4'));
             
-            // Show targeted tab
             document.getElementById('tab-' + tabId).classList.remove('hidden'); 
             document.getElementById('btn-' + tabId).classList.add('active');
             
-            // Auto close mobile menu after clicking a tab
             if (window.innerWidth < 768) { 
                 const sidebar = document.getElementById('sidebar'); 
-                if (!sidebar.classList.contains('-translate-x-full')) {
-                    toggleMobileMenu(); 
-                }
+                if (!sidebar.classList.contains('-translate-x-full')) toggleMobileMenu(); 
             }
         }
 
-        // 3. 🔥 DRAG AND DROP SERVICE LOGIC
-        let sortableInstance = null;
-
-        function loadCategoryServices() {
-            const catSelect = document.getElementById('catSelect');
-            const list = document.getElementById('service-sort-list');
-            const selectedCat = catSelect.value;
-            
-            list.innerHTML = ''; // clear current
-
-            if(!selectedCat) {
-                list.innerHTML = '<li class="text-center text-slate-500 py-4 text-sm">Please select a category above...</li>';
-                return;
-            }
-
-            // Filter services by category
-            let servicesInCat = allServicesJSON.filter(s => s.category === selectedCat);
-            let savedOrder = savedServiceOrders[selectedCat] || [];
-
-            // Sort based on saved ID order
-            servicesInCat.sort((a, b) => {
-                let idxA = savedOrder.indexOf(String(a.service));
-                let idxB = savedOrder.indexOf(String(b.service));
-                if (idxA === -1) idxA = 9999;
-                if (idxB === -1) idxB = 9999;
-                return idxA - idxB;
-            });
-
-            // Populate the UI List
-            servicesInCat.forEach(s => {
-                const li = document.createElement('li');
-                li.setAttribute('data-id', s.service);
-                li.className = "bg-slate-800/80 p-3 rounded-lg border border-slate-700 cursor-move flex items-center justify-between hover:bg-slate-700/80 transition-colors";
-                li.innerHTML = `
-                    <div class="flex items-center text-sm font-bold text-white truncate pr-4">
-                        <i class="fas fa-grip-lines text-slate-500 mr-3"></i> 
-                        <span class="text-sky-400 mr-2 w-12 data-font">#${s.service}</span>
-                        <span class="truncate">${s.name}</span>
-                    </div>
-                `;
-                list.appendChild(li);
-            });
-
-            // Initialize Sortable JS
-            if(sortableInstance) sortableInstance.destroy();
-            sortableInstance = new Sortable(list, {
-                animation: 150,
-                ghostClass: 'ghost-item'
-            });
-        }
-
-        function saveServiceOrder() {
-            const selectedCat = document.getElementById('catSelect').value;
-            if(!selectedCat) {
-                alert("Please select a category first!");
-                return;
-            }
-
-            const items = document.querySelectorAll('#service-sort-list li');
-            const orderedIds = Array.from(items).map(item => item.getAttribute('data-id'));
-            
-            fetch('/save_service_order', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ category: selectedCat, order: orderedIds })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if(data.status === 'success') {
-                    savedServiceOrders[selectedCat] = orderedIds;
-                    alert('✅ Service order saved successfully for the bot!');
-                } else {
-                    alert('❌ Failed to save order.');
-                }
-            }).catch(err => alert('Network Error!'));
-        }
-
-        // 4. User Edit Modals
-        function openUserModal(uid, bal, spent, refEarn, discount, tier) {
+        // 3. User Edit Modal Logic (Updated to receive 'points')
+        function openUserModal(uid, bal, spent, refEarn, discount, tier, points) {
             document.getElementById('modal_uid').value = uid;
             document.getElementById('modal_uid_display').innerText = `(${uid})`;
             document.getElementById('modal_balance_val').value = parseFloat(bal).toFixed(3);
             document.getElementById('modal_spent').value = parseFloat(spent).toFixed(3);
             document.getElementById('modal_ref').value = parseFloat(refEarn).toFixed(3);
+            
+            // 🔥 NEW: Set Points in the modal
+            document.getElementById('modal_points').value = points;
+            
             document.getElementById('modal_discount').value = discount;
-            document.getElementById('modal_tier').value = tier === 'None' ? 'none' : tier;
+            document.getElementById('modal_tier').value = tier;
             
             const modal = document.getElementById('userEditModal');
             const box = document.getElementById('userEditBox');
             modal.classList.remove('hidden');
-            setTimeout(() => { modal.classList.remove('opacity-0'); box.classList.remove('scale-95'); box.classList.add('scale-100'); }, 10);
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                box.classList.remove('scale-95');
+                box.classList.add('scale-100');
+            }, 10);
         }
 
         function closeUserModal() {
             const modal = document.getElementById('userEditModal');
             const box = document.getElementById('userEditBox');
             modal.classList.add('opacity-0');
-            box.classList.remove('scale-100'); box.classList.add('scale-95');
+            box.classList.remove('scale-100');
+            box.classList.add('scale-95');
             setTimeout(() => modal.classList.add('hidden'), 300);
         }
 
-        // 5. Automated Fake Rivals Generator
+        // 4. Generate Rivals Logic (Automated Fake Users)
         async function generateRivals() {
             const btn = document.getElementById('btn_rivals');
             btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Adding...';
             btn.classList.add('opacity-50', 'pointer-events-none');
-            const names = ["John Doe", "Alex Crypto", "David W.", "SMM King", "Sarah J."];
+            
+            const names = ["John Doe", "Alex Crypto", "David W.", "SMM King", "Sarah J.", "Michael", "Emma", "Global SMM", "VIP Reseller", "Trust Boost"];
+            
             for(let i=0; i<5; i++){
                 let fd = new FormData();
                 fd.append('fake_name', names[Math.floor(Math.random()*names.length)] + " " + Math.floor(Math.random()*99));
@@ -696,23 +598,27 @@
             location.reload();
         }
 
-        // 6. Fake Live Users Count Update
-        setInterval(() => { document.getElementById('live_users_count').innerText = Math.floor(Math.random() * (120 - 45 + 1)) + 45; }, 12000); 
+        // 5. Fake Live Users Counter Logic
+        setInterval(() => {
+            let count = Math.floor(Math.random() * (120 - 45 + 1)) + 45;
+            document.getElementById('live_users_count').innerText = count;
+        }, 12000); 
 
-        // 7. Dynamic Payment Row Generator
+        // 6. Dynamic Payments UI
         function addPaymentRow() {
             const container = document.getElementById('payment-methods');
             const row = document.createElement('div');
             row.className = 'payment-row flex flex-col gap-2 bg-slate-900/50 p-3 rounded border border-slate-700/50 relative mt-3 animate-[fadeIn_0.2s_ease-out]';
             row.innerHTML = `
                 <div class="flex flex-col sm:flex-row gap-2">
-                    <input type="text" name="pay_name[]" placeholder="Method Name" class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none" required>
-                    <input type="number" step="0.01" name="pay_rate[]" placeholder="Rate" class="w-full sm:w-32 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none" required>
+                    <input type="text" name="pay_name[]" placeholder="Method Name (e.g. Binance Pay)" class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none" required>
+                    <input type="number" step="0.01" name="pay_rate[]" placeholder="Rate (e.g. 1)" class="w-full sm:w-32 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white data-font outline-none" required>
                 </div>
                 <div class="flex gap-2 items-center">
-                    <input type="text" name="pay_address[]" placeholder="Account Number" class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none" required>
+                    <input type="text" name="pay_address[]" placeholder="Account Number or Crypto Address" class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none" required>
                     <button type="button" onclick="this.closest('.payment-row').remove()" class="text-slate-500 hover:text-red-500 px-3 transition-colors"><i class="fas fa-trash text-lg"></i></button>
-                </div>`;
+                </div>
+            `;
             container.appendChild(row);
         }
     </script>
