@@ -137,6 +137,7 @@ def drip_campaign_cron():
         time.sleep(43200)
 threading.Thread(target=drip_campaign_cron, daemon=True).start()
 
+# 🔥 FIXED: Order Notification Emojis & Completion Check added here
 def auto_sync_orders_cron():
     while True:
         try:
@@ -150,8 +151,15 @@ def auto_sync_orders_cron():
                     old_status = str(o.get('status', '')).lower()
                     if new_status != old_status and new_status != 'error':
                         orders_col.update_one({"_id": o["_id"]}, {"$set": {"status": new_status}})
+                        
+                        st_emoji = "⏳"
+                        if new_status == "completed": st_emoji = "✅"
+                        elif new_status in ["canceled", "refunded", "fail"]: st_emoji = "❌"
+                        elif new_status in ["in progress", "processing"]: st_emoji = "🔄"
+                        elif new_status == "partial": st_emoji = "⚠️"
+
                         try:
-                            msg = f"🔔 **ORDER UPDATE!**\n━━━━━━━━━━━━━━━━━━━━\n🆔 Order ID: `{o['oid']}`\n🔗 Link: {str(o.get('link', 'N/A'))[:25]}...\n📦 Status: **{new_status.upper()}**"
+                            msg = f"🔔 **ORDER UPDATE!**\n━━━━━━━━━━━━━━━━━━━━\n🆔 Order ID: `{o['oid']}`\n🔗 Link: {str(o.get('link', 'N/A'))[:25]}...\n📦 Status: {st_emoji} **{new_status.upper()}**"
                             bot.send_message(o['uid'], msg, parse_mode="Markdown")
                         except: pass
                         if new_status in ['canceled', 'refunded', 'fail']:
@@ -467,21 +475,6 @@ def add_to_favorites(call):
     sid = call.data.split("|")[1]
     users_col.update_one({"_id": call.message.chat.id}, {"$addToSet": {"favorites": sid}})
 
-@bot.callback_query_handler(func=lambda c: c.data.startswith("PAY|"))
-def pay_details(call):
-    bot.answer_callback_query(call.id)
-    _, amt_usd, method = call.data.split("|")
-    amt_usd = float(amt_usd)
-    s = get_settings()
-    pay_data = next((p for p in s.get('payments', []) if p['name'] == method), None)
-    address = pay_data.get('address', 'Contact Admin') if pay_data else 'Contact Admin'
-    rate = pay_data.get('rate', 120) if pay_data else 120
-    is_crypto = any(x in method.lower() for x in ['usdt', 'binance', 'crypto', 'btc', 'pm', 'perfect', 'payeer'])
-    display_amt = f"${amt_usd:.2f}" if is_crypto else f"{round(amt_usd * float(rate), 2)} Local Currency"
-    txt = f"🏦 **{method} Payment Details**\n━━━━━━━━━━━━━━━━━━━━\n💵 **Amount to Send:** `{display_amt}`\n📍 **Account / Address:** `{address}`\n━━━━━━━━━━━━━━━━━━━━\n⚠️ Send the exact amount to the address above, then reply to this message with your **TrxID / Transaction ID**:"
-    users_col.update_one({"_id": call.message.chat.id}, {"$set": {"step": "awaiting_trx", "temp_dep_amt": amt_usd, "temp_dep_method": method}})
-    bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, parse_mode="Markdown")
-
 def universal_buttons(message):
     uid = message.chat.id
     users_col.update_one({"_id": uid}, {"$unset": {"step": "", "temp_sid": "", "temp_link": ""}})
@@ -505,17 +498,29 @@ def universal_buttons(message):
         card = f"```text\n╔════════════════════════════════╗\n║  🌟 NEXUS VIP PASSPORT         ║\n╠════════════════════════════════╣\n║  👤 Name: {str(message.from_user.first_name)[:12].ljust(19)}║\n║  🆔 UID: {str(uid).ljust(20)}║\n║  💳 Balance: {fmt_curr(u.get('balance',0), curr).ljust(18)}║\n║  💸 Spent: {fmt_curr(u.get('spent',0), curr).ljust(20)}║\n║  🏆 Points: {str(u.get('points', 0)).ljust(19)}║\n║  👑 Tier: {tier.ljust(19)}║\n╚════════════════════════════════╝\n```"
         bot.send_message(uid, card, reply_markup=markup, parse_mode="Markdown")
         
+    # 🔥 FIXED: Leaderboard now shows both Spenders AND Affiliates
     elif message.text == "🏆 Leaderboard":
         s = get_settings()
         r1, r2, r3 = s.get('reward_top1', 10.0), s.get('reward_top2', 5.0), s.get('reward_top3', 2.0)
+        
+        txt = "🏆 **NEXUS HALL OF FAME** 🏆\n━━━━━━━━━━━━━━━━━━━━\n"
+        medals = ['🥇', '🥈', '🥉', '🏅', '🏅']
+        
+        txt += "💎 **TOP SPENDERS:**\n"
         top_spenders = list(users_col.find({"spent": {"$gt": 0}}).sort("spent", -1).limit(5))
-        txt = "🏆 **NEXUS HALL OF FAME** 🏆\n━━━━━━━━━━━━━━━━━━━━\n💎 **TOP SPENDERS:**\n"
         if not top_spenders: txt += "_No spenders yet!_\n"
         else:
-            medals = ['🥇', '🥈', '🥉', '🏅', '🏅']
             for i, tu in enumerate(top_spenders):
                 rt = f" (+${[r1, r2, r3][i]})" if i < 3 else ""
                 txt += f"{medals[i]} {tu.get('name', 'N/A')[:10]} - `{fmt_curr(tu.get('spent', 0), curr)}`{rt}\n"
+
+        txt += "\n👥 **TOP AFFILIATES (By Earnings):**\n"
+        top_refs = list(users_col.find({"ref_earnings": {"$gt": 0}}).sort("ref_earnings", -1).limit(5))
+        if not top_refs: txt += "_No affiliates yet!_\n"
+        else:
+            for i, tu in enumerate(top_refs):
+                txt += f"{medals[i]} {tu.get('name', 'N/A')[:10]} - `{fmt_curr(tu.get('ref_earnings', 0), curr)}`\n"
+
         bot.send_message(uid, txt + "\n_Be in the Top 3 to earn real wallet cash!_", parse_mode="Markdown")
 
     elif message.text == "⭐ Favorites":
