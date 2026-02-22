@@ -45,7 +45,7 @@ def get_settings():
         return SETTINGS_CACHE["data"]
     s = config_col.find_one({"_id": "settings"})
     if not s:
-        s = {"_id": "settings", "channels": [], "profit_margin": 20.0, "maintenance": False, "maintenance_msg": "Bot is upgrading.", "payments": [], "ref_bonus": 0.05, "dep_commission": 5.0, "welcome_bonus_active": False, "welcome_bonus": 0.0, "flash_sale_active": False, "flash_sale_discount": 0.0, "reward_top1": 10.0, "reward_top2": 5.0, "reward_top3": 2.0}
+        s = {"_id": "settings", "channels": [], "profit_margin": 20.0, "maintenance": False, "maintenance_msg": "Bot is upgrading.", "payments": [], "ref_bonus": 0.05, "dep_commission": 5.0, "welcome_bonus_active": False, "welcome_bonus": 0.0, "flash_sale_active": False, "flash_sale_discount": 0.0, "reward_top1": 10.0, "reward_top2": 5.0, "reward_top3": 2.0, "best_choice_sids": []}
         config_col.insert_one(s)
     SETTINGS_CACHE["data"] = s
     SETTINGS_CACHE["time"] = time.time()
@@ -90,7 +90,6 @@ def auto_sync_services_cron():
         time.sleep(600)
 threading.Thread(target=auto_sync_services_cron, daemon=True).start()
 
-# 🔥 FEATURE: Real-time Exchange Rate Sync API
 def exchange_rate_sync_cron():
     global CURRENCY_RATES
     while True:
@@ -100,10 +99,9 @@ def exchange_rate_sync_cron():
                 CURRENCY_RATES["BDT"] = rates.get("BDT", 120)
                 CURRENCY_RATES["INR"] = rates.get("INR", 83)
         except: pass
-        time.sleep(43200) # Update every 12 hours
+        time.sleep(43200)
 threading.Thread(target=exchange_rate_sync_cron, daemon=True).start()
 
-# 🔥 FEATURE: Drip Campaigns (3, 7, 15 Days)
 def drip_campaign_cron():
     while True:
         try:
@@ -249,7 +247,6 @@ def start(message):
         markup.add(types.InlineKeyboardButton("🟢 VERIFY ACCOUNT 🟢", callback_data="CHECK_SUB"))
         return bot.send_message(uid, "🛑 **ACCESS RESTRICTED**\nYou must join our official channels to unlock the bot.", reply_markup=markup, parse_mode="Markdown")
 
-    # 🔥 FEATURE: Cyberpunk Welcome
     welcome_text = f"""{greeting}, {message.from_user.first_name}! ⚡️
 
 🚀 **𝗪𝗘𝗟𝗖𝗢𝗠𝗘 𝗧𝗢 𝗡𝗘𝗫𝗨𝗦 𝗦𝗠𝗠**
@@ -269,6 +266,13 @@ def sub_callback(call):
     if check_sub(uid):
         bot.delete_message(uid, call.message.message_id)
         bot.send_message(uid, "✅ **Access Granted! Welcome to the panel.**", reply_markup=main_menu())
+        s = get_settings()
+        user = users_col.find_one({"_id": uid})
+        if s.get('welcome_bonus_active') and not user.get("welcome_paid"):
+            w_bonus = s.get('welcome_bonus', 0.0)
+            if w_bonus > 0:
+                users_col.update_one({"_id": uid}, {"$inc": {"balance": w_bonus}, "$set": {"welcome_paid": True}})
+                bot.send_message(uid, f"🎁 **WELCOME BONUS!**\nCongratulations! You received `${w_bonus}` just for joining us.", parse_mode="Markdown")
     else: bot.send_message(uid, "❌ You haven't joined all channels.")
 
 # ==========================================
@@ -289,6 +293,28 @@ def new_order_start(message):
     if best_sids: markup.add(types.InlineKeyboardButton("🌟 ADMIN BEST CHOICE 🌟", callback_data="SHOW_BEST_CHOICE"))
     for p in platforms: markup.add(types.InlineKeyboardButton(p, callback_data=f"PLAT|{p}|0"))
     bot.send_message(uid, "📂 **Select a Platform:**", reply_markup=markup, parse_mode="Markdown")
+
+@bot.callback_query_handler(func=lambda c: c.data == "SHOW_BEST_CHOICE")
+def show_best_choices(call):
+    bot.answer_callback_query(call.id)
+    services = get_cached_services()
+    best_sids = get_settings().get("best_choice_sids", [])
+    user = users_col.find_one({"_id": call.message.chat.id})
+    curr = user.get("currency", "BDT")
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    for tsid in best_sids:
+        srv = next((x for x in services if str(x['service']) == str(tsid).strip()), None)
+        if srv:
+            rate = calculate_price(srv['rate'], user.get('spent', 0), user.get('custom_discount', 0))
+            markup.add(types.InlineKeyboardButton(f"ID:{srv['service']} | {fmt_curr(rate, curr)} | {clean_service_name(srv['name'])}", callback_data=f"INFO|{tsid}"))
+    markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="NEW_ORDER_BACK"))
+    bot.edit_message_text("🌟 **ADMIN BEST CHOICE** 🌟\nHandpicked premium services for you:", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+
+@bot.callback_query_handler(func=lambda c: c.data == "NEW_ORDER_BACK")
+def back_to_main(call):
+    bot.answer_callback_query(call.id)
+    bot.delete_message(call.message.chat.id, call.message.message_id)
+    new_order_start(call.message)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("PLAT|"))
 def show_cats(call):
@@ -374,8 +400,6 @@ def fetch_orders_page(chat_id, page=0):
         st_txt = f"✅ {st.upper()}" if st == 'completed' else f"❌ {st.upper()}" if st in ['canceled', 'refunded', 'fail'] else f"⏳ {st.upper()}"
         txt += f"🆔 `{o['oid']}` | 💰 `{fmt_curr(o['cost'], curr)}`\n🔗 {str(o.get('link', 'N/A'))[:25]}...\n🏷 Status: {st_txt}\n\n"
         row_btns = [types.InlineKeyboardButton(f"🔁 Reorder", callback_data=f"REORDER|{o.get('sid', 0)}")]
-        
-        # 🔥 Auto-Refill API Call directly from button
         if st in ['completed', 'partial'] and not o.get("is_shadow"):
             row_btns.append(types.InlineKeyboardButton(f"🔄 Refill", callback_data=f"INSTANT_REFILL|{o['oid']}"))
         markup.row(*row_btns)
@@ -390,10 +414,8 @@ def fetch_orders_page(chat_id, page=0):
 def process_instant_refill(call):
     oid = call.data.split("|")[1]
     res = api.send_refill(oid)
-    if res and 'refill' in res:
-        bot.answer_callback_query(call.id, f"✅ Auto-Refill Triggered! Refill Task ID: {res['refill']}", show_alert=True)
-    else:
-        bot.answer_callback_query(call.id, "❌ Refill not available for this order or request is too early.", show_alert=True)
+    if res and 'refill' in res: bot.answer_callback_query(call.id, f"✅ Auto-Refill Triggered! Task ID: {res['refill']}", show_alert=True)
+    else: bot.answer_callback_query(call.id, "❌ Refill not available for this order.", show_alert=True)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("MYORD|"))
 def my_orders_pagination(call):
@@ -401,16 +423,14 @@ def my_orders_pagination(call):
     txt, markup = fetch_orders_page(call.message.chat.id, page)
     bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
 
-# 🔥 FEATURE: Points Redemption
 @bot.callback_query_handler(func=lambda c: c.data == "REDEEM_POINTS")
 def redeem_points(call):
     u = users_col.find_one({"_id": call.message.chat.id})
     pts = u.get("points", 0)
-    if pts < 1000:
-        return bot.answer_callback_query(call.id, "❌ Minimum 1000 Points required to redeem.", show_alert=True)
-    reward = pts / 1000.0 # $1 for 1000 points
+    if pts < 1000: return bot.answer_callback_query(call.id, "❌ Min 1000 Points required to redeem.", show_alert=True)
+    reward = pts / 1000.0
     users_col.update_one({"_id": call.message.chat.id}, {"$inc": {"balance": reward}, "$set": {"points": 0}})
-    bot.answer_callback_query(call.id, f"✅ You redeemed {pts} Points for ${reward:.2f}!", show_alert=True)
+    bot.answer_callback_query(call.id, f"✅ Redeemed {pts} Points for ${reward:.2f}!", show_alert=True)
     bot.delete_message(call.message.chat.id, call.message.message_id)
 
 def universal_buttons(message):
@@ -430,19 +450,15 @@ def universal_buttons(message):
         tier = u.get('tier_override') if u.get('tier_override') else get_user_tier(u.get('spent', 0))[0]
         markup = types.InlineKeyboardMarkup(row_width=3)
         markup.add(types.InlineKeyboardButton("🟢 BDT", callback_data="SET_CURR|BDT"), types.InlineKeyboardButton("🟠 INR", callback_data="SET_CURR|INR"), types.InlineKeyboardButton("🔵 USD", callback_data="SET_CURR|USD"))
-        
-        # 🔥 Points Redemption Button
         markup.add(types.InlineKeyboardButton(f"🎁 Redeem Points ({u.get('points', 0)} pts)", callback_data="REDEEM_POINTS"))
-        
         card = f"```text\n╔════════════════════════════════╗\n║  🌟 NEXUS VIP PASSPORT         ║\n╠════════════════════════════════╣\n║  👤 Name: {str(message.from_user.first_name)[:12].ljust(19)}║\n║  🆔 UID: {str(uid).ljust(20)}║\n║  💳 Balance: {fmt_curr(u.get('balance',0), curr).ljust(18)}║\n║  💸 Spent: {fmt_curr(u.get('spent',0), curr).ljust(20)}║\n║  🏆 Points: {str(u.get('points', 0)).ljust(19)}║\n║  👑 Tier: {tier.ljust(19)}║\n╚════════════════════════════════╝\n```"
         bot.send_message(uid, card, reply_markup=markup, parse_mode="Markdown")
     elif message.text == "💬 Live Chat":
         users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_live_chat"}})
         bot.send_message(uid, "💬 **LIVE CHAT SUPPORT**\nSend your message here. Admin will reply directly!", parse_mode="Markdown")
-    # Add your other buttons (Favorites, Leaderboard, etc.) here if needed...
 
 # ==========================================
-# 6. GOD MODE ADMIN (Ghost Mode + Net Worth + Custom Alert)
+# 6. ULTIMATE ADMIN DASHBOARD (2-PAGES)
 # ==========================================
 @bot.message_handler(commands=['admin'])
 def admin_panel(message):
@@ -453,10 +469,9 @@ def admin_panel(message):
         types.InlineKeyboardButton("📢 Broadcast", callback_data="ADM_BC"),
         types.InlineKeyboardButton("👻 Ghost Login", callback_data="ADM_GHOST"),
         types.InlineKeyboardButton("📩 Custom Alert", callback_data="ADM_ALERT"),
-        types.InlineKeyboardButton("💰 Margin", callback_data="ADM_PROFIT"),
-        types.InlineKeyboardButton("🚧 Maintenance", callback_data="ADM_MAIN")
+        types.InlineKeyboardButton("⚙️ Advanced Settings", callback_data="ADM_SETTINGS")
     )
-    bot.send_message(message.chat.id, f"👑 **WELCOME BOSS!**\nUsers: `{users_col.count_documents({})}`\nSelect an action:", reply_markup=markup, parse_mode="Markdown")
+    bot.send_message(message.chat.id, f"👑 **BOSS DASHBOARD**\nUsers: `{users_col.count_documents({})}`\nSelect an action:", reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("ADM_"))
 def admin_callbacks(call):
@@ -464,20 +479,65 @@ def admin_callbacks(call):
     uid = call.message.chat.id
     bot.answer_callback_query(call.id)
     
-    if call.data == "ADM_STATS":
-        # 🔥 Bot Net-Worth Calculator
+    if call.data == "ADM_HOME":
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            types.InlineKeyboardButton("📊 Net Worth & Stats", callback_data="ADM_STATS"),
+            types.InlineKeyboardButton("📢 Broadcast", callback_data="ADM_BC"),
+            types.InlineKeyboardButton("👻 Ghost Login", callback_data="ADM_GHOST"),
+            types.InlineKeyboardButton("📩 Custom Alert", callback_data="ADM_ALERT"),
+            types.InlineKeyboardButton("⚙️ Advanced Settings", callback_data="ADM_SETTINGS")
+        )
+        bot.edit_message_text(f"👑 **BOSS DASHBOARD**\nUsers: `{users_col.count_documents({})}`\nSelect an action:", uid, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+
+    elif call.data == "ADM_SETTINGS":
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            types.InlineKeyboardButton("💰 Profit Margin", callback_data="ADM_PROFIT"),
+            types.InlineKeyboardButton("🚧 Maint. Mode", callback_data="ADM_MAIN"),
+            types.InlineKeyboardButton("🎁 Welcome Bonus", callback_data="ADM_WBONUS"),
+            types.InlineKeyboardButton("⚡ Flash Sale", callback_data="ADM_FSALE"),
+            types.InlineKeyboardButton("🌟 Best Choice SIDs", callback_data="ADM_BEST"),
+            types.InlineKeyboardButton("🔙 Back to Main", callback_data="ADM_HOME")
+        )
+        bot.edit_message_text("⚙️ **ADVANCED BOT SETTINGS**\nControl automation features here:", uid, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+
+    elif call.data == "ADM_STATS":
         bal = sum(u.get('balance', 0) for u in users_col.find())
         spt = sum(u.get('spent', 0) for u in users_col.find())
         bot.send_message(uid, f"📈 **FINANCIAL REPORT**\n\n💰 **Bot Net Worth (User Wallets):** `${bal:.2f}`\n💸 **Total Sales Revenue:** `${spt:.2f}`", parse_mode="Markdown")
+    
     elif call.data == "ADM_GHOST":
         users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_ghost_uid"}})
-        bot.send_message(uid, "👻 **GHOST LOGIN**\nEnter the Target User's ID to view/manage their account:", parse_mode="Markdown")
+        bot.send_message(uid, "👻 **GHOST LOGIN**\nEnter Target User's ID:")
     elif call.data == "ADM_ALERT":
         users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_alert_uid"}})
-        bot.send_message(uid, "📩 **CUSTOM ALERT**\nEnter the Target User's ID:", parse_mode="Markdown")
+        bot.send_message(uid, "📩 **CUSTOM ALERT**\nEnter Target User's ID:")
+    elif call.data == "ADM_BC":
+        users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_bc"}})
+        bot.send_message(uid, "📢 **Enter message for broadcast:**")
+    elif call.data == "ADM_PROFIT":
+        users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_profit"}})
+        bot.send_message(uid, "💹 **Enter New Profit Margin (%):**")
+    elif call.data == "ADM_WBONUS":
+        users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_wbonus"}})
+        bot.send_message(uid, "🎁 **Welcome Bonus**\nEnter bonus amount in $ (e.g. 0.50). Enter 0 to disable:")
+    elif call.data == "ADM_FSALE":
+        users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_fsale"}})
+        bot.send_message(uid, "⚡ **Flash Sale**\nEnter discount percentage (e.g. 10). Enter 0 to disable:")
+    elif call.data == "ADM_BEST":
+        users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_best"}})
+        bot.send_message(uid, "🌟 **Best Choice Services**\nEnter Service IDs separated by comma (e.g. 15, 23, 104):")
+    elif call.data == "ADM_MAIN":
+        s = get_settings()
+        ns = not s.get('maintenance', False)
+        config_col.update_one({"_id": "settings"}, {"$set": {"maintenance": ns}})
+        global SETTINGS_CACHE
+        if SETTINGS_CACHE["data"]: SETTINGS_CACHE["data"]["maintenance"] = ns
+        bot.send_message(uid, f"✅ Maintenance Mode is now: {'**ON**' if ns else '**OFF**'}", parse_mode="Markdown")
 
 # ==========================================
-# 7. MASTER ROUTER (Link Validation, Reply & Ordering)
+# 7. MASTER ROUTER & FINAL ACTIONS
 # ==========================================
 @bot.message_handler(func=lambda m: True)
 def text_router(message):
@@ -485,7 +545,6 @@ def text_router(message):
     text = message.text.strip() if message.text else ""
     if text.startswith('/'): return
     
-    # 🔥 Admin Chat Reply
     if str(uid) == str(ADMIN_ID) and message.reply_to_message:
         reply_text = message.reply_to_message.text
         if "ID: " in reply_text:
@@ -508,16 +567,15 @@ def text_router(message):
             try: target = int(text)
             except: return bot.send_message(uid, "❌ ID must be numbers.")
             tu = users_col.find_one({"_id": target})
-            if not tu: return bot.send_message(uid, "❌ User not found in DB.")
+            if not tu: return bot.send_message(uid, "❌ User not found.")
             users_col.update_one({"_id": uid}, {"$unset": {"step": ""}})
-            bot.send_message(uid, f"👻 **GHOST VIEW - UID: {target}**\nName: {tu.get('name')}\nBalance: ${tu.get('balance', 0):.3f}\nSpent: ${tu.get('spent', 0):.3f}\nPoints: {tu.get('points', 0)}", parse_mode="Markdown")
-            return
+            return bot.send_message(uid, f"👻 **GHOST VIEW - UID: {target}**\nName: {tu.get('name')}\nBal: ${tu.get('balance', 0):.3f}\nSpent: ${tu.get('spent', 0):.3f}\nPoints: {tu.get('points', 0)}")
             
         elif step == "awaiting_alert_uid":
             try:
                 target = int(text)
                 users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_alert_msg", "temp_uid": target}})
-                return bot.send_message(uid, f"✍️ Enter the alert message to send to UID `{target}`:", parse_mode="Markdown")
+                return bot.send_message(uid, f"✍️ Enter alert msg for `{target}`:", parse_mode="Markdown")
             except: return bot.send_message(uid, "❌ Invalid ID.")
             
         elif step == "awaiting_alert_msg":
@@ -525,22 +583,60 @@ def text_router(message):
             users_col.update_one({"_id": uid}, {"$unset": {"step": "", "temp_uid": ""}})
             try:
                 bot.send_message(target, f"⚠️ **SYSTEM ALERT**\n━━━━━━━━━━━━━━━━━━━━\n{text}", parse_mode="Markdown")
-                return bot.send_message(uid, "✅ Custom Alert Sent Successfully!")
-            except: return bot.send_message(uid, "❌ Failed to send alert. User might have blocked the bot.")
+                return bot.send_message(uid, "✅ Alert Sent!")
+            except: return bot.send_message(uid, "❌ Failed to send.")
+            
+        elif step == "awaiting_wbonus":
+            try:
+                amt = float(text)
+                status = amt > 0
+                config_col.update_one({"_id": "settings"}, {"$set": {"welcome_bonus": amt, "welcome_bonus_active": status}})
+                users_col.update_one({"_id": uid}, {"$unset": {"step": ""}})
+                return bot.send_message(uid, f"✅ Welcome Bonus set to ${amt}. Status: {'ON' if status else 'OFF'}")
+            except: return bot.send_message(uid, "❌ Invalid number.")
+            
+        elif step == "awaiting_fsale":
+            try:
+                disc = float(text)
+                status = disc > 0
+                config_col.update_one({"_id": "settings"}, {"$set": {"flash_sale_discount": disc, "flash_sale_active": status}})
+                users_col.update_one({"_id": uid}, {"$unset": {"step": ""}})
+                return bot.send_message(uid, f"✅ Flash Sale set to {disc}%. Status: {'ON' if status else 'OFF'}")
+            except: return bot.send_message(uid, "❌ Invalid number.")
+            
+        elif step == "awaiting_best":
+            try:
+                sids = [int(x.strip()) for x in text.split(",") if x.strip().isdigit()]
+                config_col.update_one({"_id": "settings"}, {"$set": {"best_choice_sids": sids}})
+                users_col.update_one({"_id": uid}, {"$unset": {"step": ""}})
+                return bot.send_message(uid, f"✅ Best Choice SIDs updated: {sids}")
+            except: return bot.send_message(uid, "❌ Format error. Use comma separated numbers (e.g. 10, 20, 30)")
+            
+        elif step == "awaiting_profit":
+            try:
+                v = float(text)
+                config_col.update_one({"_id": "settings"}, {"$set": {"profit_margin": v}})
+                users_col.update_one({"_id": uid}, {"$unset": {"step": ""}})
+                return bot.send_message(uid, f"✅ Profit Margin: {v}%")
+            except: return bot.send_message(uid, "❌ Invalid number.")
+            
+        elif step == "awaiting_bc":
+            users_col.update_one({"_id": uid}, {"$unset": {"step": ""}})
+            c = 0
+            for usr in users_col.find({"is_fake": {"$ne": True}}):
+                try: bot.send_message(usr["_id"], f"📢 **MESSAGE FROM ADMIN**\n━━━━━━━━━━━━━━━━━━━━\n{text}", parse_mode="Markdown"); c+=1
+                except: pass
+            return bot.send_message(uid, f"✅ Broadcast sent to `{c}` users!")
 
     # --- USER STATES ---
     if step == "awaiting_link":
-        # 🔥 FEATURE: Link Validation Regex
         if not re.match(r'^(https?://|t\.me/|@|www\.)[^\s]+$', text, re.IGNORECASE):
-            return bot.send_message(uid, "❌ **Invalid Link Format!**\nPlease provide a proper URL (e.g., https://..., t.me/..., or @username).", parse_mode="Markdown")
-            
-        # 🔥 FEATURE: Duplicate Link Warning
+            return bot.send_message(uid, "❌ **Invalid Link Format!**")
         existing = orders_col.find_one({"uid": uid, "link": text, "status": "pending"})
         if existing:
-            bot.send_message(uid, "⚠️ **WARNING: Order Already Pending!**\nYou currently have an active order with this exact link. Proceed carefully.", parse_mode="Markdown")
-        
+            bot.send_message(uid, "⚠️ **WARNING: Order Already Pending for this link!**", parse_mode="Markdown")
         users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_qty", "temp_link": text}})
-        return bot.send_message(uid, "🔢 **Enter Quantity (Numbers only):**", parse_mode="Markdown")
+        return bot.send_message(uid, "🔢 **Enter Quantity:**", parse_mode="Markdown")
 
     elif step == "awaiting_qty":
         try:
@@ -548,22 +644,16 @@ def text_router(message):
             sid, link = u.get("temp_sid"), u.get("temp_link")
             services = get_cached_services()
             s = next((x for x in services if str(x['service']) == str(sid)), None)
-            if not s: return bot.send_message(uid, "❌ Service missing.")
-            
             if qty < int(s['min']) or qty > int(s['max']):
                 return bot.send_message(uid, f"❌ Invalid Qty! Allowed: {s['min']} - {s['max']}")
-            
             rate = calculate_price(s['rate'], u.get('spent', 0), u.get('custom_discount', 0))
             cost = (rate / 1000) * qty
             curr = u.get("currency", "BDT")
-            
-            if u.get('balance', 0) < cost:
-                return bot.send_message(uid, f"❌ **Insufficient Balance!** You need `{fmt_curr(cost, curr)}`")
-            
+            if u.get('balance', 0) < cost: return bot.send_message(uid, f"❌ Low Balance! Need `{fmt_curr(cost, curr)}`")
             users_col.update_one({"_id": uid}, {"$set": {"draft": {"sid": sid, "link": link, "qty": qty, "cost": cost}, "step": ""}})
             markup = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("✅ CONFIRM", callback_data="PLACE_ORD"), types.InlineKeyboardButton("❌ CANCEL", callback_data="CANCEL_ORD"))
-            bot.send_message(uid, f"⚠️ **ORDER PREVIEW**\n━━━━━━━━━━━━━━━━━━━━\n🆔 Service ID: `{sid}`\n🔗 Link: {link}\n🔢 Quantity: {qty}\n💰 Cost: `{fmt_curr(cost, curr)}`\n━━━━━━━━━━━━━━━━━━━━\nConfirm your order?", reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
-        except: bot.send_message(uid, "⚠️ Please enter valid numbers only.")
+            bot.send_message(uid, f"⚠️ **ORDER PREVIEW**\nID: `{sid}`\nLink: {link}\nQty: {qty}\nCost: `{fmt_curr(cost, curr)}`\nConfirm?", reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
+        except: bot.send_message(uid, "⚠️ Numbers only!")
 
 @bot.callback_query_handler(func=lambda c: c.data == "PLACE_ORD")
 def final_ord(call):
@@ -571,16 +661,13 @@ def final_ord(call):
     u = users_col.find_one({"_id": uid})
     draft = u.get('draft')
     if not draft: return bot.answer_callback_query(call.id, "❌ Session expired.")
-    
     res = api.place_order(draft['sid'], draft['link'], draft['qty'])
     if res and 'order' in res:
-        # 🔥 FEATURE: Points System (100 Points per Dollar spent)
         points_earned = int(draft['cost'] * 100)
         users_col.update_one({"_id": uid}, {"$inc": {"balance": -draft['cost'], "spent": draft['cost'], "points": points_earned}, "$unset": {"draft": ""}})
         orders_col.insert_one({"oid": res['order'], "uid": uid, "sid": draft['sid'], "link": draft['link'], "qty": draft['qty'], "cost": draft['cost'], "status": "pending", "date": datetime.now()})
-        bot.edit_message_text(f"✅ **Order Placed Successfully!**\n🆔 Order ID: `{res['order']}`\n🎁 Points Earned: `+{points_earned}`", uid, call.message.message_id, parse_mode="Markdown")
-    else:
-        bot.send_message(uid, f"❌ API Error: {res.get('error', 'Timeout')}")
+        bot.edit_message_text(f"✅ **Order Placed Successfully!**\n🆔 ID: `{res['order']}`\n🎁 Points Earned: `+{points_earned}`", uid, call.message.message_id, parse_mode="Markdown")
+    else: bot.send_message(uid, f"❌ API Error: {res.get('error', 'Timeout')}")
 
 @bot.callback_query_handler(func=lambda c: c.data == "CANCEL_ORD")
 def cancel_ord(call):
