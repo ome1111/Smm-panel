@@ -8,12 +8,42 @@ from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers
 from config import *
 import api
 
-# utils.py থেকে সব হেল্পার ফাংশন ইমপোর্ট করা হলো
+# utils.py theke shob helper function import kora holo
 from utils import *
 
 # ==========================================
-# 3. FORCE SUB & START LOGIC
+# 3. FORCE SUB, REFERRAL & START LOGIC
 # ==========================================
+def process_new_user_bonuses(uid):
+    """
+    🔥 FIX: Ei function ti ensure korbe jeno user channel e join korlei 
+    kewalmatro Referral count, Referral Bonus ebong Welcome Bonus add hoy!
+    """
+    user = users_col.find_one({"_id": uid})
+    if not user: return
+    s = get_settings()
+    
+    # Welcome Bonus Logic
+    if s.get('welcome_bonus_active') and not user.get("welcome_paid"):
+        w_bonus = float(s.get('welcome_bonus', 0.0))
+        if w_bonus > 0:
+            users_col.update_one({"_id": uid}, {"$inc": {"balance": w_bonus}, "$set": {"welcome_paid": True}})
+            try: bot.send_message(uid, f"🎁 **WELCOME BONUS!**\nCongratulations! You received `${w_bonus}` just for verifying your account.", parse_mode="Markdown")
+            except: pass
+        else:
+            users_col.update_one({"_id": uid}, {"$set": {"welcome_paid": True}})
+            
+    # Referral Bonus & Count Logic (Only happens after Verify)
+    if user.get("ref_by") and not user.get("ref_paid"):
+        ref_bonus = float(s.get("ref_bonus", 0.0))
+        # ref_paid = True hobe, jate refer invite count dashboard e update hoy
+        users_col.update_one({"_id": uid}, {"$set": {"ref_paid": True}}) 
+        
+        if ref_bonus > 0:
+            users_col.update_one({"_id": user["ref_by"]}, {"$inc": {"balance": ref_bonus, "ref_earnings": ref_bonus}})
+            try: bot.send_message(user["ref_by"], f"🎉 **REFERRAL SUCCESS!**\nUser `{uid}` joined the channel and verified! You earned `${ref_bonus}`!", parse_mode="Markdown")
+            except: pass
+
 @bot.message_handler(commands=['start'])
 def start(message):
     uid = message.chat.id
@@ -37,6 +67,9 @@ def start(message):
         markup.add(types.InlineKeyboardButton("🟢 VERIFY ACCOUNT 🟢", callback_data="CHECK_SUB"))
         return bot.send_message(uid, "🛑 **ACCESS RESTRICTED**\nYou must join our official channels to unlock the bot.", reply_markup=markup, parse_mode="Markdown")
 
+    # User jodi age thekei joined thake tahole bonus pabe
+    process_new_user_bonuses(uid)
+
     welcome_text = f"""{greeting}, {message.from_user.first_name}! ⚡️
 
 🚀 **𝗪𝗘𝗟𝗖𝗢𝗠𝗘 𝗧𝗢 𝗡𝗘𝗫𝗨𝗦 𝗦𝗠𝗠**
@@ -56,23 +89,8 @@ def sub_callback(call):
     if check_sub(uid):
         bot.delete_message(uid, call.message.message_id)
         bot.send_message(uid, "✅ **Access Granted! Welcome to the panel.**", reply_markup=main_menu())
-        s = get_settings()
-        user = users_col.find_one({"_id": uid})
-        if s.get('welcome_bonus_active') and not user.get("welcome_paid"):
-            w_bonus = s.get('welcome_bonus', 0.0)
-            if w_bonus > 0:
-                users_col.update_one({"_id": uid}, {"$inc": {"balance": w_bonus}, "$set": {"welcome_paid": True}})
-                bot.send_message(uid, f"🎁 **WELCOME BONUS!**\nCongratulations! You received `${w_bonus}` just for joining us.", parse_mode="Markdown")
-            else:
-                users_col.update_one({"_id": uid}, {"$set": {"welcome_paid": True}})
-                
-        if user and user.get("ref_by") and not user.get("ref_paid"):
-            ref_bonus = s.get("ref_bonus", 0.0)
-            if ref_bonus > 0:
-                users_col.update_one({"_id": user["ref_by"]}, {"$inc": {"balance": ref_bonus, "ref_earnings": ref_bonus}})
-                users_col.update_one({"_id": uid}, {"$set": {"ref_paid": True}})
-                try: bot.send_message(user["ref_by"], f"🎉 **REFERRAL SUCCESS!**\nUser `{uid}` verified their account. You earned `${ref_bonus}`!", parse_mode="Markdown")
-                except: pass
+        # User channel e join kore verify korle bonus and refer pabe
+        process_new_user_bonuses(uid)
     else: bot.send_message(uid, "❌ You haven't joined all channels.")
 
 # ==========================================
@@ -357,17 +375,14 @@ def universal_buttons(message):
 # ==========================================
 # 7. MASTER ROUTER (Smart Errors & Ordering)
 # ==========================================
-# 🔥 FIXED: Added content_types to support Photos and Documents in Live Chat
 @bot.message_handler(content_types=['text', 'photo', 'document'])
 def universal_router(message):
     uid = message.chat.id
     
-    # Extract text from either text message or media caption
     text = message.text.strip() if message.text else message.caption.strip() if message.caption else "📸 [Media/Screenshot attached]"
     
     if text.startswith('/'): return
     
-    # 🔥 FIXED: Admin Direct Reply Logic (Now supports replying to Photos as well)
     if str(uid) == str(ADMIN_ID) and message.reply_to_message:
         reply_text = message.reply_to_message.text or message.reply_to_message.caption
         if reply_text and ("🆔 ID: " in reply_text or "ID: " in reply_text):
@@ -378,7 +393,6 @@ def universal_router(message):
                     target_uid = int(reply_text.split("ID: ")[1].split("\n")[0].strip().replace("`", ""))
                     
                 bot.send_message(target_uid, f"👨‍💻 **ADMIN REPLY:**\n━━━━━━━━━━━━━━━━━━━━\n{text}", parse_mode="Markdown")
-                # Auto close the ticket in database when Admin replies directly from Telegram
                 tickets_col.update_many({"uid": target_uid, "status": "open"}, {"$set": {"status": "closed", "reply": text}})
                 return bot.send_message(ADMIN_ID, f"✅ Reply sent successfully to user `{target_uid}`!")
             except Exception as e: 
@@ -466,7 +480,7 @@ def universal_router(message):
                 return bot.send_message(uid, "✅ Points System Updated!")
             except: return bot.send_message(uid, "❌ Format error. Use comma (e.g. 100, 1000)")
 
-    # --- AUTO PAYMENT CLAIM LOGIC ---
+    # --- AUTO PAYMENT CLAIM LOGIC (Includes Admin Commission Percent) ---
     if step == "awaiting_trx":
         method_name = str(u.get("temp_dep_method", "Manual")).lower()
         is_local_auto = any(x in method_name for x in ['bkash', 'nagad', 'rocket', 'upay', 'bdt'])
@@ -483,15 +497,21 @@ def universal_router(message):
                 return bot.send_message(uid, "⚠️ **ALREADY USED!**\nএই ট্রানজেকশন আইডিটি ব্যবহার করা হয়ে গেছে।", parse_mode="Markdown")
 
             s = get_settings()
-            bdt_rate = s.get('bdt_rate', 120.0)
+            
+            bdt_rate = 120.0
+            for p in s.get('payments', []):
+                if any(x in p['name'].lower() for x in ['bkash', 'nagad', 'rocket', 'upay', 'bdt']):
+                    bdt_rate = float(p.get('rate', 120.0))
+                    break
+                    
             usd_to_add = entry['amt'] / bdt_rate
             
             config_col.update_one({"_id": "transactions", "valid_list.trx": user_trx}, {"$set": {"valid_list.$.status": "used", "valid_list.$.user": uid}})
             users_col.update_one({"_id": uid}, {"$inc": {"balance": usd_to_add}, "$unset": {"step": "", "temp_dep_amt": "", "temp_dep_method": ""}})
             
-            # 🔥 FIX: Auto Deposit Referral Commission Fix!
+            # 🔥 FIX: Auto Deposit Referral Commission uses the Admin Panel Settings
             if u and u.get("ref_by"):
-                comm = usd_to_add * (s.get("dep_commission", 5.0) / 100)
+                comm = usd_to_add * (float(s.get("dep_commission", 5.0)) / 100)
                 if comm > 0:
                     users_col.update_one({"_id": u["ref_by"]}, {"$inc": {"balance": comm, "ref_earnings": comm}})
                     try: bot.send_message(u["ref_by"], f"💸 **COMMISSION EARNED!**\nYour referral made an Auto Deposit. You earned `${comm:.3f}`!", parse_mode="Markdown")
@@ -569,11 +589,9 @@ def universal_router(message):
         bot.send_message(uid, "✅ Refill Requested! Admin will check it.")
         return bot.send_message(ADMIN_ID, f"🔄 **REFILL REQUEST:**\nOrder ID: `{text}`\nBy User: `{uid}`")
 
-    # 🔥 FIXED: Send Live Chat Photo & Text message directly to Admin Inbox
     elif step == "awaiting_ticket":
         users_col.update_one({"_id": uid}, {"$unset": {"step": ""}})
         
-        # Save ticket in database
         tickets_col.insert_one({"uid": uid, "msg": text, "status": "open", "date": datetime.now()})
         
         user_name = message.from_user.first_name
