@@ -51,6 +51,23 @@ def admin_callbacks(call):
         )
         bot.edit_message_text("⚙️ **ADVANCED BOT SETTINGS**\nControl automation features here:", uid, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
         
+    # 🔥 FIX: Added missing callbacks for Admin Setting Buttons
+    elif call.data == "ADM_PROFIT":
+        users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_profit"}})
+        bot.send_message(uid, "💰 **PROFIT MARGIN**\nEnter new profit margin percentage (e.g. 20.5):")
+
+    elif call.data == "ADM_WBONUS":
+        users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_wbonus"}})
+        bot.send_message(uid, "🎁 **WELCOME BONUS**\nEnter new welcome bonus amount (e.g. 0.5):")
+
+    elif call.data == "ADM_FSALE":
+        users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_fsale"}})
+        bot.send_message(uid, "⚡ **FLASH SALE**\nEnter flash sale discount percentage (e.g. 10.0):")
+
+    elif call.data == "ADM_BEST":
+        users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_best"}})
+        bot.send_message(uid, "🌟 **BEST CHOICE SIDs**\nEnter comma-separated Service IDs (e.g. 10, 25, 102):")
+
     elif call.data == "ADM_STATS":
         bal = sum(u.get('balance', 0) for u in users_col.find())
         spt = sum(u.get('spent', 0) for u in users_col.find())
@@ -77,8 +94,6 @@ def admin_callbacks(call):
         s = get_settings()
         ns = not s.get('maintenance', False)
         config_col.update_one({"_id": "settings"}, {"$set": {"maintenance": ns}})
-        # Update the RAM cache instantly so it takes effect immediately without waiting
-        global SETTINGS_CACHE
-        if SETTINGS_CACHE.get("data"): 
-            SETTINGS_CACHE["data"]["maintenance"] = ns
+        # 🔥 FIX: Safe cache update function called instead of risky global assignment
+        update_settings_cache("maintenance", ns)
         bot.send_message(uid, f"✅ Maintenance Mode is now: {'**ON**' if ns else '**OFF**'}", parse_mode="Markdown")
