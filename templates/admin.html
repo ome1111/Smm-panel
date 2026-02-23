@@ -94,13 +94,13 @@
                 <div class="glass-card p-6 border-l-4 border-emerald-500 relative overflow-hidden">
                     <i class="fas fa-money-bill-wave absolute -right-4 -bottom-4 text-6xl text-emerald-500/10"></i>
                     <h3 class="text-slate-400 text-sm font-bold uppercase tracking-wider mb-2">Net Profit (Live)</h3>
-                    <div class="text-4xl font-bold text-emerald-400 data-font">${{ profit }}</div>
+                    <div class="text-4xl font-bold text-emerald-400 data-font">{{ profit }}</div>
                 </div>
                 
                 <div class="glass-card p-6 border-l-4 border-sky-500 relative overflow-hidden">
                     <i class="fas fa-shopping-bag absolute -right-4 -bottom-4 text-6xl text-sky-500/10"></i>
                     <h3 class="text-slate-400 text-sm font-bold uppercase tracking-wider mb-2">Total Gross Sales</h3>
-                    <div class="text-4xl font-bold text-sky-400 data-font">${{ sales }}</div>
+                    <div class="text-4xl font-bold text-sky-400 data-font">{{ sales }}</div>
                 </div>
                 
                 <div class="glass-card p-6 border-l-4 border-purple-500 relative overflow-hidden">
@@ -505,12 +505,21 @@
                     </button>
                 </div>
 
-                <div class="flex justify-end pt-4 pb-8">
+                <div class="flex justify-end pt-4 pb-4">
                     <button type="submit" class="bg-indigo-500 hover:bg-indigo-400 text-white font-bold px-8 py-3 rounded-lg w-full sm:w-auto shadow-[0_0_15px_rgba(99,102,241,0.5)] text-lg transition-all">
                         <i class="fas fa-save mr-2"></i> Save Master Settings
                     </button>
                 </div>
             </form>
+
+            <div class="glass-card p-4 md:p-6 border-t-4 border-yellow-500 mt-6">
+                <h3 class="text-lg font-bold text-white mb-4"><i class="fas fa-star mr-2 text-yellow-400"></i> Best Choice Services (Admin Picks)</h3>
+                <form action="/save_best_choice" method="POST" class="flex flex-col md:flex-row gap-4">
+                    <input type="text" name="best_choice_sids" value="{{ s.get('best_choice_sids', []) | join(', ') }}" placeholder="Comma separated SIDs (e.g. 10, 25, 102)" required class="flex-1 bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white outline-none focus:border-yellow-500 data-font">
+                    <button type="submit" class="bg-yellow-500 hover:bg-yellow-400 text-slate-900 font-bold px-6 py-2 rounded transition-colors shadow-[0_0_10px_rgba(234,179,8,0.3)]">Save Best Choices</button>
+                </form>
+            </div>
+            
         </div>
     </main>
 
@@ -540,7 +549,8 @@
             }
         }
 
-        function openUserModal(uid, bal, spent, refEarn, discount, tier) {
+        // 🔥 FIXED: Added points argument to JavaScript function
+        function openUserModal(uid, bal, spent, refEarn, discount, tier, points) {
             document.getElementById('modal_uid').value = uid;
             document.getElementById('modal_uid_display').innerText = `(${uid})`;
             document.getElementById('modal_balance_val').value = parseFloat(bal).toFixed(3);
@@ -548,6 +558,7 @@
             document.getElementById('modal_ref').value = parseFloat(refEarn).toFixed(3);
             document.getElementById('modal_discount').value = discount;
             document.getElementById('modal_tier').value = tier;
+            document.getElementById('modal_points').value = points; // Value set successfully
             
             const modal = document.getElementById('userEditModal');
             const box = document.getElementById('userEditBox');
