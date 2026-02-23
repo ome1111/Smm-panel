@@ -53,14 +53,13 @@ def get_settings():
             "flash_sale_active": False, "flash_sale_discount": 0.0, 
             "reward_top1": 10.0, "reward_top2": 5.0, "reward_top3": 2.0, 
             "best_choice_sids": [], "points_per_usd": 100, "points_to_usd_rate": 1000,
-            "proof_channel": ""
+            "proof_channel": "", "profit_tiers": []
         }
         config_col.insert_one(s)
     SETTINGS_CACHE["data"] = s
     SETTINGS_CACHE["time"] = time.time()
     return s
 
-# 🔥 FIX: Safe function to update global settings cache across modules
 def update_settings_cache(key, value):
     global SETTINGS_CACHE
     if SETTINGS_CACHE["data"]:
@@ -107,15 +106,8 @@ threading.Thread(target=auto_sync_services_cron, daemon=True).start()
 
 def exchange_rate_sync_cron():
     global CURRENCY_RATES
-    while True:
-        try:
-            rates = api.get_live_exchange_rates()
-            if rates:
-                CURRENCY_RATES["BDT"] = rates.get("BDT", 120)
-                CURRENCY_RATES["INR"] = rates.get("INR", 83)
-        except: pass
-        time.sleep(43200)
-threading.Thread(target=exchange_rate_sync_cron, daemon=True).start()
+    CURRENCY_RATES["BDT"] = 120
+    CURRENCY_RATES["INR"] = 83
 
 def drip_campaign_cron():
     while True:
@@ -143,11 +135,9 @@ def drip_campaign_cron():
         time.sleep(43200)
 threading.Thread(target=drip_campaign_cron, daemon=True).start()
 
-# 🔥 FIXED: Order Notification Emojis & Completion Check & Pagination Memory Optimization
 def auto_sync_orders_cron():
     while True:
         try:
-            # FIX: Removed list() to prevent Memory Leak, Added limit(100) to batch process
             active_orders = orders_col.find({"status": {"$nin": ["completed", "canceled", "refunded", "fail", "partial"]}}).limit(100)
             for o in active_orders:
                 if o.get("is_shadow"): continue
@@ -186,13 +176,33 @@ def get_cached_services():
     cache = config_col.find_one({"_id": "api_cache"})
     return cache.get('data', []) if cache else []
 
+# 🔥 FIX: Notun Tiered Profit Margin System Add kora holo
 def calculate_price(base_rate, user_spent, user_custom_discount=0.0):
     s = get_settings()
-    profit = s.get('profit_margin', 20.0)
-    fs = s.get('flash_sale_discount', 0.0) if s.get('flash_sale_active', False) else 0.0
+    base = float(base_rate)
+    
+    # default profit margin
+    profit = float(s.get('profit_margin', 20.0))
+    
+    # Checking Tiered Profit Margins
+    profit_tiers = s.get('profit_tiers', [])
+    if profit_tiers:
+        for tier in profit_tiers:
+            try:
+                t_min = float(tier.get('min', 0))
+                t_max = float(tier.get('max', 999999))
+                t_margin = float(tier.get('margin', profit))
+                if t_min <= base <= t_max:
+                    profit = t_margin
+                    break
+            except:
+                pass
+
+    fs = float(s.get('flash_sale_discount', 0.0)) if s.get('flash_sale_active', False) else 0.0
     _, tier_discount = get_user_tier(user_spent)
-    total_disc = tier_discount + fs + user_custom_discount
-    rate_w_profit = float(base_rate) * (1 + (profit / 100))
+    total_disc = float(tier_discount) + fs + float(user_custom_discount)
+    
+    rate_w_profit = base * (1 + (profit / 100))
     return rate_w_profit * (1 - (total_disc / 100))
 
 def clean_service_name(raw_name):
