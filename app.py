@@ -9,6 +9,7 @@ from datetime import datetime
 from flask import Flask, request, render_template, redirect, url_for, session, jsonify, Response
 import telebot
 from bson.objectid import ObjectId
+import re
 
 # Import from loader and config
 from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col
@@ -30,7 +31,7 @@ def webhook():
     if request.headers.get('content-type') == 'application/json':
         json_string = request.get_data().decode('utf-8')
         update = telebot.types.Update.de_json(json_string)
-        # 🔥 FIX: Thread explosion prevented. Flask/Gunicorn will handle concurrency naturally.
+        # Flask/Gunicorn will handle concurrency naturally.
         bot.process_new_updates([update])
         return 'OK', 200
     return 'Forbidden', 403
@@ -184,10 +185,7 @@ def login():
             session['admin'] = True
             return redirect(url_for('index'))
         return "Wrong Password!"
-    return '''<form method="post" style="text-align:center; margin-top:20vh; font-family:sans-serif; background:#020617; color:white; height:100vh;">
-              <h2>Nexus Titan God Mode</h2>
-              <input type="password" name="password" placeholder="Admin Password" style="padding:10px; color:black;">
-              <button type="submit" style="padding:10px 20px; background:#0ea5e9; color:white; border:none; cursor:pointer;">Login</button></form>'''
+    return render_template('login.html')
 
 @app.route('/logout')
 def logout():
@@ -277,6 +275,21 @@ def save_settings():
             payments.append({"name": pay_names[i].strip(), "rate": float(pay_rates[i]), "address": pay_addrs[i].strip()})
     s["payments"] = payments
 
+    # 🔥 FIX: Tiered Profit Margin Logic
+    profit_tiers = []
+    tier_mins = request.form.getlist('tier_min[]')
+    tier_maxs = request.form.getlist('tier_max[]')
+    tier_margins = request.form.getlist('tier_margin[]')
+    
+    for i in range(len(tier_mins)):
+        if tier_mins[i].strip() and tier_maxs[i].strip() and tier_margins[i].strip():
+            profit_tiers.append({
+                "min": float(tier_mins[i]),
+                "max": float(tier_maxs[i]),
+                "margin": float(tier_margins[i])
+            })
+    s["profit_tiers"] = profit_tiers
+
     config_col.update_one({"_id": "settings"}, {"$set": s}, upsert=True)
     return redirect(url_for('index'))
 
@@ -288,11 +301,12 @@ def edit_user():
     bal_val = float(request.form.get('balance_val', 0))
     spent = float(request.form.get('spent', 0))
     ref_earn = float(request.form.get('ref_earnings', 0))
+    points = int(request.form.get('points', 0))
     discount = float(request.form.get('custom_discount', 0))
     tier = request.form.get('tier_override')
     if tier == 'none': tier = None
 
-    update_query = {"spent": spent, "ref_earnings": ref_earn, "custom_discount": discount, "tier_override": tier}
+    update_query = {"spent": spent, "ref_earnings": ref_earn, "points": points, "custom_discount": discount, "tier_override": tier}
     
     if bal_action == "set":
         update_query["balance"] = bal_val
@@ -312,7 +326,7 @@ def add_fake_user():
     spent = float(request.form.get('fake_spent', 0))
     ref = float(request.form.get('fake_ref', 0))
     
-    users_col.insert_one({"_id": fake_id, "name": name, "balance": 0.0, "spent": spent, "currency": "USD", "ref_earnings": ref, "is_fake": True, "joined": datetime.now()})
+    users_col.insert_one({"_id": fake_id, "name": name, "balance": 0.0, "spent": spent, "currency": "USD", "ref_earnings": ref, "points": 0, "is_fake": True, "joined": datetime.now()})
     return redirect(url_for('index'))
 
 @app.route('/remove_fake_users')
@@ -470,6 +484,41 @@ def refund_order(oid):
         try: bot.send_message(o['uid'], f"💰 **ORDER REFUNDED!**\nOrder `{oid}` was refunded. `${o['cost']}` returned to your wallet.", parse_mode="Markdown")
         except: pass
     return redirect(url_for('index'))
+
+# ==========================================
+# 8. AUTO PAYMENT WEBHOOK API (For MacroDroid)
+# ==========================================
+@app.route('/api/add_transaction', methods=['POST', 'GET'])
+def add_transaction():
+    secret = request.args.get('secret') or (request.json.get('secret') if request.is_json else None)
+    
+    if secret != "NEXUS_AUTO_PASS_123":
+        return jsonify({"status": "error", "msg": "Wrong Secret Key!"}), 403
+
+    sms_text = request.args.get('sms') or (request.json.get('sms') if request.is_json else "")
+    
+    if not sms_text:
+        return jsonify({"status": "error", "msg": "No SMS text provided"}), 400
+
+    try:
+        trx_match = re.search(r'(?i)(?:TrxID|TxnId|Trx)\s*[:\-\*]*\s*([A-Z0-9]{8,12})', sms_text)
+        amt_match = re.search(r'(?i)(?:Tk|Amount|Received)\s*[:\-\*]*\s*([\d,]+\.?\d*)', sms_text)
+        
+        if trx_match and amt_match:
+            trx = trx_match.group(1).upper()
+            amt = float(amt_match.group(1).replace(',', ''))
+            
+            config_col.update_one(
+                {"_id": "transactions"}, 
+                {"$push": {"valid_list": {"trx": trx, "amt": amt, "status": "unused"}}}, 
+                upsert=True
+            )
+            return jsonify({"status": "success", "msg": f"Auto Added: Trx {trx}, Amt {amt}"})
+        else:
+            return jsonify({"status": "ignored", "msg": "TrxID or Amount not found in SMS"}), 200
+            
+    except Exception as e:
+        return jsonify({"status": "error", "msg": str(e)})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
