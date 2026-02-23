@@ -60,6 +60,12 @@ def get_settings():
     SETTINGS_CACHE["time"] = time.time()
     return s
 
+# 🔥 FIX: Safe function to update global settings cache across modules
+def update_settings_cache(key, value):
+    global SETTINGS_CACHE
+    if SETTINGS_CACHE["data"]:
+        SETTINGS_CACHE["data"][key] = value
+
 def check_spam(uid):
     if str(uid) == str(ADMIN_ID): return False 
     current_time = time.time()
@@ -137,11 +143,12 @@ def drip_campaign_cron():
         time.sleep(43200)
 threading.Thread(target=drip_campaign_cron, daemon=True).start()
 
-# 🔥 FIXED: Order Notification Emojis & Completion Check
+# 🔥 FIXED: Order Notification Emojis & Completion Check & Pagination Memory Optimization
 def auto_sync_orders_cron():
     while True:
         try:
-            active_orders = list(orders_col.find({"status": {"$nin": ["completed", "canceled", "refunded", "fail", "partial"]}}))
+            # FIX: Removed list() to prevent Memory Leak, Added limit(100) to batch process
+            active_orders = orders_col.find({"status": {"$nin": ["completed", "canceled", "refunded", "fail", "partial"]}}).limit(100)
             for o in active_orders:
                 if o.get("is_shadow"): continue
                 try: res = api.check_order_status(o['oid'])
