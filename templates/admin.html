@@ -484,7 +484,32 @@
                     </div>
                 </div>
 
-                <div class="glass-card p-4 md:p-6 border-t-4 border-emerald-500">
+                <div class="glass-card p-4 md:p-6 border-t-4 border-fuchsia-500 mt-6">
+                    <h3 class="text-lg font-bold text-white mb-2"><i class="fas fa-layer-group mr-2 text-fuchsia-400"></i> Tiered Profit Margins</h3>
+                    <p class="text-xs text-slate-400 mb-4">Set custom profit margins based on the base cost of the service. <br>(Example: Min: 0.0, Max: 5.0, Margin: 30.0). Leave blank if not needed.</p>
+                    <div class="space-y-3">
+                        {% for i in range(3) %}
+                        {% set t = s.get('profit_tiers', []) %}
+                        {% set tier = t[i] if t|length > i else {} %}
+                        <div class="flex flex-col sm:flex-row gap-3 bg-slate-900/50 p-3 rounded border border-slate-700/50">
+                            <div class="flex-1">
+                                <label class="block text-[10px] text-slate-400 font-bold mb-1 uppercase">Min Cost ($)</label>
+                                <input type="number" step="0.001" name="tier_min[]" value="{{ tier.get('min', '') }}" placeholder="e.g. 0.0" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none focus:border-fuchsia-500">
+                            </div>
+                            <div class="flex-1">
+                                <label class="block text-[10px] text-slate-400 font-bold mb-1 uppercase">Max Cost ($)</label>
+                                <input type="number" step="0.001" name="tier_max[]" value="{{ tier.get('max', '') }}" placeholder="e.g. 5.0" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none focus:border-fuchsia-500">
+                            </div>
+                            <div class="flex-1">
+                                <label class="block text-[10px] text-fuchsia-400 font-bold mb-1 uppercase">Profit Margin (%)</label>
+                                <input type="number" step="0.1" name="tier_margin[]" value="{{ tier.get('margin', '') }}" placeholder="e.g. 30.0" class="w-full bg-slate-900 border border-fuchsia-500/50 rounded px-3 py-2 text-white outline-none focus:border-fuchsia-500">
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="glass-card p-4 md:p-6 border-t-4 border-emerald-500 mt-6">
                     <h3 class="text-lg font-bold text-white mb-4"><i class="fas fa-wallet mr-2 text-emerald-400"></i> Payment Gateways</h3>
                     <div id="payment-methods" class="space-y-3">
                         {% for p in s.get('payments', []) %}
@@ -549,7 +574,6 @@
             }
         }
 
-        // 🔥 FIXED: Added points argument to JavaScript function
         function openUserModal(uid, bal, spent, refEarn, discount, tier, points) {
             document.getElementById('modal_uid').value = uid;
             document.getElementById('modal_uid_display').innerText = `(${uid})`;
@@ -558,7 +582,7 @@
             document.getElementById('modal_ref').value = parseFloat(refEarn).toFixed(3);
             document.getElementById('modal_discount').value = discount;
             document.getElementById('modal_tier').value = tier;
-            document.getElementById('modal_points').value = points; // Value set successfully
+            document.getElementById('modal_points').value = points;
             
             const modal = document.getElementById('userEditModal');
             const box = document.getElementById('userEditBox');
@@ -612,7 +636,7 @@
                 </div>
                 <div class="flex gap-2 items-center">
                     <input type="text" name="pay_address[]" placeholder="Account Number or Crypto Address" class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none" required>
-                    <button type="button" onclick="this.closest('.payment-row').remove()" class="text-slate-50 hover:text-red-500 px-3 transition-colors"><i class="fas fa-trash text-lg"></i></button>
+                    <button type="button" onclick="this.closest('.payment-row').remove()" class="text-slate-500 hover:text-red-500 px-3 transition-colors"><i class="fas fa-trash text-lg"></i></button>
                 </div>
             `;
             container.appendChild(row);
