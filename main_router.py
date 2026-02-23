@@ -352,21 +352,25 @@ def universal_buttons(message):
         
     elif message.text == "💬 Live Chat":
         users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_ticket"}})
-        bot.send_message(uid, "💬 **LIVE SUPPORT**\nSend your message here. Our Admins will reply directly!", parse_mode="Markdown")
+        bot.send_message(uid, "💬 **LIVE SUPPORT**\nSend your message here. You can also send Screenshots or Photos! Our Admins will reply directly.", parse_mode="Markdown")
 
 # ==========================================
 # 7. MASTER ROUTER (Smart Errors & Ordering)
 # ==========================================
-@bot.message_handler(func=lambda m: True)
-def text_router(message):
+# 🔥 FIXED: Added content_types to support Photos and Documents in Live Chat
+@bot.message_handler(content_types=['text', 'photo', 'document'])
+def universal_router(message):
     uid = message.chat.id
-    text = message.text.strip() if message.text else ""
+    
+    # Extract text from either text message or media caption
+    text = message.text.strip() if message.text else message.caption.strip() if message.caption else "📸 [Media/Screenshot attached]"
+    
     if text.startswith('/'): return
     
-    # 🔥 FIXED: Admin Direct Reply Logic using message reply
+    # 🔥 FIXED: Admin Direct Reply Logic (Now supports replying to Photos as well)
     if str(uid) == str(ADMIN_ID) and message.reply_to_message:
-        reply_text = message.reply_to_message.text
-        if "🆔 ID: " in reply_text or "ID: " in reply_text:
+        reply_text = message.reply_to_message.text or message.reply_to_message.caption
+        if reply_text and ("🆔 ID: " in reply_text or "ID: " in reply_text):
             try:
                 if "🆔 ID: " in reply_text:
                     target_uid = int(reply_text.split("🆔 ID: ")[1].split("\n")[0].strip().replace("`", ""))
@@ -485,6 +489,14 @@ def text_router(message):
             config_col.update_one({"_id": "transactions", "valid_list.trx": user_trx}, {"$set": {"valid_list.$.status": "used", "valid_list.$.user": uid}})
             users_col.update_one({"_id": uid}, {"$inc": {"balance": usd_to_add}, "$unset": {"step": "", "temp_dep_amt": "", "temp_dep_method": ""}})
             
+            # 🔥 FIX: Auto Deposit Referral Commission Fix!
+            if u and u.get("ref_by"):
+                comm = usd_to_add * (s.get("dep_commission", 5.0) / 100)
+                if comm > 0:
+                    users_col.update_one({"_id": u["ref_by"]}, {"$inc": {"balance": comm, "ref_earnings": comm}})
+                    try: bot.send_message(u["ref_by"], f"💸 **COMMISSION EARNED!**\nYour referral made an Auto Deposit. You earned `${comm:.3f}`!", parse_mode="Markdown")
+                    except: pass
+                    
             bot.send_message(uid, f"✅ **DEPOSIT SUCCESS!**\n💰 Amount: `{entry['amt']} TK`\n💵 Added: `${usd_to_add:.2f}`", parse_mode="Markdown")
             bot.send_message(ADMIN_ID, f"🔔 **AUTO DEP:** {uid} added ${usd_to_add:.2f} (TrxID: {user_trx})")
             return
@@ -557,17 +569,23 @@ def text_router(message):
         bot.send_message(uid, "✅ Refill Requested! Admin will check it.")
         return bot.send_message(ADMIN_ID, f"🔄 **REFILL REQUEST:**\nOrder ID: `{text}`\nBy User: `{uid}`")
 
-    # 🔥 FIXED: Send Live Chat message to Admin Inbox for direct reply
+    # 🔥 FIXED: Send Live Chat Photo & Text message directly to Admin Inbox
     elif step == "awaiting_ticket":
         users_col.update_one({"_id": uid}, {"$unset": {"step": ""}})
         
-        # Save to database to keep ticket history in your web panel
+        # Save ticket in database
         tickets_col.insert_one({"uid": uid, "msg": text, "status": "open", "date": datetime.now()})
         
-        # Send instant notification to Admin Telegram ID
         user_name = message.from_user.first_name
         admin_msg = f"📩 **NEW LIVE CHAT**\n👤 User: `{user_name}`\n🆔 ID: `{uid}`\n\n💬 **Message:**\n{text}\n\n_Reply to this message to send an answer directly._"
-        try: bot.send_message(ADMIN_ID, admin_msg, parse_mode="Markdown")
+        
+        try:
+            if message.photo:
+                bot.send_photo(ADMIN_ID, message.photo[-1].file_id, caption=admin_msg, parse_mode="Markdown")
+            elif message.document:
+                bot.send_document(ADMIN_ID, message.document.file_id, caption=admin_msg, parse_mode="Markdown")
+            else:
+                bot.send_message(ADMIN_ID, admin_msg, parse_mode="Markdown")
         except: pass
         
         return bot.send_message(uid, "✅ **Message Sent Successfully!** Admin will reply soon.", parse_mode="Markdown")
@@ -622,8 +640,6 @@ def final_ord(call):
     s = get_settings()
     proof_ch = s.get('proof_channel', '')
     channel_post = f"```text\n╔════ 🟢 𝗡𝗘𝗪 𝗢𝗥𝗗𝗘𝗥 ════╗\n║ 👤 𝗜𝗗: {masked_id}\n║ 🚀 𝗦𝗲𝗿𝘃𝗶𝗰𝗲: {short_srv}\n║ 📦 𝗤𝘁𝘆: {int(draft['qty'])}\n║ 💵 𝗖𝗼𝘀𝘁: {cost_str}\n╚════════════════════╝\n```"
-    
-    # 🔥 FIX: Points calculation float issue fixed to prevent crashes
     points_earned = int(float(draft['cost']) * float(s.get("points_per_usd", 100)))
 
     if u.get('shadow_banned'):
