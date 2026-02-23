@@ -47,20 +47,25 @@ def process_new_user_bonuses(uid):
 @bot.message_handler(commands=['start'])
 def start(message):
     uid = message.chat.id
-    users_col.update_one({"_id": uid}, {"$set": {"last_active": datetime.now()}, "$unset": {"step": "", "temp_sid": "", "temp_link": ""}}, upsert=True)
+    
+    # ১. প্রথমে চেক করবে ইউজার ডাটাবেসে আছে কি না
+    user = users_col.find_one({"_id": uid})
+    args = message.text.split()
+    referrer = int(args[1]) if len(args) > 1 and args[1].isdigit() and int(args[1]) != uid else None
+
+    # ২. যদি একদম নতুন ইউজার হয়, তবে রেফারার আইডি সহ সম্পূর্ণ প্রোফাইল সেভ করবে
+    if not user:
+        users_col.insert_one({"_id": uid, "name": message.from_user.first_name, "balance": 0.0, "spent": 0.0, "points": 0, "currency": "BDT", "ref_by": referrer, "ref_paid": False, "ref_earnings": 0.0, "joined": datetime.now(), "favorites": [], "custom_discount": 0.0, "shadow_banned": False, "tier_override": None, "welcome_paid": False})
+        user = users_col.find_one({"_id": uid})
+        
+    # ৩. প্রোফাইল তৈরি হওয়ার পর last_active আপডেট করবে
+    users_col.update_one({"_id": uid}, {"$set": {"last_active": datetime.now()}, "$unset": {"step": "", "temp_sid": "", "temp_link": ""}})
+    
     if check_spam(uid) or check_maintenance(uid): return
     
     hour = datetime.now().hour
     greeting = "🌅 Good Morning" if hour < 12 else "☀️ Good Afternoon" if hour < 18 else "🌙 Good Evening"
     
-    user = users_col.find_one({"_id": uid})
-    args = message.text.split()
-    referrer = int(args[1]) if len(args) > 1 and args[1].isdigit() and int(args[1]) != uid else None
-
-    if not user:
-        users_col.insert_one({"_id": uid, "name": message.from_user.first_name, "balance": 0.0, "spent": 0.0, "points": 0, "currency": "BDT", "ref_by": referrer, "ref_paid": False, "ref_earnings": 0.0, "joined": datetime.now(), "favorites": [], "custom_discount": 0.0, "shadow_banned": False, "tier_override": None, "welcome_paid": False})
-        user = users_col.find_one({"_id": uid})
-        
     if not check_sub(uid):
         markup = types.InlineKeyboardMarkup()
         for ch in get_settings().get("channels", []): markup.add(types.InlineKeyboardButton(f"📢 Join Channel", url=f"https://t.me/{ch.replace('@','')}"))
