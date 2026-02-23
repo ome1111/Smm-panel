@@ -480,7 +480,7 @@ def universal_router(message):
                 return bot.send_message(uid, "✅ Points System Updated!")
             except: return bot.send_message(uid, "❌ Format error. Use comma (e.g. 100, 1000)")
 
-    # --- AUTO PAYMENT CLAIM LOGIC (Includes Admin Commission Percent) ---
+    # --- AUTO PAYMENT CLAIM LOGIC (Includes Admin Commission Percent & Fixed Rate) ---
     if step == "awaiting_trx":
         method_name = str(u.get("temp_dep_method", "Manual")).lower()
         is_local_auto = any(x in method_name for x in ['bkash', 'nagad', 'rocket', 'upay', 'bdt'])
@@ -498,6 +498,7 @@ def universal_router(message):
 
             s = get_settings()
             
+            # 🔥 FIX: Get fixed exchange rate from admin panel settings for Auto Deposit
             bdt_rate = 120.0
             for p in s.get('payments', []):
                 if any(x in p['name'].lower() for x in ['bkash', 'nagad', 'rocket', 'upay', 'bdt']):
