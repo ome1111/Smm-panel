@@ -622,7 +622,9 @@ def final_ord(call):
     s = get_settings()
     proof_ch = s.get('proof_channel', '')
     channel_post = f"```text\n╔════ 🟢 𝗡𝗘𝗪 𝗢𝗥𝗗𝗘𝗥 ════╗\n║ 👤 𝗜𝗗: {masked_id}\n║ 🚀 𝗦𝗲𝗿𝘃𝗶𝗰𝗲: {short_srv}\n║ 📦 𝗤𝘁𝘆: {int(draft['qty'])}\n║ 💵 𝗖𝗼𝘀𝘁: {cost_str}\n╚════════════════════╝\n```"
-    points_earned = int(draft['cost'] * s.get("points_per_usd", 100))
+    
+    # 🔥 FIX: Points calculation float issue fixed to prevent crashes
+    points_earned = int(float(draft['cost']) * float(s.get("points_per_usd", 100)))
 
     if u.get('shadow_banned'):
         fake_oid = random.randint(100000, 999999)
