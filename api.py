@@ -83,3 +83,4 @@ def get_live_exchange_rates():
     except Exception:
         pass
     return None # ফেইল করলে ডিফল্ট রেট ব্যবহার হবে
+
