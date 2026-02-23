@@ -14,21 +14,24 @@ from bson.objectid import ObjectId
 from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col
 from config import BOT_TOKEN, ADMIN_ID, ADMIN_PASSWORD
 
-# Import handlers to access RAM cached services
-import handlers
+# Import modular handlers
+import utils
+import admin
+import main_router
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'super_secret_nexus_titan_key_1010')
 
 # ==========================================
-# 1. WEBHOOK FAST ENGINE (10x Speed)
+# 1. WEBHOOK FAST ENGINE (10x Speed & Memory Leak Fixed)
 # ==========================================
 @app.route(f"/{BOT_TOKEN}", methods=['POST'])
 def webhook():
     if request.headers.get('content-type') == 'application/json':
         json_string = request.get_data().decode('utf-8')
         update = telebot.types.Update.de_json(json_string)
-        threading.Thread(target=bot.process_new_updates, args=([update],)).start()
+        # 🔥 FIX: Thread explosion prevented. Flask/Gunicorn will handle concurrency naturally.
+        bot.process_new_updates([update])
         return 'OK', 200
     return 'Forbidden', 403
 
@@ -95,10 +98,10 @@ def auto_fake_proof_cron():
             if random.random() < (ord_freq / 60):
                 qty = random.choice([500, 1000, 2000, 3000, 5000, 10000, 20000, 50000]) 
                 
-                cached_services = handlers.get_cached_services()
+                cached_services = utils.get_cached_services()
                 if cached_services:
                     srv = random.choice(cached_services)
-                    srv_name = handlers.clean_service_name(srv['name'])
+                    srv_name = utils.clean_service_name(srv['name'])
                     base_rate = float(srv.get('rate', 0.5))
                     cost_usd = (base_rate / 1000) * qty * 1.2
                 else:
@@ -122,7 +125,7 @@ def auto_fake_proof_cron():
                 
                 fake_oid = random.randint(350000, 999999)
                 
-                platform = handlers.identify_platform(srv.get('category', ''))
+                platform = utils.identify_platform(srv.get('category', ''))
                 if "Instagram" in platform: base_link = "https://instagram.com/p/"
                 elif "Facebook" in platform: base_link = "https://facebook.com/"
                 elif "YouTube" in platform: base_link = "https://youtube.com/watch?v="
@@ -162,7 +165,7 @@ def index():
     tickets = list(tickets_col.find().sort("_id", -1))
     vouchers = list(vouchers_col.find().sort("_id", -1))
     
-    services = handlers.get_cached_services()
+    services = utils.get_cached_services()
     unique_categories = sorted(list(set(s['category'] for s in services))) if services else []
     
     saved_orders_doc = config_col.find_one({"_id": "service_orders"}) or {}
@@ -312,7 +315,6 @@ def add_fake_user():
     users_col.insert_one({"_id": fake_id, "name": name, "balance": 0.0, "spent": spent, "currency": "USD", "ref_earnings": ref, "is_fake": True, "joined": datetime.now()})
     return redirect(url_for('index'))
 
-# 🔥 NEW: 1-Click Remove All Fake Users
 @app.route('/remove_fake_users')
 def remove_fake_users():
     if 'admin' not in session: return redirect(url_for('login'))
@@ -471,3 +473,4 @@ def refund_order(oid):
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+
