@@ -228,7 +228,7 @@ def main_menu():
     markup.add("🔍 Smart Search", "📦 Orders")
     markup.add("💰 Deposit", "🤝 Affiliate")
     markup.add("👤 Profile", "🎟️ Voucher")
-    markup.add("🏆 Leaderboard", "🎧 Support Ticket")
+    markup.add("🏆 Leaderboard", "💬 Live Chat") # 🔥 Added Live Chat Button here
     return markup
 
 def check_sub(chat_id):
