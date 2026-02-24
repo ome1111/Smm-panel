@@ -42,7 +42,7 @@ def manual_set_webhook():
     RENDER_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://smm-panel-g8ab.onrender.com')
     success = bot.set_webhook(url=f"{RENDER_URL.rstrip('/')}/{BOT_TOKEN}")
     if success:
-        return "<h1>✅ Webhook Connected Successfully!</h1><p>Your Bot is now LIVE and running fast with Redis Cache!</p>"
+        return "<h1>✅ Webhook Connected Successfully!</h1><p>Your Bot is now LIVE and running fast with Redis Cache & Async Workers!</p>"
     else:
         return "<h1>❌ Webhook Connection Failed!</h1><p>Check Render Logs.</p>"
 
@@ -321,6 +321,7 @@ def edit_user():
     elif bal_action == "sub":
         users_col.update_one({"_id": uid}, {"$set": update_query, "$inc": {"balance": -bal_val}})
         
+    utils.clear_cached_user(uid) # 🔥 User Cache Clear
     return redirect(url_for('index'))
 
 @app.route('/add_fake_user', methods=['POST'])
@@ -371,25 +372,30 @@ def delete_user(uid):
     if 'admin' not in session: return redirect(url_for('login'))
     users_col.delete_one({"_id": uid})
     redis_client.delete(f"session_{uid}")
+    utils.clear_cached_user(uid) # 🔥 User Cache Clear
     return redirect(url_for('index'))
 
 @app.route('/toggle_shadow_ban/<int:uid>')
 def toggle_shadow_ban(uid):
     if 'admin' not in session: return redirect(url_for('login'))
     u = users_col.find_one({"_id": uid})
-    if u: users_col.update_one({"_id": uid}, {"$set": {"shadow_banned": not u.get('shadow_banned', False)}})
+    if u: 
+        users_col.update_one({"_id": uid}, {"$set": {"shadow_banned": not u.get('shadow_banned', False)}})
+        utils.clear_cached_user(uid) # 🔥 User Cache Clear
     return redirect(url_for('index'))
 
 @app.route('/ban_user/<int:uid>')
 def ban_user(uid):
     if 'admin' not in session: return redirect(url_for('login'))
     users_col.update_one({"_id": uid}, {"$set": {"banned": True}})
+    utils.clear_cached_user(uid)
     return redirect(url_for('index'))
 
 @app.route('/unban_user/<int:uid>')
 def unban_user(uid):
     if 'admin' not in session: return redirect(url_for('login'))
     users_col.update_one({"_id": uid}, {"$set": {"banned": False}})
+    utils.clear_cached_user(uid)
     return redirect(url_for('index'))
 
 @app.route('/distribute_rewards')
@@ -403,6 +409,7 @@ def distribute_rewards():
     for i, u in enumerate(top_spenders):
         if not u.get('is_fake'):
             users_col.update_one({"_id": u["_id"]}, {"$inc": {"balance": rewards[i]}})
+            utils.clear_cached_user(u["_id"]) # 🔥 Clear Cache
             try: bot.send_message(u["_id"], f"🎉 **CONGRATULATIONS!**\nYou ranked #{i+1} Top Spender! Reward `${rewards[i]}` added.", parse_mode="Markdown")
             except: pass
         
@@ -410,6 +417,7 @@ def distribute_rewards():
     for i, u in enumerate(top_refs):
         if not u.get('is_fake'):
             users_col.update_one({"_id": u["_id"]}, {"$inc": {"balance": rewards[i]}})
+            utils.clear_cached_user(u["_id"]) # 🔥 Clear Cache
             try: bot.send_message(u["_id"], f"🎉 **CONGRATULATIONS!**\nYou ranked #{i+1} Top Affiliate! Reward `${rewards[i]}` added.", parse_mode="Markdown")
             except: pass
         
@@ -424,12 +432,14 @@ def reset_monthly():
 @app.route('/approve_dep/<int:uid>/<amt>/<tid>')
 def approve_dep(uid, amt, tid):
     users_col.update_one({"_id": uid}, {"$inc": {"balance": float(amt)}})
+    utils.clear_cached_user(uid) # 🔥 User Cache Clear
     u = users_col.find_one({"_id": uid})
     if u and u.get("ref_by"):
         s = config_col.find_one({"_id": "settings"}) or {}
         comm = float(amt) * (s.get("dep_commission", 5.0) / 100)
         if comm > 0:
             users_col.update_one({"_id": u["ref_by"]}, {"$inc": {"balance": comm, "ref_earnings": comm}})
+            utils.clear_cached_user(u["ref_by"]) # 🔥 Ref User Cache Clear
             try: bot.send_message(u["ref_by"], f"💸 **COMMISSION EARNED!**\nYour referral made a deposit. You earned `${comm:.3f}`!", parse_mode="Markdown")
             except: pass
     try: bot.send_message(uid, f"✅ **DEPOSIT APPROVED!**\nAmount: `${float(amt):.2f}` added to your wallet.\nTrxID: `{tid}`", parse_mode="Markdown")
@@ -513,6 +523,7 @@ def refund_order(oid):
     if o and o.get('status') not in ['refunded', 'canceled']:
         users_col.update_one({"_id": o['uid']}, {"$inc": {"balance": o['cost'], "spent": -o['cost']}})
         orders_col.update_one({"oid": oid}, {"$set": {"status": "refunded"}})
+        utils.clear_cached_user(o['uid']) # 🔥 User Cache Clear
         try: bot.send_message(o['uid'], f"💰 **ORDER REFUNDED!**\nOrder `{oid}` was refunded. `${o['cost']}` returned to your wallet.", parse_mode="Markdown")
         except: pass
     return redirect(url_for('index'))
