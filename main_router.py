@@ -5,9 +5,10 @@ import json
 import threading
 from datetime import datetime, timedelta
 from telebot import types
+from bson.objectid import ObjectId
 
-# 🔥 redis_client ইম্পোর্ট করা হলো
-from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, redis_client
+# 🔥 redis_client ও providers_col ইম্পোর্ট করা হলো
+from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, providers_col, redis_client
 from config import *
 import api
 from utils import *
@@ -34,7 +35,7 @@ def clear_user_session(uid):
 # 3. FORCE SUB, REFERRAL & START LOGIC
 # ==========================================
 def process_new_user_bonuses(uid):
-    user = get_cached_user(uid) # 🔥 Redis Cache Use
+    user = get_cached_user(uid) 
     if not user: return
     s = get_settings()
     
@@ -42,7 +43,7 @@ def process_new_user_bonuses(uid):
         w_bonus = float(s.get('welcome_bonus', 0.0))
         if w_bonus > 0:
             users_col.update_one({"_id": uid}, {"$inc": {"balance": w_bonus}, "$set": {"welcome_paid": True}})
-            clear_cached_user(uid) # 🔥 Cache Clear
+            clear_cached_user(uid) 
             try: bot.send_message(uid, f"🎁 **WELCOME BONUS!**\nCongratulations! You received `${w_bonus}` just for verifying your account.", parse_mode="Markdown")
             except: pass
         else:
@@ -113,7 +114,7 @@ def sub_callback(call):
     else: bot.send_message(uid, "❌ You haven't joined all channels.")
 
 # ==========================================
-# 4. ORDERING ENGINE
+# 4. ORDERING ENGINE (Multi-Provider Updated)
 # ==========================================
 @bot.message_handler(func=lambda m: m.text == "🚀 New Order")
 def new_order_start(message):
@@ -148,7 +149,8 @@ def show_best_choices(call):
     for tsid in best_sids[start_idx:end_idx]:
         srv = next((x for x in services if str(x['service']) == str(tsid).strip()), None)
         if srv:
-            rate = calculate_price(srv['rate'], user.get('spent', 0), user.get('custom_discount', 0))
+            # 🔥 Pass provider margin dynamically
+            rate = calculate_price(srv['rate'], user.get('spent', 0), user.get('custom_discount', 0), srv.get('provider_margin', 0.0))
             markup.add(types.InlineKeyboardButton(f"ID:{srv['service']} | {fmt_curr(rate, curr)} | {clean_service_name(srv['name'])}", callback_data=f"INFO|{tsid}"))
             
     nav = []
@@ -196,7 +198,8 @@ def list_servs(call):
     curr = user.get("currency", "BDT")
     markup = types.InlineKeyboardMarkup(row_width=1)
     for s in filtered[start_idx:end_idx]:
-        rate = calculate_price(s['rate'], user.get('spent',0), user.get('custom_discount', 0))
+        # 🔥 Dynamic provider margin calculation
+        rate = calculate_price(s['rate'], user.get('spent',0), user.get('custom_discount', 0), s.get('provider_margin', 0.0))
         markup.add(types.InlineKeyboardButton(f"ID:{s['service']} | {fmt_curr(rate, curr)} | {clean_service_name(s['name'])}", callback_data=f"INFO|{s['service']}"))
     
     nav = []
@@ -216,7 +219,9 @@ def info_card(call):
     
     user = get_cached_user(call.message.chat.id)
     curr = user.get("currency", "BDT")
-    rate = calculate_price(s['rate'], user.get('spent',0), user.get('custom_discount', 0))
+    
+    # 🔥 Pass provider margin dynamically
+    rate = calculate_price(s['rate'], user.get('spent',0), user.get('custom_discount', 0), s.get('provider_margin', 0.0))
     avg_time = s.get('time', 'Instant - 24h') if s.get('time') != "" else 'Instant - 24h'
 
     txt = (f"ℹ️ **SERVICE DETAILS**\n━━━━━━━━━━━━━━━━━━━━\n🏷 **Name:** {clean_service_name(s['name'])}\n🆔 **ID:** `{sid}`\n"
@@ -224,7 +229,6 @@ def info_card(call):
            f"⏱ **Live Avg Time:** `{avg_time}`⚡️\n━━━━━━━━━━━━━━━━━━━━")
     
     markup = types.InlineKeyboardMarkup(row_width=2)
-    # 🔥 Drip-feed & Subscriptions Options
     markup.add(types.InlineKeyboardButton("🚀 Normal Order", callback_data=f"TYPE|{sid}|normal"))
     if str(s.get('dripfeed', 'False')).lower() == 'true':
         markup.add(types.InlineKeyboardButton("💧 Drip-Feed (Organic)", callback_data=f"TYPE|{sid}|drip"))
@@ -240,13 +244,11 @@ def info_card(call):
     else: 
         bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
-# 🔥 Order Wizard Routing
 @bot.callback_query_handler(func=lambda c: c.data.startswith("TYPE|"))
 def order_type_router(call):
     _, sid, o_type = call.data.split("|")
     session = get_user_session(call.message.chat.id)
     
-    # If link is already available via Magic Link
     magic_link = session.get("temp_link", "")
     
     if o_type == "normal":
@@ -265,7 +267,6 @@ def order_type_router(call):
         update_user_session(call.message.chat.id, {"step": "awaiting_sub_user", "temp_sid": sid, "order_type": "sub"})
         bot.send_message(call.message.chat.id, "🔄 **AUTO-SUBSCRIPTION WIZARD**\n👤 **Enter Target Username:**\n_(e.g., @cristiano or cristiano)_", parse_mode="Markdown")
 
-# Old ORD/REORDER backward compatibility
 @bot.callback_query_handler(func=lambda c: c.data.startswith("ORD|"))
 def start_ord(call):
     sid = call.data.split("|")[1]
@@ -308,7 +309,6 @@ def fetch_orders_page(chat_id, page=0, filter_type="all"):
         elif st in ["in progress", "processing"]: st_emoji = "🔄"
         elif st == "partial": st_emoji = "⚠️"
         
-        # 🔥 LIVE PROGRESS BAR
         remains = o.get('remains', o.get('qty', 0))
         qty = o.get('qty', 0)
         p_bar, delivered = generate_progress_bar(remains, qty)
@@ -340,9 +340,25 @@ def fetch_orders_page(chat_id, page=0, filter_type="all"):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("INSTANT_REFILL|"))
 def process_instant_refill(call):
     oid = call.data.split("|")[1]
-    res = api.send_refill(oid)
-    if res and 'refill' in res: bot.answer_callback_query(call.id, f"✅ Auto-Refill Triggered! Task ID: {res['refill']}", show_alert=True)
-    else: bot.answer_callback_query(call.id, "❌ Refill not available or requested too early.", show_alert=True)
+    
+    # 🔥 Multi-Provider Auto Refill logic
+    try:
+        if str(oid).isdigit(): oid_val = int(oid)
+        else: oid_val = oid
+        o = orders_col.find_one({"oid": oid_val})
+        
+        api_url, api_key = API_URL, API_KEY
+        if o and o.get("provider_id"):
+            provider = providers_col.find_one({"_id": ObjectId(o.get("provider_id"))})
+            if provider:
+                api_url = provider.get("api_url")
+                api_key = provider.get("api_key")
+                
+        res = api.send_refill(api_url, api_key, oid)
+        if res and 'refill' in res: bot.answer_callback_query(call.id, f"✅ Auto-Refill Triggered! Task ID: {res['refill']}", show_alert=True)
+        else: bot.answer_callback_query(call.id, "❌ Refill not available or requested too early.", show_alert=True)
+    except Exception:
+        bot.answer_callback_query(call.id, "❌ Error connecting to provider API.", show_alert=True)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("MYORD|"))
 def my_orders_pagination(call):
@@ -545,7 +561,6 @@ def universal_router(message):
     session_data = get_user_session(uid)
     step = session_data.get("step", "")
 
-    # 🔥 SMART AUTO-ROUTING (MAGIC LINK)
     if step == "" and re.match(r'^(https?://|t\.me/|@|www\.)[^\s]+$', text, re.IGNORECASE):
         platform = detect_platform_from_link(text)
         if platform:
@@ -749,14 +764,15 @@ def universal_router(message):
                 update_user_session(uid, {"step": "awaiting_drip_runs", "temp_qty": qty})
                 return bot.send_message(uid, "🔢 **Drip-Feed Runs:**\nHow many times should this quantity be sent? (e.g. 5)", parse_mode="Markdown")
             
-            rate = calculate_price(s['rate'], u.get('spent', 0), u.get('custom_discount', 0))
+            # 🔥 Calculate with Provider Margin
+            rate = calculate_price(s['rate'], u.get('spent', 0), u.get('custom_discount', 0), s.get('provider_margin', 0.0))
             cost = (rate / 1000) * qty
             curr = u.get("currency", "BDT")
             
             if u.get('balance', 0) < cost: 
                 return bot.send_message(uid, f"❌ **INSUFFICIENT FUNDS!**\n\nOrder Cost: `{fmt_curr(cost, curr)}`\nYour Balance: `{fmt_curr(u.get('balance',0), curr)}`\n\nPlease go to **💰 Deposit** to add funds.", parse_mode="Markdown")
             
-            update_user_session(uid, {"draft": {"sid": sid, "link": session_data.get("temp_link"), "qty": qty, "cost": cost, "type": "normal"}, "step": ""})
+            update_user_session(uid, {"draft": {"sid": sid, "provider_id": s.get('provider_id'), "link": session_data.get("temp_link"), "qty": qty, "cost": cost, "type": "normal"}, "step": ""})
             markup = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("✅ CONFIRM", callback_data="PLACE_ORD"), types.InlineKeyboardButton("❌ CANCEL", callback_data="CANCEL_ORD"))
             bot.send_message(uid, f"⚠️ **ORDER PREVIEW**\n━━━━━━━━━━━━━━━━━━━━\n🆔 Service ID: `{sid}`\n🔗 Link: {session_data.get('temp_link')}\n🔢 Quantity: {qty}\n💰 Cost: `{fmt_curr(cost, curr)}`\n━━━━━━━━━━━━━━━━━━━━\nConfirm your order?", reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
         except ValueError: bot.send_message(uid, "⚠️ **ERROR:** Please enter valid numbers only.")
@@ -777,7 +793,7 @@ def universal_router(message):
             
             services = get_cached_services()
             s = next((x for x in services if str(x['service']) == str(sid)), None)
-            rate = calculate_price(s['rate'], u.get('spent', 0), u.get('custom_discount', 0))
+            rate = calculate_price(s['rate'], u.get('spent', 0), u.get('custom_discount', 0), s.get('provider_margin', 0.0))
             
             total_qty = qty * runs
             cost = (rate / 1000) * total_qty
@@ -786,12 +802,11 @@ def universal_router(message):
             if u.get('balance', 0) < cost: 
                 return bot.send_message(uid, f"❌ **INSUFFICIENT FUNDS!**\nNeed: `{fmt_curr(cost, curr)}`", parse_mode="Markdown")
             
-            update_user_session(uid, {"draft": {"sid": sid, "link": session_data.get("temp_link"), "qty": qty, "runs": runs, "interval": interval, "total_qty": total_qty, "cost": cost, "type": "drip"}, "step": ""})
+            update_user_session(uid, {"draft": {"sid": sid, "provider_id": s.get('provider_id'), "link": session_data.get("temp_link"), "qty": qty, "runs": runs, "interval": interval, "total_qty": total_qty, "cost": cost, "type": "drip"}, "step": ""})
             markup = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("✅ CONFIRM DRIP", callback_data="PLACE_ORD"), types.InlineKeyboardButton("❌ CANCEL", callback_data="CANCEL_ORD"))
             bot.send_message(uid, f"💧 **DRIP-FEED PREVIEW**\n━━━━━━━━━━━━━━━━━━━━\n🆔 Service: `{sid}`\n🔗 Link: {session_data.get('temp_link')}\n📦 Total Qty: {total_qty} ({qty} x {runs} runs)\n⏱️ Interval: {interval} mins\n💰 Total Cost: `{fmt_curr(cost, curr)}`\n━━━━━━━━━━━━━━━━━━━━\nConfirm?", reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
         except ValueError: bot.send_message(uid, "⚠️ Enter numbers only.")
 
-    # --- SUBSCRIPTION FLOW ---
     elif step == "awaiting_sub_user":
         update_user_session(uid, {"step": "awaiting_sub_posts", "temp_user": text})
         bot.send_message(uid, "📸 **How many future posts?** (e.g. 10):", parse_mode="Markdown")
@@ -814,7 +829,7 @@ def universal_router(message):
             
             services = get_cached_services()
             s = next((x for x in services if str(x['service']) == str(sid)), None)
-            rate = calculate_price(s['rate'], u.get('spent', 0), u.get('custom_discount', 0))
+            rate = calculate_price(s['rate'], u.get('spent', 0), u.get('custom_discount', 0), s.get('provider_margin', 0.0))
             
             total_qty = posts * qty
             cost = (rate / 1000) * total_qty
@@ -823,12 +838,11 @@ def universal_router(message):
             if u.get('balance', 0) < cost: 
                 return bot.send_message(uid, f"❌ **INSUFFICIENT FUNDS!**\nNeed: `{fmt_curr(cost, curr)}`", parse_mode="Markdown")
             
-            update_user_session(uid, {"draft": {"sid": sid, "username": username, "posts": posts, "qty": qty, "delay": delay, "cost": cost, "type": "sub"}, "step": ""})
+            update_user_session(uid, {"draft": {"sid": sid, "provider_id": s.get('provider_id'), "username": username, "posts": posts, "qty": qty, "delay": delay, "cost": cost, "type": "sub"}, "step": ""})
             markup = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("✅ START SUBSCRIPTION", callback_data="PLACE_ORD"), types.InlineKeyboardButton("❌ CANCEL", callback_data="CANCEL_ORD"))
             bot.send_message(uid, f"🔄 **SUBSCRIPTION PREVIEW**\n━━━━━━━━━━━━━━━━━━━━\n🆔 Service: `{sid}`\n👤 Target: {username}\n📸 Posts: {posts}\n📦 Qty/Post: {qty}\n⏱️ Delay: {delay} mins\n💰 Estimated Total: `{fmt_curr(cost, curr)}`\n━━━━━━━━━━━━━━━━━━━━\nConfirm?", reply_markup=markup, parse_mode="Markdown")
         except ValueError: bot.send_message(uid, "⚠️ Enter numbers only.")
 
-    # 🔥 BULK ORDER FLOW
     elif step == "awaiting_bulk_order":
         lines = text.strip().split('\n')
         bulk_draft = []
@@ -845,10 +859,10 @@ def universal_router(message):
             s = next((x for x in services if str(x['service']) == str(sid)), None)
             if not s: return bot.send_message(uid, f"❌ Error on line {idx+1}: Service ID {sid} not found.")
             
-            rate = calculate_price(s['rate'], u.get('spent', 0), u.get('custom_discount', 0))
+            rate = calculate_price(s['rate'], u.get('spent', 0), u.get('custom_discount', 0), s.get('provider_margin', 0.0))
             cost = (rate / 1000) * qty
             total_cost += cost
-            bulk_draft.append({"sid": sid, "link": link, "qty": qty, "cost": cost})
+            bulk_draft.append({"sid": sid, "provider_id": s.get('provider_id'), "link": link, "qty": qty, "cost": cost})
             
         curr = u.get("currency", "BDT")
         if u.get('balance', 0) < total_cost: 
@@ -925,13 +939,20 @@ def process_bulk_background(uid, u, drafts, message_id):
     
     for d in drafts:
         time.sleep(0.5)
-        res = api.place_order(d['sid'], link=d['link'], quantity=d['qty'])
+        api_url, api_key = API_URL, API_KEY
+        if d.get("provider_id"):
+            provider = providers_col.find_one({"_id": ObjectId(d.get("provider_id"))})
+            if provider:
+                api_url = provider.get("api_url")
+                api_key = provider.get("api_key")
+                
+        res = api.place_order(api_url, api_key, d['sid'], link=d['link'], quantity=d['qty'])
         if res and 'order' in res:
             success_count += 1
             total_cost_deducted += d['cost']
             pts = int(float(d['cost']) * float(s.get("points_per_usd", 100)))
             points_earned += pts
-            orders_col.insert_one({"oid": res['order'], "uid": uid, "sid": d['sid'], "link": d['link'], "qty": d['qty'], "cost": d['cost'], "status": "pending", "date": datetime.now()})
+            orders_col.insert_one({"oid": res['order'], "uid": uid, "sid": d['sid'], "provider_id": d.get('provider_id'), "link": d['link'], "qty": d['qty'], "cost": d['cost'], "status": "pending", "date": datetime.now()})
             
     users_col.update_one({"_id": uid}, {"$inc": {"balance": -total_cost_deducted, "spent": total_cost_deducted, "points": points_earned}})
     clear_cached_user(uid)
@@ -944,21 +965,19 @@ def process_order_background(uid, u, draft, message_id):
     points_earned = int(float(draft['cost']) * float(s.get("points_per_usd", 100)))
     o_type = draft.get("type", "normal")
     
-    # Check if user is shadow banned
     if u.get('shadow_banned'):
         fake_oid = random.randint(100000, 999999)
         users_col.update_one({"_id": uid}, {"$inc": {"balance": -draft['cost'], "spent": draft['cost'], "points": points_earned}})
         clear_cached_user(uid)
         clear_user_session(uid)
         
-        insert_data = {"oid": fake_oid, "uid": uid, "sid": draft['sid'], "cost": draft['cost'], "status": "pending", "date": datetime.now(), "is_shadow": True}
+        insert_data = {"oid": fake_oid, "uid": uid, "sid": draft['sid'], "provider_id": draft.get('provider_id'), "cost": draft['cost'], "status": "pending", "date": datetime.now(), "is_shadow": True}
         if o_type == "sub": insert_data.update({"is_sub": True, "username": draft['username'], "posts": draft['posts'], "qty": draft['qty']})
         else: insert_data.update({"link": draft.get('link'), "qty": draft.get('total_qty', draft.get('qty'))})
         
         orders_col.insert_one(insert_data)
         bot.edit_message_text(f"✅ **Order Placed Successfully!**\n🆔 Order ID: `{fake_oid}`\n🎁 Points Earned: `+{points_earned}`", uid, message_id, parse_mode="Markdown")
         
-        # Fake order proof if needed
         proof_ch = s.get('proof_channel', '')
         if proof_ch:
             masked_id = f"***{str(uid)[-4:]}"
@@ -967,20 +986,28 @@ def process_order_background(uid, u, draft, message_id):
             except: pass
         return
 
+    # 🔥 Fetch Multi-Provider Credentials
+    api_url, api_key = API_URL, API_KEY
+    if draft.get("provider_id"):
+        provider = providers_col.find_one({"_id": ObjectId(draft.get("provider_id"))})
+        if provider:
+            api_url = provider.get("api_url")
+            api_key = provider.get("api_key")
+
     # Call API dynamically based on order type
     if o_type == "drip":
-        res = api.place_order(draft['sid'], link=draft['link'], quantity=draft['qty'], runs=draft['runs'], interval=draft['interval'])
+        res = api.place_order(api_url, api_key, draft['sid'], link=draft['link'], quantity=draft['qty'], runs=draft['runs'], interval=draft['interval'])
     elif o_type == "sub":
-        res = api.place_order(draft['sid'], username=draft['username'], min=draft['qty'], max=draft['qty'], posts=draft['posts'], delay=draft['delay'])
+        res = api.place_order(api_url, api_key, draft['sid'], username=draft['username'], min=draft['qty'], max=draft['qty'], posts=draft['posts'], delay=draft['delay'])
     else:
-        res = api.place_order(draft['sid'], link=draft['link'], quantity=draft['qty'])
+        res = api.place_order(api_url, api_key, draft['sid'], link=draft['link'], quantity=draft['qty'])
     
     if res and 'order' in res:
         users_col.update_one({"_id": uid}, {"$inc": {"balance": -draft['cost'], "spent": draft['cost'], "points": points_earned}})
         clear_cached_user(uid)
         clear_user_session(uid)
         
-        insert_data = {"oid": res['order'], "uid": uid, "sid": draft['sid'], "cost": draft['cost'], "status": "pending", "date": datetime.now()}
+        insert_data = {"oid": res['order'], "uid": uid, "sid": draft['sid'], "provider_id": draft.get('provider_id'), "cost": draft['cost'], "status": "pending", "date": datetime.now()}
         if o_type == "sub": insert_data.update({"is_sub": True, "username": draft['username'], "posts": draft['posts'], "qty": draft['qty']})
         else: insert_data.update({"link": draft['link'], "qty": draft.get('total_qty', draft['qty'])})
         
@@ -1002,4 +1029,3 @@ def process_order_background(uid, u, draft, message_id):
 def cancel_ord(call):
     clear_user_session(call.message.chat.id)
     bot.edit_message_text("🚫 **Order Cancelled.**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
-
