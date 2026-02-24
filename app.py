@@ -14,7 +14,7 @@ import telebot
 from bson.objectid import ObjectId
 import re
 
-# 🔥 Import providers_col from loader
+# Import from loader and config (🔥 Added providers_col)
 from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, providers_col, redis_client
 from config import BOT_TOKEN, ADMIN_ID, ADMIN_PASSWORD
 
@@ -178,8 +178,10 @@ def index():
     tickets = list(tickets_col.find().sort("_id", -1))
     vouchers = list(vouchers_col.find().sort("_id", -1))
     
-    # 🔥 NEW: Providers list fetch for the frontend
+    # 🔥 FETCH PROVIDERS & CUSTOM MENUS FOR THE FRONTEND UI
     providers = list(providers_col.find().sort("_id", -1))
+    custom_menus_doc = config_col.find_one({"_id": "custom_menus"})
+    custom_menus = custom_menus_doc.get("menus", []) if custom_menus_doc else []
     
     services = utils.get_cached_services()
     unique_categories = sorted(list(set(s['category'] for s in services))) if services else []
@@ -190,7 +192,8 @@ def index():
     services_json = json.dumps(services)
     saved_service_orders_json = json.dumps(saved_service_orders)
 
-    return render_template('admin.html', **stats, users=users, orders=orders, tickets=tickets, vouchers=vouchers, providers=providers,
+    return render_template('admin.html', **stats, users=users, orders=orders, tickets=tickets, vouchers=vouchers, 
+                           providers=providers, custom_menus=custom_menus,
                            unique_categories=unique_categories, services_json=services_json, saved_service_orders=saved_service_orders_json)
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -207,9 +210,61 @@ def logout():
     session.pop('admin', None)
     return redirect(url_for('login'))
 
+
 # ==========================================
-# 🔥 NEW: PROVIDERS MANAGEMENT ROUTES
+# 🔥 MULTI-PROVIDER & DYNAMIC MENU ROUTES
 # ==========================================
+@app.route('/create_category', methods=['POST'])
+def create_category():
+    if 'admin' not in session: return redirect(url_for('login'))
+    cat_name = request.form.get('cat_name')
+    platform = request.form.get('platform')
+    cat_id = "cat_" + str(int(time.time()))
+    
+    config_col.update_one(
+        {"_id": "custom_menus"}, 
+        {"$push": {"menus": {"id": cat_id, "name": cat_name, "platform": platform, "services": []}}}, 
+        upsert=True
+    )
+    return redirect(url_for('index'))
+
+@app.route('/delete_category/<cat_id>')
+def delete_category(cat_id):
+    if 'admin' not in session: return redirect(url_for('login'))
+    config_col.update_one({"_id": "custom_menus"}, {"$pull": {"menus": {"id": cat_id}}})
+    return redirect(url_for('index'))
+
+@app.route('/add_service_map', methods=['POST'])
+def add_service_map():
+    if 'admin' not in session: return redirect(url_for('login'))
+    cat_id = request.form.get('cat_id')
+    provider_id = request.form.get('provider_id')
+    service_id = request.form.get('service_id')
+    custom_name = request.form.get('custom_name')
+    custom_rate = request.form.get('custom_rate')
+    
+    srv = {
+        "provider_id": provider_id,
+        "service_id": service_id,
+        "custom_name": custom_name,
+        "custom_rate": custom_rate if custom_rate else None
+    }
+    
+    config_col.update_one(
+        {"_id": "custom_menus", "menus.id": cat_id},
+        {"$push": {"menus.$.services": srv}}
+    )
+    return redirect(url_for('index'))
+
+@app.route('/delete_service_map/<cat_id>/<provider_id>/<service_id>')
+def delete_service_map(cat_id, provider_id, service_id):
+    if 'admin' not in session: return redirect(url_for('login'))
+    config_col.update_one(
+        {"_id": "custom_menus", "menus.id": cat_id},
+        {"$pull": {"menus.$.services": {"provider_id": provider_id, "service_id": service_id}}}
+    )
+    return redirect(url_for('index'))
+
 @app.route('/add_provider', methods=['POST'])
 def add_provider():
     if 'admin' not in session: return redirect(url_for('login'))
@@ -243,8 +298,9 @@ def toggle_provider(pid):
         providers_col.update_one({"_id": ObjectId(pid)}, {"$set": {"status": new_status}})
     return redirect(url_for('index'))
 
+
 # ==========================================
-# EXPORT & OTHER EXISTING ROUTES
+# EXPORT & OTHER ORIGINAL ROUTES
 # ==========================================
 @app.route('/export_csv')
 def export_csv():
@@ -582,6 +638,9 @@ def refund_order(oid):
     return redirect(url_for('index'))
 
 
+# ==========================================
+# 8. LOCAL AUTO PAYMENT WEBHOOK API (For MacroDroid)
+# ==========================================
 @app.route('/api/add_transaction', methods=['POST', 'GET'])
 def add_transaction():
     secret = request.args.get('secret') or (request.json.get('secret') if request.is_json else None)
@@ -595,6 +654,7 @@ def add_transaction():
         return jsonify({"status": "error", "msg": "No SMS text provided"}), 400
 
     try:
+        # 🔥 Advanced Regex: 100% bKash & Nagad (Cash In & Receive) সাপোর্ট করবে
         trx_match = re.search(r'(?i)(?:TrxID|TxnID)\s*[:]?\s*([A-Z0-9]{8,12})', sms_text)
         amt_match = re.search(r'(?i)(?:Tk\s+|Amount:\s*Tk\s+)([\d,]+\.\d{2})', sms_text)
         
@@ -615,8 +675,12 @@ def add_transaction():
         return jsonify({"status": "error", "msg": str(e)})
 
 
+# ==========================================
+# 🔥 9. GLOBAL CRYPTO PAYMENT WEBHOOKS
+# ==========================================
 @app.route('/cryptomus_webhook', methods=['POST'])
 def cryptomus_webhook():
+    """Cryptomus Auto-Payment IPN Listener"""
     try:
         data = request.json
         if not data: return "No data", 400
@@ -629,16 +693,19 @@ def cryptomus_webhook():
         dict_data = data.copy()
         dict_data.pop('sign', None)
         
+        # Cryptomus Hash Validation
         encoded_data = base64.b64encode(json.dumps(dict_data, separators=(',', ':')).encode('utf-8')).decode('utf-8')
         expected_sign = hashlib.md5((encoded_data + api_key).encode('utf-8')).hexdigest()
         
         if sign != expected_sign: return "Invalid signature", 400
         
         if data.get('status') in ['paid', 'paid_over']:
+            # Assuming format: order_id = "UID_RANDOMID" (e.g. "123456789_X83M")
             uid = int(str(data.get('order_id', '0')).split('_')[0]) 
             amt = float(data.get('amount'))
             trx = data.get('uuid')
             
+            # Check if processed
             if config_col.find_one({"_id": "transactions", "valid_list.trx": trx}):
                 return "Already processed", 200
                 
@@ -655,6 +722,7 @@ def cryptomus_webhook():
 
 @app.route('/coinpayments_ipn', methods=['POST'])
 def coinpayments_ipn():
+    """CoinPayments Auto-Payment IPN Listener"""
     try:
         s = config_col.find_one({"_id": "settings"}) or {}
         ipn_secret = s.get('coinpayments_priv', '')
@@ -669,9 +737,9 @@ def coinpayments_ipn():
         if hmac_header != calculated_hmac: return "Invalid HMAC", 400
         
         status = int(request.form.get('status', -1))
-        if status >= 100 or status == 2:
-            uid = int(request.form.get('custom', 0)) 
-            amt = float(request.form.get('amount1', 0)) 
+        if status >= 100 or status == 2: # 100 or 2 means complete/confirmed
+            uid = int(request.form.get('custom', 0)) # User ID needs to be sent in the 'custom' field
+            amt = float(request.form.get('amount1', 0)) # Amount in USD/Base Currency
             trx = request.form.get('txn_id')
             
             if config_col.find_one({"_id": "transactions", "valid_list.trx": trx}):
@@ -687,7 +755,6 @@ def coinpayments_ipn():
         return "OK", 200
     except Exception as e:
         return str(e), 500
-
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
