@@ -539,7 +539,12 @@
                     
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div class="bg-slate-900/50 p-4 rounded border border-slate-700/50 border-l-2 border-l-cyan-400">
-                            <h4 class="text-sm font-bold text-cyan-400 mb-3">Cryptomus Settings</h4>
+                            <div class="flex justify-between items-center mb-3 border-b border-slate-700/50 pb-2">
+                                <h4 class="text-sm font-bold text-cyan-400">Cryptomus Settings</h4>
+                                <label class="flex items-center gap-2 text-xs text-slate-300 font-bold cursor-pointer">
+                                    <input type="checkbox" name="cryptomus_active" {% if s.get('cryptomus_active') %}checked{% endif %} class="w-4 h-4 accent-cyan-500"> Enable
+                                </label>
+                            </div>
                             <div class="space-y-3">
                                 <div>
                                     <label class="block text-[10px] text-slate-400 font-bold mb-1 uppercase">Merchant ID</label>
@@ -553,7 +558,12 @@
                         </div>
 
                         <div class="bg-slate-900/50 p-4 rounded border border-slate-700/50 border-l-2 border-l-yellow-400">
-                            <h4 class="text-sm font-bold text-yellow-400 mb-3">CoinPayments Settings</h4>
+                            <div class="flex justify-between items-center mb-3 border-b border-slate-700/50 pb-2">
+                                <h4 class="text-sm font-bold text-yellow-400">CoinPayments Settings</h4>
+                                <label class="flex items-center gap-2 text-xs text-slate-300 font-bold cursor-pointer">
+                                    <input type="checkbox" name="coinpayments_active" {% if s.get('coinpayments_active') %}checked{% endif %} class="w-4 h-4 accent-yellow-500"> Enable
+                                </label>
+                            </div>
                             <div class="space-y-3">
                                 <div>
                                     <label class="block text-[10px] text-slate-400 font-bold mb-1 uppercase">Public Key</label>
