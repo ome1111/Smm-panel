@@ -10,7 +10,6 @@ from telebot import types
 from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, redis_client
 from config import *
 import api
-
 from utils import *
 
 # ==========================================
@@ -127,23 +126,37 @@ def new_order_start(message):
     platforms = sorted(list(set(identify_platform(s['category']) for s in services if str(s['service']) not in hidden)))
     markup = types.InlineKeyboardMarkup(row_width=2)
     best_sids = get_settings().get("best_choice_sids", [])
-    if best_sids: markup.add(types.InlineKeyboardButton("🌟 ADMIN BEST CHOICE 🌟", callback_data="SHOW_BEST_CHOICE"))
+    # 🔥 Best choice Button points to page 0
+    if best_sids: markup.add(types.InlineKeyboardButton("🌟 ADMIN BEST CHOICE 🌟", callback_data="SHOW_BEST_CHOICE|0"))
     for p in platforms: markup.add(types.InlineKeyboardButton(p, callback_data=f"PLAT|{p}|0"))
     bot.send_message(uid, "📂 **Select a Platform:**", reply_markup=markup, parse_mode="Markdown")
 
-@bot.callback_query_handler(func=lambda c: c.data == "SHOW_BEST_CHOICE")
+# 🔥 FIXED: Added Pagination for Best Choices
+@bot.callback_query_handler(func=lambda c: c.data.startswith("SHOW_BEST_CHOICE"))
 def show_best_choices(call):
     bot.answer_callback_query(call.id)
+    parts = call.data.split("|")
+    page = int(parts[1]) if len(parts) > 1 else 0
+    
     services = get_cached_services()
     best_sids = get_settings().get("best_choice_sids", [])
     user = get_cached_user(call.message.chat.id)
     curr = user.get("currency", "BDT")
+    
     markup = types.InlineKeyboardMarkup(row_width=1)
-    for tsid in best_sids:
+    start_idx, end_idx = page * 10, page * 10 + 10
+    
+    for tsid in best_sids[start_idx:end_idx]:
         srv = next((x for x in services if str(x['service']) == str(tsid).strip()), None)
         if srv:
             rate = calculate_price(srv['rate'], user.get('spent', 0), user.get('custom_discount', 0))
             markup.add(types.InlineKeyboardButton(f"ID:{srv['service']} | {fmt_curr(rate, curr)} | {clean_service_name(srv['name'])}", callback_data=f"INFO|{tsid}"))
+            
+    nav = []
+    if page > 0: nav.append(types.InlineKeyboardButton("⬅️ Prev", callback_data=f"SHOW_BEST_CHOICE|{page-1}"))
+    if end_idx < len(best_sids): nav.append(types.InlineKeyboardButton("Next ➡️", callback_data=f"SHOW_BEST_CHOICE|{page+1}"))
+    if nav: markup.row(*nav)
+    
     markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="NEW_ORDER_BACK"))
     bot.edit_message_text("🌟 **ADMIN BEST CHOICE** 🌟\nHandpicked premium services for you:", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
@@ -396,6 +409,20 @@ def universal_buttons(message):
         update_user_session(uid, {"step": "awaiting_ticket"})
         bot.send_message(uid, "💬 **LIVE SUPPORT**\nSend your message here. You can also send Screenshots or Photos! Our Admins will reply directly.", parse_mode="Markdown")
 
+
+# 🔥 FIXED: Send Media Background Worker to prevent Webhook Timeout
+def send_media_to_admin(msg_obj, admin_text):
+    try:
+        if msg_obj.photo:
+            bot.send_photo(ADMIN_ID, msg_obj.photo[-1].file_id, caption=admin_text, parse_mode="Markdown")
+        elif msg_obj.document:
+            bot.send_document(ADMIN_ID, msg_obj.document.file_id, caption=admin_text, parse_mode="Markdown")
+        else:
+            bot.send_message(ADMIN_ID, admin_text, parse_mode="Markdown")
+    except Exception as e:
+        pass
+
+
 # ==========================================
 # 7. MASTER ROUTER (Smart Errors & Ordering)
 # ==========================================
@@ -594,8 +621,15 @@ def universal_router(message):
             services = get_cached_services()
             s = next((x for x in services if str(x['service']) == str(sid)), None)
             
-            if qty < int(s['min']) or qty > int(s['max']):
-                return bot.send_message(uid, f"❌ **QUANTITY OUT OF RANGE!**\nThe service provider only accepts between **{s['min']}** and **{s['max']}** for this service. Please enter a valid number.", parse_mode="Markdown")
+            # 🔥 FIXED: Safe parsing for Min/Max values
+            try: min_q = int(s.get('min', 0))
+            except: min_q = 0
+            
+            try: max_q = int(s.get('max', 9999999))
+            except: max_q = 9999999
+            
+            if qty < min_q or qty > max_q:
+                return bot.send_message(uid, f"❌ **QUANTITY OUT OF RANGE!**\nThe service provider only accepts between **{min_q}** and **{max_q}** for this service. Please enter a valid number.", parse_mode="Markdown")
             
             rate = calculate_price(s['rate'], u.get('spent', 0), u.get('custom_discount', 0))
             cost = (rate / 1000) * qty
@@ -622,14 +656,8 @@ def universal_router(message):
         user_name = message.from_user.first_name
         admin_msg = f"📩 **NEW LIVE CHAT**\n👤 User: `{user_name}`\n🆔 ID: `{uid}`\n\n💬 **Message:**\n{text}\n\n_Reply to this message to send an answer directly._"
         
-        try:
-            if message.photo:
-                bot.send_photo(ADMIN_ID, message.photo[-1].file_id, caption=admin_msg, parse_mode="Markdown")
-            elif message.document:
-                bot.send_document(ADMIN_ID, message.document.file_id, caption=admin_msg, parse_mode="Markdown")
-            else:
-                bot.send_message(ADMIN_ID, admin_msg, parse_mode="Markdown")
-        except: pass
+        # 🔥 FIXED: Send Media Background Thread to Avoid Webhook Timeout
+        threading.Thread(target=send_media_to_admin, args=(message, admin_msg)).start()
         
         return bot.send_message(uid, "✅ **Message Sent Successfully!** Admin will reply soon.", parse_mode="Markdown")
 
@@ -727,3 +755,4 @@ def process_order_background(uid, u, draft, message_id):
 def cancel_ord(call):
     clear_user_session(call.message.chat.id)
     bot.edit_message_text("🚫 **Order Cancelled.**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+
