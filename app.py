@@ -12,7 +12,8 @@ from bson.objectid import ObjectId
 import re
 
 # Import from loader and config
-from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col
+# 🔥 redis_client ইম্পোর্ট করা হলো
+from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, redis_client
 from config import BOT_TOKEN, ADMIN_ID, ADMIN_PASSWORD
 
 # Import modular handlers
@@ -31,7 +32,6 @@ def webhook():
     if request.headers.get('content-type') == 'application/json':
         json_string = request.get_data().decode('utf-8')
         update = telebot.types.Update.de_json(json_string)
-        # Flask/Gunicorn will handle concurrency naturally.
         bot.process_new_updates([update])
         return 'OK', 200
     return 'Forbidden', 403
@@ -43,36 +43,36 @@ def manual_set_webhook():
     RENDER_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://smm-panel-g8ab.onrender.com')
     success = bot.set_webhook(url=f"{RENDER_URL.rstrip('/')}/{BOT_TOKEN}")
     if success:
-        return "<h1>✅ Webhook Connected Successfully!</h1><p>Your Bot is now LIVE and running fast!</p>"
+        return "<h1>✅ Webhook Connected Successfully!</h1><p>Your Bot is now LIVE and running fast with Redis Cache!</p>"
     else:
         return "<h1>❌ Webhook Connection Failed!</h1><p>Check Render Logs.</p>"
 
 # ==========================================
-# 2. CYBER BOX AUTO ENGINE (100% Realistic Fake Proofs)
+# 2. CYBER BOX AUTO ENGINE (Redis Distributed Lock)
 # ==========================================
 def auto_fake_proof_cron():
     while True:
         try:
+            time.sleep(45)
             s = config_col.find_one({"_id": "settings"})
             if not s or not s.get('fake_proof_status', False):
-                time.sleep(60)
                 continue
 
             if s.get('night_mode', False):
                 hour = datetime.now().hour
                 if 2 <= hour <= 8:
-                    time.sleep(3600)
                     continue
 
             proof_channel = s.get('proof_channel', '')
             if not proof_channel:
-                time.sleep(60)
                 continue
+
+            # 🔥 Redis Lock: মাল্টিপল Gunicorn Worker থাকলেও শুধু একজন পোস্ট করবে
+            if not redis_client.set("fake_proof_lock", "locked", nx=True, ex=40):
+                continue # অন্য ওয়ার্কার কাজ করছে, তাই স্কিপ করবে
 
             dep_freq = s.get('fake_dep_freq', 2)
             ord_freq = s.get('fake_ord_freq', 3)
-
-            time.sleep(random.randint(15, 75))
 
             # 💰 FAKE DEPOSIT GENERATOR
             if random.random() < (dep_freq / 60): 
@@ -142,7 +142,6 @@ def auto_fake_proof_cron():
 
         except Exception:
             pass
-        time.sleep(45)
 
 threading.Thread(target=auto_fake_proof_cron, daemon=True).start()
 
@@ -150,7 +149,14 @@ threading.Thread(target=auto_fake_proof_cron, daemon=True).start()
 # 3. ADMIN WEB PANEL ROUTES (GOD MODE)
 # ==========================================
 def get_dashboard_stats():
-    s = config_col.find_one({"_id": "settings"}) or {}
+    # 🔥 Redis Cache for Settings 
+    cached = redis_client.get("settings_cache")
+    if cached:
+        s = json.loads(cached)
+    else:
+        s = config_col.find_one({"_id": "settings"}) or {}
+        redis_client.setex("settings_cache", 30, json.dumps(s))
+        
     u_count = users_col.count_documents({})
     bal = sum(u.get('balance', 0) for u in users_col.find())
     sales = sum(u.get('spent', 0) for u in users_col.find())
@@ -222,6 +228,7 @@ def save_best_choice():
     raw_sids = request.form.get('best_choice_sids', '')
     sids = [s.strip() for s in raw_sids.split(',') if s.strip()]
     config_col.update_one({"_id": "settings"}, {"$set": {"best_choice_sids": sids}}, upsert=True)
+    utils.update_settings_cache("best_choice_sids", sids) # 🔥 Update Redis Cache
     return redirect(url_for('index'))
 
 @app.route('/save_service_order', methods=['POST'])
@@ -275,7 +282,6 @@ def save_settings():
             payments.append({"name": pay_names[i].strip(), "rate": float(pay_rates[i]), "address": pay_addrs[i].strip()})
     s["payments"] = payments
 
-    # 🔥 FIX: Tiered Profit Margin Logic
     profit_tiers = []
     tier_mins = request.form.getlist('tier_min[]')
     tier_maxs = request.form.getlist('tier_max[]')
@@ -291,6 +297,7 @@ def save_settings():
     s["profit_tiers"] = profit_tiers
 
     config_col.update_one({"_id": "settings"}, {"$set": s}, upsert=True)
+    redis_client.setex("settings_cache", 30, json.dumps(s)) # 🔥 Update Redis Cache
     return redirect(url_for('index'))
 
 @app.route('/edit_user', methods=['POST'])
@@ -339,6 +346,7 @@ def remove_fake_users():
 def delete_user(uid):
     if 'admin' not in session: return redirect(url_for('login'))
     users_col.delete_one({"_id": uid})
+    redis_client.delete(f"session_{uid}") # 🔥 Clear Session Data
     return redirect(url_for('index'))
 
 @app.route('/toggle_shadow_ban/<int:uid>')
