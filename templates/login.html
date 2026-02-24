@@ -35,13 +35,16 @@
             {% endif %}
 
             <button type="submit" 
-                class="w-full bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold py-3 px-4 rounded-lg transition-all duration-300 shadow-[0_0_15px_rgba(56,189,248,0.5)] hover:shadow-[0_0_25px_rgba(56,189,248,0.8)] uppercase tracking-widest">
-                Unlock Panel
+                class="w-full bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold py-3 px-4 rounded-lg transition-all duration-300 shadow-[0_0_15px_rgba(56,189,248,0.5)] hover:shadow-[0_0_25px_rgba(56,189,248,0.7)] flex justify-center items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
+                </svg>
+                AUTHENTICATE
             </button>
         </form>
-        
-        <div class="mt-6 text-center">
-            <p class="text-xs text-slate-500">Secured by 256-bit Encryption • Unauthorized access is prohibited.</p>
+
+        <div class="mt-6 text-center text-xs text-slate-500 relative z-10">
+            Secure Connection <span class="text-sky-400 animate-pulse">●</span> Active
         </div>
     </div>
 
