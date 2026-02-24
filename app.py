@@ -4,6 +4,9 @@ import random
 import threading
 import csv
 import json
+import hashlib
+import base64
+import hmac
 from io import StringIO
 from datetime import datetime
 from flask import Flask, request, render_template, redirect, url_for, session, jsonify, Response
@@ -22,6 +25,11 @@ import main_router
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'super_secret_nexus_titan_key_1010')
+
+# 🔥 ADMIN PANEL SECURITY (Cookie Theft Protection)
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+# app.config['SESSION_COOKIE_SECURE'] = True  # (Render-এ HTTPS থাকলে এটি Enable করতে পারেন)
 
 # ==========================================
 # 1. WEBHOOK FAST ENGINE (10x Speed & Memory Leak Fixed)
@@ -81,7 +89,7 @@ def auto_fake_proof_cron():
                 is_crypto = any(x in method.lower() for x in ['usdt', 'binance', 'crypto', 'btc', 'pm', 'perfect'])
                 
                 if is_crypto:
-                    amt = round(random.uniform(2.5, 30.0), 2)
+                    amt = round(random.uniform(s.get('fake_deposit_min', 2.5), s.get('fake_deposit_max', 30.0)), 2)
                     display_amt = f"${amt}"
                 else:
                     amt = random.choice([50, 100, 150, 200, 300, 500, 1000, 1500, 2000, 5000])
@@ -106,7 +114,7 @@ def auto_fake_proof_cron():
                     cost_usd = (base_rate / 1000) * qty * 1.2
                 else:
                     srv_name = "Premium Service ⚡"
-                    cost_usd = (random.uniform(0.5, 2.5) / 1000) * qty
+                    cost_usd = (random.uniform(s.get('fake_order_min', 0.5), s.get('fake_order_max', 10.0)) / 1000) * qty
                     srv = {}
                     
                 if cost_usd < 0.01: cost_usd = 0.12 
@@ -188,7 +196,7 @@ def login():
         if request.form.get('password') == ADMIN_PASSWORD:
             session['admin'] = True
             return redirect(url_for('index'))
-        return "Wrong Password!"
+        return render_template('login.html', error="Wrong Password!")
     return render_template('login.html')
 
 @app.route('/logout')
@@ -267,6 +275,13 @@ def save_settings():
         "reward_top1": float(request.form.get('reward_top1', 10.0)),
         "reward_top2": float(request.form.get('reward_top2', 5.0)),
         "reward_top3": float(request.form.get('reward_top3', 2.0)),
+        
+        # Crypto APIs Data
+        "cryptomus_merchant": request.form.get('cryptomus_merchant', '').strip(),
+        "cryptomus_api": request.form.get('cryptomus_api', '').strip(),
+        "coinpayments_pub": request.form.get('coinpayments_pub', '').strip(),
+        "coinpayments_priv": request.form.get('coinpayments_priv', '').strip(),
+        
         "best_choice_sids": config_col.find_one({"_id": "settings"}).get('best_choice_sids', []) if config_col.find_one({"_id": "settings"}) else []
     }
     
@@ -341,25 +356,19 @@ def remove_fake_users():
     users_col.delete_many({"is_fake": True})
     return redirect(url_for('index'))
 
-# 🔥 NEW SMART CLEANUP ROUTE (Database Optimization)
 @app.route('/smart_cleanup')
 def smart_cleanup():
     if 'admin' not in session: return redirect(url_for('login'))
     
-    # 1. Remove Closed Tickets
     t_del = tickets_col.delete_many({"status": "closed"}).deleted_count
-    
-    # 2. Remove Canceled, Failed & Refunded Orders
     o_del = orders_col.delete_many({"status": {"$in": ["canceled", "fail", "refunded"]}}).deleted_count
     
-    # 3. Remove Fully Used Vouchers
     v_del = 0
     for v in vouchers_col.find():
         if len(v.get('used_by', [])) >= v.get('limit', 1):
             vouchers_col.delete_one({"_id": v["_id"]})
             v_del += 1
             
-    # Send Report to Admin via Telegram
     try:
         report = f"🧹 **SMART CLEANUP COMPLETE**\n━━━━━━━━━━━━━━━━━━━━\n🗑️ Closed Tickets Deleted: `{t_del}`\n🗑️ Failed/Canceled Orders: `{o_del}`\n🗑️ Used Vouchers Removed: `{v_del}`\n\n✅ Database is now fresh, fast & optimized!"
         bot.send_message(ADMIN_ID, report, parse_mode="Markdown")
@@ -372,7 +381,7 @@ def delete_user(uid):
     if 'admin' not in session: return redirect(url_for('login'))
     users_col.delete_one({"_id": uid})
     redis_client.delete(f"session_{uid}")
-    utils.clear_cached_user(uid) # 🔥 User Cache Clear
+    utils.clear_cached_user(uid)
     return redirect(url_for('index'))
 
 @app.route('/toggle_shadow_ban/<int:uid>')
@@ -381,7 +390,7 @@ def toggle_shadow_ban(uid):
     u = users_col.find_one({"_id": uid})
     if u: 
         users_col.update_one({"_id": uid}, {"$set": {"shadow_banned": not u.get('shadow_banned', False)}})
-        utils.clear_cached_user(uid) # 🔥 User Cache Clear
+        utils.clear_cached_user(uid)
     return redirect(url_for('index'))
 
 @app.route('/ban_user/<int:uid>')
@@ -409,7 +418,7 @@ def distribute_rewards():
     for i, u in enumerate(top_spenders):
         if not u.get('is_fake'):
             users_col.update_one({"_id": u["_id"]}, {"$inc": {"balance": rewards[i]}})
-            utils.clear_cached_user(u["_id"]) # 🔥 Clear Cache
+            utils.clear_cached_user(u["_id"]) 
             try: bot.send_message(u["_id"], f"🎉 **CONGRATULATIONS!**\nYou ranked #{i+1} Top Spender! Reward `${rewards[i]}` added.", parse_mode="Markdown")
             except: pass
         
@@ -417,7 +426,7 @@ def distribute_rewards():
     for i, u in enumerate(top_refs):
         if not u.get('is_fake'):
             users_col.update_one({"_id": u["_id"]}, {"$inc": {"balance": rewards[i]}})
-            utils.clear_cached_user(u["_id"]) # 🔥 Clear Cache
+            utils.clear_cached_user(u["_id"])
             try: bot.send_message(u["_id"], f"🎉 **CONGRATULATIONS!**\nYou ranked #{i+1} Top Affiliate! Reward `${rewards[i]}` added.", parse_mode="Markdown")
             except: pass
         
@@ -432,14 +441,14 @@ def reset_monthly():
 @app.route('/approve_dep/<int:uid>/<amt>/<tid>')
 def approve_dep(uid, amt, tid):
     users_col.update_one({"_id": uid}, {"$inc": {"balance": float(amt)}})
-    utils.clear_cached_user(uid) # 🔥 User Cache Clear
+    utils.clear_cached_user(uid)
     u = users_col.find_one({"_id": uid})
     if u and u.get("ref_by"):
         s = config_col.find_one({"_id": "settings"}) or {}
         comm = float(amt) * (s.get("dep_commission", 5.0) / 100)
         if comm > 0:
             users_col.update_one({"_id": u["ref_by"]}, {"$inc": {"balance": comm, "ref_earnings": comm}})
-            utils.clear_cached_user(u["ref_by"]) # 🔥 Ref User Cache Clear
+            utils.clear_cached_user(u["ref_by"])
             try: bot.send_message(u["ref_by"], f"💸 **COMMISSION EARNED!**\nYour referral made a deposit. You earned `${comm:.3f}`!", parse_mode="Markdown")
             except: pass
     try: bot.send_message(uid, f"✅ **DEPOSIT APPROVED!**\nAmount: `${float(amt):.2f}` added to your wallet.\nTrxID: `{tid}`", parse_mode="Markdown")
@@ -523,13 +532,14 @@ def refund_order(oid):
     if o and o.get('status') not in ['refunded', 'canceled']:
         users_col.update_one({"_id": o['uid']}, {"$inc": {"balance": o['cost'], "spent": -o['cost']}})
         orders_col.update_one({"oid": oid}, {"$set": {"status": "refunded"}})
-        utils.clear_cached_user(o['uid']) # 🔥 User Cache Clear
+        utils.clear_cached_user(o['uid']) 
         try: bot.send_message(o['uid'], f"💰 **ORDER REFUNDED!**\nOrder `{oid}` was refunded. `${o['cost']}` returned to your wallet.", parse_mode="Markdown")
         except: pass
     return redirect(url_for('index'))
 
+
 # ==========================================
-# 8. AUTO PAYMENT WEBHOOK API (For MacroDroid)
+# 8. LOCAL AUTO PAYMENT WEBHOOK API (For MacroDroid)
 # ==========================================
 @app.route('/api/add_transaction', methods=['POST', 'GET'])
 def add_transaction():
@@ -562,6 +572,89 @@ def add_transaction():
             
     except Exception as e:
         return jsonify({"status": "error", "msg": str(e)})
+
+
+# ==========================================
+# 🔥 9. NEW: GLOBAL CRYPTO PAYMENT WEBHOOKS
+# ==========================================
+@app.route('/cryptomus_webhook', methods=['POST'])
+def cryptomus_webhook():
+    """Cryptomus Auto-Payment IPN Listener"""
+    try:
+        data = request.json
+        if not data: return "No data", 400
+        
+        s = config_col.find_one({"_id": "settings"}) or {}
+        api_key = s.get('cryptomus_api', '')
+        if not api_key: return "Cryptomus not configured", 400
+        
+        sign = data.get('sign')
+        dict_data = data.copy()
+        dict_data.pop('sign', None)
+        
+        # Cryptomus Hash Validation
+        encoded_data = base64.b64encode(json.dumps(dict_data, separators=(',', ':')).encode('utf-8')).decode('utf-8')
+        expected_sign = hashlib.md5((encoded_data + api_key).encode('utf-8')).hexdigest()
+        
+        if sign != expected_sign: return "Invalid signature", 400
+        
+        if data.get('status') in ['paid', 'paid_over']:
+            # Assuming format: order_id = "UID_RANDOMID" (e.g. "123456789_X83M")
+            uid = int(str(data.get('order_id', '0')).split('_')[0]) 
+            amt = float(data.get('amount'))
+            trx = data.get('uuid')
+            
+            # Check if processed
+            if config_col.find_one({"_id": "transactions", "valid_list.trx": trx}):
+                return "Already processed", 200
+                
+            config_col.update_one({"_id": "transactions"}, {"$push": {"valid_list": {"trx": trx, "amt": amt, "status": "used", "user": uid}}}, upsert=True)
+            users_col.update_one({"_id": uid}, {"$inc": {"balance": amt}})
+            utils.clear_cached_user(uid)
+            
+            try: bot.send_message(uid, f"✅ **CRYPTOMUS DEPOSIT SUCCESS!**\nAmount: `${amt}` added to your wallet.", parse_mode="Markdown")
+            except: pass
+            
+        return "OK", 200
+    except Exception as e:
+        return str(e), 500
+
+@app.route('/coinpayments_ipn', methods=['POST'])
+def coinpayments_ipn():
+    """CoinPayments Auto-Payment IPN Listener"""
+    try:
+        s = config_col.find_one({"_id": "settings"}) or {}
+        ipn_secret = s.get('coinpayments_priv', '')
+        if not ipn_secret: return "CoinPayments not configured", 400
+        
+        hmac_header = request.headers.get('HMAC')
+        if not hmac_header: return "No HMAC signature", 400
+        
+        request_data = request.get_data()
+        calculated_hmac = hmac.new(ipn_secret.encode('utf-8'), request_data, hashlib.sha512).hexdigest()
+        
+        if hmac_header != calculated_hmac: return "Invalid HMAC", 400
+        
+        status = int(request.form.get('status', -1))
+        if status >= 100 or status == 2: # 100 or 2 means complete/confirmed
+            uid = int(request.form.get('custom', 0)) # User ID needs to be sent in the 'custom' field
+            amt = float(request.form.get('amount1', 0)) # Amount in USD/Base Currency
+            trx = request.form.get('txn_id')
+            
+            if config_col.find_one({"_id": "transactions", "valid_list.trx": trx}):
+                return "Already processed", 200
+                
+            config_col.update_one({"_id": "transactions"}, {"$push": {"valid_list": {"trx": trx, "amt": amt, "status": "used", "user": uid}}}, upsert=True)
+            users_col.update_one({"_id": uid}, {"$inc": {"balance": amt}})
+            utils.clear_cached_user(uid)
+            
+            try: bot.send_message(uid, f"✅ **COINPAYMENTS DEPOSIT SUCCESS!**\nAmount: `${amt}` added to your wallet.", parse_mode="Markdown")
+            except: pass
+            
+        return "OK", 200
+    except Exception as e:
+        return str(e), 500
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
