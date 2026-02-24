@@ -53,6 +53,9 @@ tickets_col = db['tickets']
 vouchers_col = db['vouchers']
 logs_col = db['logs'] 
 
+# 🔥 NEW: Multi-Provider Collection (একাধিক প্যানেল স্টোর করার জন্য)
+providers_col = db['providers']
+
 # ==========================================
 # 4. REDIS CONNECTION (FAST CACHE ENGINE)
 # ==========================================
@@ -73,6 +76,9 @@ try:
     users_col.create_index([("spent", DESCENDING)])
     users_col.create_index([("ref_earnings", DESCENDING)])
     vouchers_col.create_index([("code", ASCENDING)], unique=True)
+    
+    # 🔥 NEW: Provider Name Indexing (দ্রুত প্যানেল খোঁজার জন্য)
+    providers_col.create_index([("name", ASCENDING)], unique=True)
     
     logging.info("✅ Database Indexing Applied Successfully! Lightning Fast Mode ON 🚀")
 except Exception as e:
