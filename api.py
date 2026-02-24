@@ -46,12 +46,16 @@ def get_services():
     res = _make_request('services', timeout=20)
     return res if isinstance(res, list) else []
 
-def place_order(sid, link, qty):
-    """আসল প্যানেলে অর্ডার প্লেস করা"""
-    return _make_request('add', timeout=20, service=sid, link=link, quantity=qty)
+def place_order(sid, **kwargs):
+    """
+    আসল প্যানেলে অর্ডার প্লেস করা।
+    এখন এটি Normal, Drip-feed এবং Subscription সব ধরনের প্যারামিটার সাপোর্ট করবে।
+    """
+    # kwargs এর মাধ্যমে link, quantity, runs, interval, username, min, max ইত্যাদি ডাইনামিক্যালি রিসিভ হবে
+    return _make_request('add', timeout=20, service=sid, **kwargs)
 
 def check_order_status(order_id):
-    """অর্ডারের স্ট্যাটাস চেক করা"""
+    """অর্ডারের স্ট্যাটাস এবং প্রোগ্রেস চেক করা"""
     return _make_request('status', timeout=15, order=order_id)
 
 def send_refill(order_id):
@@ -66,7 +70,7 @@ def get_balance():
     return "N/A"
 
 # ==========================================
-# 🌍 REAL-TIME EXCHANGE RATE API (NEW FEATURE)
+# 🌍 REAL-TIME EXCHANGE RATE API
 # ==========================================
 def get_live_exchange_rates():
     """
@@ -83,4 +87,3 @@ def get_live_exchange_rates():
     except Exception:
         pass
     return None # ফেইল করলে ডিফল্ট রেট ব্যবহার হবে
-
