@@ -14,7 +14,7 @@ import telebot
 from bson.objectid import ObjectId
 import re
 
-# Import from loader and config (🔥 Added providers_col)
+# Import from loader and config 
 from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, providers_col, redis_client
 from config import BOT_TOKEN, ADMIN_ID, ADMIN_PASSWORD
 
@@ -29,7 +29,6 @@ app.secret_key = os.environ.get('SECRET_KEY', 'super_secret_nexus_titan_key_1010
 # 🔥 ADMIN PANEL SECURITY (Cookie Theft Protection)
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-# app.config['SESSION_COOKIE_SECURE'] = True  # (Render-এ HTTPS থাকলে এটি Enable করতে পারেন)
 
 # ==========================================
 # 1. WEBHOOK FAST ENGINE (10x Speed & Memory Leak Fixed)
@@ -281,12 +280,18 @@ def add_provider():
             "profit_margin": profit_margin,
             "status": "active"
         })
+        # 🔥 Instant Sync Trigger
+        threading.Thread(target=utils.force_sync_services).start()
+        
     return redirect(url_for('index'))
 
 @app.route('/delete_provider/<pid>')
 def delete_provider(pid):
     if 'admin' not in session: return redirect(url_for('login'))
     providers_col.delete_one({"_id": ObjectId(pid)})
+    
+    # 🔥 Instant Sync Trigger
+    threading.Thread(target=utils.force_sync_services).start()
     return redirect(url_for('index'))
 
 @app.route('/toggle_provider/<pid>')
@@ -296,6 +301,9 @@ def toggle_provider(pid):
     if p:
         new_status = "inactive" if p.get("status") == "active" else "active"
         providers_col.update_one({"_id": ObjectId(pid)}, {"$set": {"status": new_status}})
+        
+        # 🔥 Instant Sync Trigger
+        threading.Thread(target=utils.force_sync_services).start()
     return redirect(url_for('index'))
 
 
@@ -756,5 +764,7 @@ def coinpayments_ipn():
     except Exception as e:
         return str(e), 500
 
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+
