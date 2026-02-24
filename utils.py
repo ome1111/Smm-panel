@@ -7,6 +7,11 @@ import threading
 import re
 import random
 import json
+import urllib.parse
+import hashlib
+import base64
+import requests
+import hmac
 from datetime import datetime, timedelta
 from bson import json_util # 🔥 MongoDB Date/Object serialize করার জন্য
 
@@ -56,7 +61,8 @@ def get_settings():
             "reward_top1": 10.0, "reward_top2": 5.0, "reward_top3": 2.0, 
             "best_choice_sids": [], "points_per_usd": 100, "points_to_usd_rate": 1000,
             "proof_channel": "", "profit_tiers": [],
-            "cryptomus_merchant": "", "cryptomus_api": "", "coinpayments_pub": "", "coinpayments_priv": ""
+            "cryptomus_merchant": "", "cryptomus_api": "", "coinpayments_pub": "", "coinpayments_priv": "",
+            "cryptomus_active": False, "coinpayments_active": False
         }
         config_col.insert_one(s)
         
@@ -332,4 +338,53 @@ def check_sub(chat_id):
             if member.status in ['left', 'kicked']: return False
         except: return False
     return True
+
+# ==========================================
+# 3. AUTO CRYPTO PAYMENT GATEWAYS (NEW)
+# ==========================================
+def create_cryptomus_payment(amount, order_id, merchant, api_key):
+    url = "https://api.cryptomus.com/v1/payment"
+    payload = {
+        "amount": str(amount),
+        "currency": "USD",
+        "order_id": str(order_id),
+        "url_callback": f"{BASE_URL.rstrip('/')}/cryptomus_webhook" 
+    }
+    json_payload = json.dumps(payload)
+    sign = hashlib.md5((base64.b64encode(json_payload.encode('utf-8')).decode('utf-8') + api_key).encode('utf-8')).hexdigest()
+    
+    headers = {'merchant': merchant, 'sign': sign, 'Content-Type': 'application/json'}
+    try:
+        r = requests.post(url, data=json_payload, headers=headers)
+        res = r.json()
+        if res.get('state') == 0: 
+            return res['result']['url']
+    except Exception: 
+        pass
+    return None
+
+def create_coinpayments_payment(amount, custom_uid, pub_key, priv_key):
+    url = "https://www.coinpayments.net/api.php"
+    params = {
+        "version": 1, 
+        "cmd": "create_transaction",
+        "amount": amount, 
+        "currency1": "USD", 
+        "currency2": "USDT.TRC20", # Default Crypto
+        "buyer_email": "user@nexusbot.com", # API Requirement
+        "custom": str(custom_uid),
+        "key": pub_key, 
+        "format": "json"
+    }
+    encoded = urllib.parse.urlencode(params)
+    sign = hmac.new(priv_key.encode('utf-8'), encoded.encode('utf-8'), hashlib.sha512).hexdigest()
+    headers = {'HMAC': sign}
+    try:
+        r = requests.post(url, data=params, headers=headers)
+        res = r.json()
+        if res.get('error') == 'ok': 
+            return res['result']['checkout_url']
+    except Exception: 
+        pass
+    return None
 
