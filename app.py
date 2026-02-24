@@ -183,7 +183,9 @@ def index():
     vouchers = list(vouchers_col.find().sort("_id", -1))
     
     services = utils.get_cached_services()
-    unique_categories = sorted(list(set(s['category'] for s in services))) if services else []
+    
+    # 🔥 FIX: Handle NoneType categories from API
+    unique_categories = sorted(list(set(str(s.get('category', 'Other')) for s in services if s.get('category')))) if services else []
     
     saved_orders_doc = config_col.find_one({"_id": "service_orders"}) or {}
     saved_service_orders = saved_orders_doc.get("orders", {})
