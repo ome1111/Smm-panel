@@ -1,29 +1,43 @@
 import re
 import math
 import random
+import json
 from datetime import datetime, timedelta
 from telebot import types
 
-from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col
+# 🔥 redis_client ইম্পোর্ট করা হলো
+from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, redis_client
 from config import *
 import api
 
-# utils.py theke shob helper function import kora holo
 from utils import *
+
+# ==========================================
+# 🔥 REDIS SESSION MANAGER (Super Fast)
+# ==========================================
+def get_user_session(uid):
+    """ইউজারের বর্তমান সেশন ডেটা Redis থেকে আনা"""
+    data = redis_client.get(f"session_{uid}")
+    return json.loads(data) if data else {}
+
+def update_user_session(uid, updates):
+    """ইউজারের সেশন আপডেট করা (১ ঘণ্টার জন্য)"""
+    session = get_user_session(uid)
+    session.update(updates)
+    redis_client.setex(f"session_{uid}", 3600, json.dumps(session)) # 1 Hour expiry
+
+def clear_user_session(uid):
+    """কাজ শেষ হলে সেশন মুছে ফেলা"""
+    redis_client.delete(f"session_{uid}")
 
 # ==========================================
 # 3. FORCE SUB, REFERRAL & START LOGIC
 # ==========================================
 def process_new_user_bonuses(uid):
-    """
-    🔥 FIX: Ei function ti ensure korbe jeno user channel e join korlei 
-    kewalmatro Referral count, Referral Bonus ebong Welcome Bonus add hoy!
-    """
     user = users_col.find_one({"_id": uid})
     if not user: return
     s = get_settings()
     
-    # Welcome Bonus Logic
     if s.get('welcome_bonus_active') and not user.get("welcome_paid"):
         w_bonus = float(s.get('welcome_bonus', 0.0))
         if w_bonus > 0:
@@ -33,10 +47,8 @@ def process_new_user_bonuses(uid):
         else:
             users_col.update_one({"_id": uid}, {"$set": {"welcome_paid": True}})
             
-    # Referral Bonus & Count Logic (Only happens after Verify)
     if user.get("ref_by") and not user.get("ref_paid"):
         ref_bonus = float(s.get("ref_bonus", 0.0))
-        # ref_paid = True hobe, jate refer invite count dashboard e update hoy
         users_col.update_one({"_id": uid}, {"$set": {"ref_paid": True}}) 
         
         if ref_bonus > 0:
@@ -48,18 +60,17 @@ def process_new_user_bonuses(uid):
 def start(message):
     uid = message.chat.id
     
-    # ১. প্রথমে চেক করবে ইউজার ডাটাবেসে আছে কি না
     user = users_col.find_one({"_id": uid})
     args = message.text.split()
     referrer = int(args[1]) if len(args) > 1 and args[1].isdigit() and int(args[1]) != uid else None
 
-    # ২. যদি একদম নতুন ইউজার হয়, তবে রেফারার আইডি সহ সম্পূর্ণ প্রোফাইল সেভ করবে
     if not user:
         users_col.insert_one({"_id": uid, "name": message.from_user.first_name, "balance": 0.0, "spent": 0.0, "points": 0, "currency": "BDT", "ref_by": referrer, "ref_paid": False, "ref_earnings": 0.0, "joined": datetime.now(), "favorites": [], "custom_discount": 0.0, "shadow_banned": False, "tier_override": None, "welcome_paid": False})
         user = users_col.find_one({"_id": uid})
         
-    # ৩. প্রোফাইল তৈরি হওয়ার পর last_active আপডেট করবে
-    users_col.update_one({"_id": uid}, {"$set": {"last_active": datetime.now()}, "$unset": {"step": "", "temp_sid": "", "temp_link": ""}})
+    # 🔥 MongoDB তে শুধু লাস্ট অ্যাক্টিভ সেভ হবে, বাকি সেশন ক্লিয়ার হবে Redis থেকে
+    users_col.update_one({"_id": uid}, {"$set": {"last_active": datetime.now()}})
+    clear_user_session(uid)
     
     if check_spam(uid) or check_maintenance(uid): return
     
@@ -72,7 +83,6 @@ def start(message):
         markup.add(types.InlineKeyboardButton("🟢 VERIFY ACCOUNT 🟢", callback_data="CHECK_SUB"))
         return bot.send_message(uid, "🛑 **ACCESS RESTRICTED**\nYou must join our official channels to unlock the bot.", reply_markup=markup, parse_mode="Markdown")
 
-    # User jodi age thekei joined thake tahole bonus pabe
     process_new_user_bonuses(uid)
 
     welcome_text = f"""{greeting}, {message.from_user.first_name}! ⚡️
@@ -94,7 +104,6 @@ def sub_callback(call):
     if check_sub(uid):
         bot.delete_message(uid, call.message.message_id)
         bot.send_message(uid, "✅ **Access Granted! Welcome to the panel.**", reply_markup=main_menu())
-        # User channel e join kore verify korle bonus and refer pabe
         process_new_user_bonuses(uid)
     else: bot.send_message(uid, "❌ You haven't joined all channels.")
 
@@ -104,7 +113,7 @@ def sub_callback(call):
 @bot.message_handler(func=lambda m: m.text == "🚀 New Order")
 def new_order_start(message):
     uid = message.chat.id
-    users_col.update_one({"_id": uid}, {"$unset": {"step": "", "temp_sid": "", "temp_link": ""}})
+    clear_user_session(uid) # 🔥 Redis session clear
     if check_spam(uid) or check_maintenance(uid) or not check_sub(uid): return
     services = get_cached_services()
     if not services: return bot.send_message(uid, "⏳ **API Syncing...** Try again in 5 seconds.")
@@ -206,17 +215,17 @@ def info_card(call):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("ORD|"))
 def start_ord(call):
     sid = call.data.split("|")[1]
-    users_col.update_one({"_id": call.message.chat.id}, {"$set": {"step": "awaiting_link", "temp_sid": sid}})
+    update_user_session(call.message.chat.id, {"step": "awaiting_link", "temp_sid": sid}) # 🔥 Redis Session
     bot.send_message(call.message.chat.id, "🔗 **Paste the Target Link:**\n_(Example: https://t.me/yourchannel)_", parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("REORDER|"))
 def reorder_callback(call):
     sid = call.data.split("|")[1]
-    users_col.update_one({"_id": call.message.chat.id}, {"$set": {"step": "awaiting_link", "temp_sid": sid}})
+    update_user_session(call.message.chat.id, {"step": "awaiting_link", "temp_sid": sid}) # 🔥 Redis Session
     bot.send_message(call.message.chat.id, "🔗 **Paste the Target Link for Reorder:**\n_(Example: https://t.me/yourchannel)_", parse_mode="Markdown")
 
 # ==========================================
-# 5. UNIVERSAL BUTTONS, PROFILE & POINTS
+# 5. UNIVERSAL BUTTONS & PROFILE
 # ==========================================
 def fetch_orders_page(chat_id, page=0):
     user = users_col.find_one({"_id": chat_id})
@@ -300,12 +309,14 @@ def pay_details(call):
     is_crypto = any(x in method.lower() for x in ['usdt', 'binance', 'crypto', 'btc', 'pm', 'perfect', 'payeer'])
     display_amt = f"${amt_usd:.2f}" if is_crypto else f"{round(amt_usd * float(rate), 2)} Local Currency"
     txt = f"🏦 **{method} Payment Details**\n━━━━━━━━━━━━━━━━━━━━\n💵 **Amount to Send:** `{display_amt}`\n📍 **Account / Address:** `{address}`\n━━━━━━━━━━━━━━━━━━━━\n⚠️ Send the exact amount to the address above, then reply to this message with your **TrxID / Transaction ID**:"
-    users_col.update_one({"_id": call.message.chat.id}, {"$set": {"step": "awaiting_trx", "temp_dep_amt": amt_usd, "temp_dep_method": method}})
+    
+    update_user_session(call.message.chat.id, {"step": "awaiting_trx", "temp_dep_amt": amt_usd, "temp_dep_method": method}) # 🔥 Redis Session
     bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, parse_mode="Markdown")
 
 def universal_buttons(message):
     uid = message.chat.id
-    users_col.update_one({"_id": uid}, {"$unset": {"step": "", "temp_sid": "", "temp_link": ""}})
+    clear_user_session(uid) # 🔥 Redis Session Clear
+    
     if check_spam(uid) or check_maintenance(uid) or not check_sub(uid): return
     u = users_col.find_one({"_id": uid})
     curr = u.get("currency", "BDT") if u else "BDT"
@@ -315,7 +326,7 @@ def universal_buttons(message):
         bot.send_message(uid, txt, reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
     
     elif message.text == "💰 Deposit":
-        users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_deposit_amt"}})
+        update_user_session(uid, {"step": "awaiting_deposit_amt"}) # 🔥 Redis Session
         bot.send_message(uid, f"💵 **Enter Deposit Amount ({curr}):**\n_(e.g. 100)_", parse_mode="Markdown")
     
     elif message.text == "👤 Profile":
@@ -366,15 +377,15 @@ def universal_buttons(message):
         bot.send_message(uid, f"🤝 **AFFILIATE NETWORK**\n━━━━━━━━━━━━━━━━━━━━\n🔗 **Your Unique Link:**\n`{ref_link}`\n\n💰 **Monthly Earned:** `{fmt_curr(u.get('ref_earnings', 0.0), curr)}`\n👥 **Total Verified Invites:** `{users_col.count_documents({'ref_by': uid, 'ref_paid': True})}`\n\n_💡 Earn ${s.get('ref_bonus', 0.0)} instantly when they verify + {s.get('dep_commission', 0.0)}% lifetime commission!_", parse_mode="Markdown", disable_web_page_preview=True)
 
     elif message.text == "🎟️ Voucher":
-        users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_voucher"}})
+        update_user_session(uid, {"step": "awaiting_voucher"}) # 🔥 Redis Session
         bot.send_message(uid, "🎁 **REDEEM VOUCHER**\nEnter your secret promo code below:", parse_mode="Markdown")
 
     elif message.text == "🔍 Smart Search":
-        users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_search"}})
+        update_user_session(uid, {"step": "awaiting_search"}) # 🔥 Redis Session
         bot.send_message(uid, "🔍 **SMART SEARCH**\nEnter Service ID or Keyword (e.g., 'Instagram'):", parse_mode="Markdown")
         
     elif message.text == "💬 Live Chat":
-        users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_ticket"}})
+        update_user_session(uid, {"step": "awaiting_ticket"}) # 🔥 Redis Session
         bot.send_message(uid, "💬 **LIVE SUPPORT**\nSend your message here. You can also send Screenshots or Photos! Our Admins will reply directly.", parse_mode="Markdown")
 
 # ==========================================
@@ -408,7 +419,8 @@ def universal_router(message):
         return universal_buttons(message)
 
     u = users_col.find_one({"_id": uid})
-    step = u.get("step") if u else ""
+    session_data = get_user_session(uid) # 🔥 Redis Theke Session Ana
+    step = session_data.get("step", "")
 
     # --- ADMIN STATES ---
     if str(uid) == str(ADMIN_ID):
@@ -417,19 +429,19 @@ def universal_router(message):
             except: return bot.send_message(uid, "❌ ID must be numbers.")
             tu = users_col.find_one({"_id": target})
             if not tu: return bot.send_message(uid, "❌ User not found.")
-            users_col.update_one({"_id": uid}, {"$unset": {"step": ""}})
+            clear_user_session(uid)
             return bot.send_message(uid, f"👻 **GHOST VIEW - UID: {target}**\nName: {tu.get('name')}\nBal: ${tu.get('balance', 0):.3f}\nSpent: ${tu.get('spent', 0):.3f}\nPoints: {tu.get('points', 0)}")
             
         elif step == "awaiting_alert_uid":
             try:
                 target = int(text)
-                users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_alert_msg", "temp_uid": target}})
+                update_user_session(uid, {"step": "awaiting_alert_msg", "temp_uid": target})
                 return bot.send_message(uid, f"✍️ Enter alert msg for `{target}`:", parse_mode="Markdown")
             except: return bot.send_message(uid, "❌ Invalid ID.")
             
         elif step == "awaiting_alert_msg":
-            target = u.get("temp_uid")
-            users_col.update_one({"_id": uid}, {"$unset": {"step": "", "temp_uid": ""}})
+            target = session_data.get("temp_uid")
+            clear_user_session(uid)
             try:
                 bot.send_message(target, f"⚠️ **SYSTEM ALERT**\n━━━━━━━━━━━━━━━━━━━━\n{text}", parse_mode="Markdown")
                 return bot.send_message(uid, "✅ Alert Sent!")
@@ -440,7 +452,7 @@ def universal_router(message):
                 amt = float(text)
                 status = amt > 0
                 config_col.update_one({"_id": "settings"}, {"$set": {"welcome_bonus": amt, "welcome_bonus_active": status}})
-                users_col.update_one({"_id": uid}, {"$unset": {"step": ""}})
+                clear_user_session(uid)
                 return bot.send_message(uid, f"✅ Welcome Bonus set to ${amt}. Status: {'ON' if status else 'OFF'}")
             except: return bot.send_message(uid, "❌ Invalid number.")
             
@@ -449,7 +461,7 @@ def universal_router(message):
                 disc = float(text)
                 status = disc > 0
                 config_col.update_one({"_id": "settings"}, {"$set": {"flash_sale_discount": disc, "flash_sale_active": status}})
-                users_col.update_one({"_id": uid}, {"$unset": {"step": ""}})
+                clear_user_session(uid)
                 return bot.send_message(uid, f"✅ Flash Sale set to {disc}%. Status: {'ON' if status else 'OFF'}")
             except: return bot.send_message(uid, "❌ Invalid number.")
             
@@ -457,20 +469,20 @@ def universal_router(message):
             try:
                 sids = [int(x.strip()) for x in text.split(",") if x.strip().isdigit()]
                 config_col.update_one({"_id": "settings"}, {"$set": {"best_choice_sids": sids}})
-                users_col.update_one({"_id": uid}, {"$unset": {"step": ""}})
+                clear_user_session(uid)
                 return bot.send_message(uid, f"✅ Best Choice SIDs updated: {sids}")
-            except: return bot.send_message(uid, "❌ Format error. Use comma separated numbers (e.g. 10, 20, 30)")
+            except: return bot.send_message(uid, "❌ Format error.")
             
         elif step == "awaiting_profit":
             try:
                 v = float(text)
                 config_col.update_one({"_id": "settings"}, {"$set": {"profit_margin": v}})
-                users_col.update_one({"_id": uid}, {"$unset": {"step": ""}})
+                clear_user_session(uid)
                 return bot.send_message(uid, f"✅ Profit Margin: {v}%")
             except: return bot.send_message(uid, "❌ Invalid number.")
             
         elif step == "awaiting_bc":
-            users_col.update_one({"_id": uid}, {"$unset": {"step": ""}})
+            clear_user_session(uid)
             c = 0
             for usr in users_col.find({"is_fake": {"$ne": True}}):
                 try: bot.send_message(usr["_id"], f"📢 **MESSAGE FROM ADMIN**\n━━━━━━━━━━━━━━━━━━━━\n{text}", parse_mode="Markdown"); c+=1
@@ -481,13 +493,13 @@ def universal_router(message):
             try:
                 p_usd, p_rate = text.split(",")
                 config_col.update_one({"_id": "settings"}, {"$set": {"points_per_usd": int(p_usd.strip()), "points_to_usd_rate": int(p_rate.strip())}})
-                users_col.update_one({"_id": uid}, {"$unset": {"step": ""}})
+                clear_user_session(uid)
                 return bot.send_message(uid, "✅ Points System Updated!")
             except: return bot.send_message(uid, "❌ Format error. Use comma (e.g. 100, 1000)")
 
-    # --- AUTO PAYMENT CLAIM LOGIC (Includes Admin Commission Percent & Fixed Rate) ---
+    # --- AUTO PAYMENT CLAIM LOGIC ---
     if step == "awaiting_trx":
-        method_name = str(u.get("temp_dep_method", "Manual")).lower()
+        method_name = str(session_data.get("temp_dep_method", "Manual")).lower()
         is_local_auto = any(x in method_name for x in ['bkash', 'nagad', 'rocket', 'upay', 'bdt'])
 
         if is_local_auto:
@@ -502,8 +514,6 @@ def universal_router(message):
                 return bot.send_message(uid, "⚠️ **ALREADY USED!**\nএই ট্রানজেকশন আইডিটি ব্যবহার করা হয়ে গেছে।", parse_mode="Markdown")
 
             s = get_settings()
-            
-            # 🔥 FIX: Get fixed exchange rate from admin panel settings for Auto Deposit
             bdt_rate = 120.0
             for p in s.get('payments', []):
                 if any(x in p['name'].lower() for x in ['bkash', 'nagad', 'rocket', 'upay', 'bdt']):
@@ -513,9 +523,9 @@ def universal_router(message):
             usd_to_add = entry['amt'] / bdt_rate
             
             config_col.update_one({"_id": "transactions", "valid_list.trx": user_trx}, {"$set": {"valid_list.$.status": "used", "valid_list.$.user": uid}})
-            users_col.update_one({"_id": uid}, {"$inc": {"balance": usd_to_add}, "$unset": {"step": "", "temp_dep_amt": "", "temp_dep_method": ""}})
+            users_col.update_one({"_id": uid}, {"$inc": {"balance": usd_to_add}})
+            clear_user_session(uid) # 🔥 Redis Clear
             
-            # 🔥 FIX: Auto Deposit Referral Commission uses the Admin Panel Settings
             if u and u.get("ref_by"):
                 comm = usd_to_add * (float(s.get("dep_commission", 5.0)) / 100)
                 if comm > 0:
@@ -529,11 +539,11 @@ def universal_router(message):
             
         else:
             tid = text
-            amt = u.get("temp_dep_amt", 0.0)
-            users_col.update_one({"_id": uid}, {"$unset": {"step": "", "temp_dep_amt": "", "temp_dep_method": ""}})
+            amt = session_data.get("temp_dep_amt", 0.0)
+            clear_user_session(uid) # 🔥 Redis Clear
             
             bot.send_message(uid, "✅ **Request Submitted!**\nAdmin will verify your TrxID shortly.", parse_mode="Markdown")
-            admin_txt = f"🔔 **NEW DEPOSIT (MANUAL)**\n👤 User: `{uid}`\n🏦 Method: **{u.get('temp_dep_method', 'Manual')}**\n💰 Amt: **${round(float(amt), 2)}**\n🧾 TrxID: `{tid}`"
+            admin_txt = f"🔔 **NEW DEPOSIT (MANUAL)**\n👤 User: `{uid}`\n🏦 Method: **{session_data.get('temp_dep_method', 'Manual')}**\n💰 Amt: **${round(float(amt), 2)}**\n🧾 TrxID: `{tid}`"
             markup = types.InlineKeyboardMarkup(row_width=2)
             app_url = BASE_URL.rstrip('/')
             markup.add(types.InlineKeyboardButton("✅ APPROVE", url=f"{app_url}/approve_dep/{uid}/{amt}/{tid}"), types.InlineKeyboardButton("❌ REJECT", url=f"{app_url}/reject_dep/{uid}/{tid}"))
@@ -553,7 +563,7 @@ def universal_router(message):
                 is_crypto = any(x in p['name'].lower() for x in ['usdt', 'binance', 'crypto', 'btc', 'pm', 'perfect', 'payeer'])
                 display_amt = f"${amt_usd:.2f}" if is_crypto else f"{round(amt_usd * float(p['rate']), 2)} {curr_code}"
                 markup.add(types.InlineKeyboardButton(f"🏦 {p['name']} (Pay {display_amt})", callback_data=f"PAY|{amt_usd}|{p['name']}"))
-            users_col.update_one({"_id": uid}, {"$unset": {"step": ""}})
+            clear_user_session(uid) # 🔥 Redis Clear
             return bot.send_message(uid, "💳 **Select Gateway:**", reply_markup=markup, parse_mode="Markdown")
         except ValueError: return bot.send_message(uid, "⚠️ Invalid amount. Numbers only.")
 
@@ -565,13 +575,13 @@ def universal_router(message):
         if existing:
             bot.send_message(uid, "⚠️ **DUPLICATE ORDER WARNING!**\nYou already have a pending order with this exact link. You can still proceed if you want.", parse_mode="Markdown")
         
-        users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_qty", "temp_link": text}})
+        update_user_session(uid, {"step": "awaiting_qty", "temp_link": text}) # 🔥 Redis Session
         return bot.send_message(uid, "🔢 **Enter Quantity (Numbers only):**", parse_mode="Markdown")
 
     elif step == "awaiting_qty":
         try:
             qty = int(text)
-            sid, link = u.get("temp_sid"), u.get("temp_link")
+            sid, link = session_data.get("temp_sid"), session_data.get("temp_link")
             services = get_cached_services()
             s = next((x for x in services if str(x['service']) == str(sid)), None)
             
@@ -585,18 +595,18 @@ def universal_router(message):
             if u.get('balance', 0) < cost: 
                 return bot.send_message(uid, f"❌ **INSUFFICIENT FUNDS!**\n\nOrder Cost: `{fmt_curr(cost, curr)}`\nYour Balance: `{fmt_curr(u.get('balance',0), curr)}`\n\nPlease go to **💰 Deposit** to add funds.", parse_mode="Markdown")
             
-            users_col.update_one({"_id": uid}, {"$set": {"draft": {"sid": sid, "link": link, "qty": qty, "cost": cost}, "step": ""}})
+            update_user_session(uid, {"draft": {"sid": sid, "link": link, "qty": qty, "cost": cost}, "step": ""})
             markup = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("✅ CONFIRM", callback_data="PLACE_ORD"), types.InlineKeyboardButton("❌ CANCEL", callback_data="CANCEL_ORD"))
             bot.send_message(uid, f"⚠️ **ORDER PREVIEW**\n━━━━━━━━━━━━━━━━━━━━\n🆔 Service ID: `{sid}`\n🔗 Link: {link}\n🔢 Quantity: {qty}\n💰 Cost: `{fmt_curr(cost, curr)}`\n━━━━━━━━━━━━━━━━━━━━\nConfirm your order?", reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
         except: bot.send_message(uid, "⚠️ **ERROR:** Please enter valid numbers only.")
 
     elif step == "awaiting_refill":
-        users_col.update_one({"_id": uid}, {"$unset": {"step": ""}})
+        clear_user_session(uid)
         bot.send_message(uid, "✅ Refill Requested! Admin will check it.")
         return bot.send_message(ADMIN_ID, f"🔄 **REFILL REQUEST:**\nOrder ID: `{text}`\nBy User: `{uid}`")
 
     elif step == "awaiting_ticket":
-        users_col.update_one({"_id": uid}, {"$unset": {"step": ""}})
+        clear_user_session(uid)
         
         tickets_col.insert_one({"uid": uid, "msg": text, "status": "open", "date": datetime.now()})
         
@@ -615,7 +625,7 @@ def universal_router(message):
         return bot.send_message(uid, "✅ **Message Sent Successfully!** Admin will reply soon.", parse_mode="Markdown")
 
     elif step == "awaiting_voucher":
-        users_col.update_one({"_id": uid}, {"$unset": {"step": ""}})
+        clear_user_session(uid)
         code = text.upper()
         voucher = vouchers_col.find_one({"code": code})
         if not voucher: return bot.send_message(uid, "❌ Invalid Voucher Code.")
@@ -627,7 +637,7 @@ def universal_router(message):
         return bot.send_message(uid, f"✅ **VOUCHER CLAIMED**\nReward: `{fmt_curr(voucher['amount'], curr)}` added to your wallet.", parse_mode="Markdown")
 
     elif step == "awaiting_search":
-        users_col.update_one({"_id": uid}, {"$unset": {"step": ""}})
+        clear_user_session(uid)
         query = text.lower()
         services = get_cached_services()
         hidden = get_settings().get("hidden_services", [])
@@ -648,7 +658,9 @@ def universal_router(message):
 def final_ord(call):
     uid = call.message.chat.id
     u = users_col.find_one({"_id": uid})
-    draft = u.get('draft')
+    session_data = get_user_session(uid)
+    draft = session_data.get('draft')
+    
     if not draft: return bot.answer_callback_query(call.id, "❌ Session expired.")
     
     bot.edit_message_text("🛒 **Processing your order with API...**", uid, call.message.message_id, parse_mode="Markdown")
@@ -668,7 +680,8 @@ def final_ord(call):
 
     if u.get('shadow_banned'):
         fake_oid = random.randint(100000, 999999)
-        users_col.update_one({"_id": uid}, {"$inc": {"balance": -draft['cost'], "spent": draft['cost'], "points": points_earned}, "$unset": {"draft": ""}})
+        users_col.update_one({"_id": uid}, {"$inc": {"balance": -draft['cost'], "spent": draft['cost'], "points": points_earned}})
+        clear_user_session(uid) # 🔥 Redis Clear
         orders_col.insert_one({"oid": fake_oid, "uid": uid, "sid": draft['sid'], "link": draft['link'], "qty": draft['qty'], "cost": draft['cost'], "status": "pending", "date": datetime.now(), "is_shadow": True})
         bot.edit_message_text(f"✅ **Order Placed Successfully!**\n🆔 Order ID: `{fake_oid}`\n🎁 Points Earned: `+{points_earned}`", uid, call.message.message_id, parse_mode="Markdown")
         if proof_ch:
@@ -678,7 +691,8 @@ def final_ord(call):
 
     res = api.place_order(draft['sid'], draft['link'], draft['qty'])
     if res and 'order' in res:
-        users_col.update_one({"_id": uid}, {"$inc": {"balance": -draft['cost'], "spent": draft['cost'], "points": points_earned}, "$unset": {"draft": ""}})
+        users_col.update_one({"_id": uid}, {"$inc": {"balance": -draft['cost'], "spent": draft['cost'], "points": points_earned}})
+        clear_user_session(uid) # 🔥 Redis Clear
         orders_col.insert_one({"oid": res['order'], "uid": uid, "sid": draft['sid'], "link": draft['link'], "qty": draft['qty'], "cost": draft['cost'], "status": "pending", "date": datetime.now()})
         bot.edit_message_text(f"✅ **Order Placed Successfully!**\n🆔 Order ID: `{res['order']}`\n🎁 Points Earned: `+{points_earned}`", uid, call.message.message_id, parse_mode="Markdown")
         if proof_ch:
@@ -687,9 +701,9 @@ def final_ord(call):
     else:
         err_msg = res.get('error', 'API Timeout') if res else 'API Timeout'
         bot.edit_message_text(f"❌ **API REJECTED THE ORDER!**\n\n**Reason:** `{err_msg}`\n\nPlease check your link or try another service.", uid, call.message.message_id, parse_mode="Markdown")
-        users_col.update_one({"_id": uid}, {"$unset": {"draft": "", "step": ""}})
+        clear_user_session(uid)
 
 @bot.callback_query_handler(func=lambda c: c.data == "CANCEL_ORD")
 def cancel_ord(call):
-    users_col.update_one({"_id": call.message.chat.id}, {"$unset": {"draft": "", "step": ""}})
+    clear_user_session(call.message.chat.id) # 🔥 Redis Clear
     bot.edit_message_text("🚫 **Order Cancelled.**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
