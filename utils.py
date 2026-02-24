@@ -22,7 +22,6 @@ if sys.stdout.encoding != 'utf-8':
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 from telebot import types
-# 🔥 NEW: Added providers_col
 from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, providers_col, redis_client
 from config import *
 import api
@@ -109,41 +108,75 @@ def check_maintenance(chat_id):
     return False
 
 # ==========================================
-# 2. PRO-LEVEL CACHE, SYNC & DRIP CAMPAIGNS
+# 2. PRO-LEVEL CACHE & INSTANT SYNC ENGINE
 # ==========================================
 
-# 🔥 NEW: Multi-Provider Service Sync Engine
+def force_sync_services():
+    """
+    এই ফাংশনটি যেকোনো সময় কল করলে সাথে সাথে প্যানেল স্ক্যান করে নতুন ডাটা ক্যাশে সেভ করবে।
+    """
+    try:
+        all_services = []
+        
+        # 🔥 1. MAIN PROVIDER (config.py থেকে 1xPanel এর ডাটা অটোমেটিক আনবে)
+        try:
+            res = api.get_services(API_URL, API_KEY)
+            if res and isinstance(res, list): 
+                for srv in res:
+                    srv['provider_id'] = "MAIN"
+                    srv['provider_name'] = "1xPanel (Main)"
+                    srv['provider_margin'] = 0.0 # Uses Global Margin by default
+                    all_services.append(srv)
+        except Exception as e: 
+            pass
+            
+        # 🌍 2. CUSTOM MULTI-PROVIDERS (অ্যাডমিন প্যানেল থেকে অ্যাড করা প্যানেলগুলো)
+        active_providers = list(providers_col.find({"status": "active"}))
+        for provider in active_providers:
+            try:
+                res = api.get_services(provider.get('api_url'), provider.get('api_key'))
+                if res and isinstance(res, list): 
+                    for srv in res:
+                        srv['provider_id'] = str(provider['_id'])
+                        srv['provider_name'] = provider.get('name', 'Unknown')
+                        srv['provider_margin'] = provider.get('profit_margin', 0.0)
+                        all_services.append(srv)
+            except Exception: 
+                pass
+                
+        # ডাটাবেস এবং ক্যাশে সেভ করা
+        if all_services:
+            redis_client.setex("services_cache", 43200, json.dumps(all_services))
+            config_col.update_one({"_id": "api_cache"}, {"$set": {"data": all_services, "time": time.time()}}, upsert=True)
+            return True
+    except Exception: 
+        pass
+    return False
+
 def auto_sync_services_cron():
+    """ব্যাকগ্রাউন্ডে প্রতি ১২ ঘণ্টা পর পর অটো সিঙ্ক করবে"""
     while True:
         if not redis_client.set("lock_sync_services", "locked", nx=True, ex=43000):
             time.sleep(60)
             continue
-        try:
-            active_providers = list(providers_col.find({"status": "active"}))
-            all_services = []
-            
-            for provider in active_providers:
-                try:
-                    res = api.get_services(provider.get('api_url'), provider.get('api_key'))
-                    if res and isinstance(res, list): 
-                        for srv in res:
-                            # 🎯 Tagging service with provider ID and specific profit margin
-                            srv['provider_id'] = str(provider['_id'])
-                            srv['provider_name'] = provider.get('name', 'Unknown')
-                            srv['provider_margin'] = provider.get('profit_margin', 0.0)
-                            all_services.append(srv)
-                except Exception as e: 
-                    pass
-                    
-            if all_services:
-                redis_client.setex("services_cache", 43200, json.dumps(all_services))
-                config_col.update_one({"_id": "api_cache"}, {"$set": {"data": all_services, "time": time.time()}}, upsert=True)
-        except Exception: 
-            pass
+        force_sync_services()
         time.sleep(43200)
 
 threading.Thread(target=auto_sync_services_cron, daemon=True).start()
 
+def get_cached_services():
+    cached = redis_client.get("services_cache")
+    if cached: 
+        return json.loads(cached)
+    cache = config_col.find_one({"_id": "api_cache"})
+    data = cache.get('data', []) if cache else []
+    if data:
+        redis_client.setex("services_cache", 43200, json.dumps(data))
+    return data
+
+# ==========================================
+# অন্যান্য ব্যাকগ্রাউন্ড প্রসেস
+# ==========================================
 def exchange_rate_sync_cron():
     while True:
         if not redis_client.set("lock_exchange_rate", "locked", nx=True, ex=43000):
@@ -197,7 +230,6 @@ def drip_campaign_cron():
 
 threading.Thread(target=drip_campaign_cron, daemon=True).start()
 
-# 🔥 NEW: Multi-Provider Order Sync
 def auto_sync_orders_cron():
     while True:
         if not redis_client.set("lock_orders_sync", "locked", nx=True, ex=110):
@@ -213,9 +245,9 @@ def auto_sync_orders_cron():
                     
                     # 🎯 Identify which provider this order belongs to
                     provider_id = o.get("provider_id")
-                    api_url, api_key = API_URL, API_KEY # Fallback for old orders
+                    api_url, api_key = API_URL, API_KEY # Fallback for Main 1xpanel
                     
-                    if provider_id:
+                    if provider_id and provider_id != "MAIN":
                         provider = providers_col.find_one({"_id": ObjectId(provider_id)})
                         if provider:
                             api_url = provider.get("api_url")
@@ -258,22 +290,10 @@ def auto_sync_orders_cron():
 
 threading.Thread(target=auto_sync_orders_cron, daemon=True).start()
 
-def get_cached_services():
-    cached = redis_client.get("services_cache")
-    if cached: 
-        return json.loads(cached)
-    cache = config_col.find_one({"_id": "api_cache"})
-    data = cache.get('data', []) if cache else []
-    if data:
-        redis_client.setex("services_cache", 43200, json.dumps(data))
-    return data
 
-# 🔥 UPDATED: Dynamic Provider Profit Margin Check
 def calculate_price(base_rate, user_spent, user_custom_discount=0.0, provider_margin=0.0):
     s = get_settings()
     base = float(base_rate)
-    
-    # Check if specific provider has custom margin, otherwise use global panel margin
     profit = float(provider_margin) if float(provider_margin) > 0 else float(s.get('profit_margin', 20.0))
     
     profit_tiers = s.get('profit_tiers', [])
@@ -375,51 +395,29 @@ def check_sub(chat_id):
         except: return False
     return True
 
-# ==========================================
-# 3. AUTO CRYPTO PAYMENT GATEWAYS
-# ==========================================
 def create_cryptomus_payment(amount, order_id, merchant, api_key):
     url = "https://api.cryptomus.com/v1/payment"
-    payload = {
-        "amount": str(amount),
-        "currency": "USD",
-        "order_id": str(order_id),
-        "url_callback": f"{BASE_URL.rstrip('/')}/cryptomus_webhook" 
-    }
+    payload = {"amount": str(amount), "currency": "USD", "order_id": str(order_id), "url_callback": f"{BASE_URL.rstrip('/')}/cryptomus_webhook"}
     json_payload = json.dumps(payload)
     sign = hashlib.md5((base64.b64encode(json_payload.encode('utf-8')).decode('utf-8') + api_key).encode('utf-8')).hexdigest()
-    
     headers = {'merchant': merchant, 'sign': sign, 'Content-Type': 'application/json'}
     try:
         r = requests.post(url, data=json_payload, headers=headers)
         res = r.json()
-        if res.get('state') == 0: 
-            return res['result']['url']
-    except Exception: 
-        pass
+        if res.get('state') == 0: return res['result']['url']
+    except: pass
     return None
 
 def create_coinpayments_payment(amount, custom_uid, pub_key, priv_key):
     url = "https://www.coinpayments.net/api.php"
-    params = {
-        "version": 1, 
-        "cmd": "create_transaction",
-        "amount": amount, 
-        "currency1": "USD", 
-        "currency2": "USDT.TRC20",
-        "buyer_email": "user@nexusbot.com",
-        "custom": str(custom_uid),
-        "key": pub_key, 
-        "format": "json"
-    }
+    params = {"version": 1, "cmd": "create_transaction", "amount": amount, "currency1": "USD", "currency2": "USDT.TRC20", "buyer_email": "user@nexusbot.com", "custom": str(custom_uid), "key": pub_key, "format": "json"}
     encoded = urllib.parse.urlencode(params)
     sign = hmac.new(priv_key.encode('utf-8'), encoded.encode('utf-8'), hashlib.sha512).hexdigest()
     headers = {'HMAC': sign}
     try:
         r = requests.post(url, data=params, headers=headers)
         res = r.json()
-        if res.get('error') == 'ok': 
-            return res['result']['checkout_url']
-    except Exception: 
-        pass
+        if res.get('error') == 'ok': return res['result']['checkout_url']
+    except: pass
     return None
+
