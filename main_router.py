@@ -2,6 +2,7 @@ import re
 import math
 import random
 import json
+import threading
 from datetime import datetime, timedelta
 from telebot import types
 
@@ -34,7 +35,7 @@ def clear_user_session(uid):
 # 3. FORCE SUB, REFERRAL & START LOGIC
 # ==========================================
 def process_new_user_bonuses(uid):
-    user = users_col.find_one({"_id": uid})
+    user = get_cached_user(uid) # 🔥 Redis Cache Use
     if not user: return
     s = get_settings()
     
@@ -42,17 +43,21 @@ def process_new_user_bonuses(uid):
         w_bonus = float(s.get('welcome_bonus', 0.0))
         if w_bonus > 0:
             users_col.update_one({"_id": uid}, {"$inc": {"balance": w_bonus}, "$set": {"welcome_paid": True}})
+            clear_cached_user(uid) # 🔥 Cache Clear
             try: bot.send_message(uid, f"🎁 **WELCOME BONUS!**\nCongratulations! You received `${w_bonus}` just for verifying your account.", parse_mode="Markdown")
             except: pass
         else:
             users_col.update_one({"_id": uid}, {"$set": {"welcome_paid": True}})
+            clear_cached_user(uid)
             
     if user.get("ref_by") and not user.get("ref_paid"):
         ref_bonus = float(s.get("ref_bonus", 0.0))
         users_col.update_one({"_id": uid}, {"$set": {"ref_paid": True}}) 
+        clear_cached_user(uid)
         
         if ref_bonus > 0:
             users_col.update_one({"_id": user["ref_by"]}, {"$inc": {"balance": ref_bonus, "ref_earnings": ref_bonus}})
+            clear_cached_user(user["ref_by"])
             try: bot.send_message(user["ref_by"], f"🎉 **REFERRAL SUCCESS!**\nUser `{uid}` joined the channel and verified! You earned `${ref_bonus}`!", parse_mode="Markdown")
             except: pass
 
@@ -60,15 +65,15 @@ def process_new_user_bonuses(uid):
 def start(message):
     uid = message.chat.id
     
-    user = users_col.find_one({"_id": uid})
+    user = get_cached_user(uid)
     args = message.text.split()
     referrer = int(args[1]) if len(args) > 1 and args[1].isdigit() and int(args[1]) != uid else None
 
     if not user:
         users_col.insert_one({"_id": uid, "name": message.from_user.first_name, "balance": 0.0, "spent": 0.0, "points": 0, "currency": "BDT", "ref_by": referrer, "ref_paid": False, "ref_earnings": 0.0, "joined": datetime.now(), "favorites": [], "custom_discount": 0.0, "shadow_banned": False, "tier_override": None, "welcome_paid": False})
         user = users_col.find_one({"_id": uid})
+        clear_cached_user(uid)
         
-    # 🔥 MongoDB তে শুধু লাস্ট অ্যাক্টিভ সেভ হবে, বাকি সেশন ক্লিয়ার হবে Redis থেকে
     users_col.update_one({"_id": uid}, {"$set": {"last_active": datetime.now()}})
     clear_user_session(uid)
     
@@ -113,7 +118,7 @@ def sub_callback(call):
 @bot.message_handler(func=lambda m: m.text == "🚀 New Order")
 def new_order_start(message):
     uid = message.chat.id
-    clear_user_session(uid) # 🔥 Redis session clear
+    clear_user_session(uid)
     if check_spam(uid) or check_maintenance(uid) or not check_sub(uid): return
     services = get_cached_services()
     if not services: return bot.send_message(uid, "⏳ **API Syncing...** Try again in 5 seconds.")
@@ -131,7 +136,7 @@ def show_best_choices(call):
     bot.answer_callback_query(call.id)
     services = get_cached_services()
     best_sids = get_settings().get("best_choice_sids", [])
-    user = users_col.find_one({"_id": call.message.chat.id})
+    user = get_cached_user(call.message.chat.id)
     curr = user.get("currency", "BDT")
     markup = types.InlineKeyboardMarkup(row_width=1)
     for tsid in best_sids:
@@ -175,7 +180,7 @@ def list_servs(call):
     filtered = [s for s in services if s['category'] == cat_name and str(s['service']) not in hidden]
     start_idx, end_idx = int(page) * 10, int(page) * 10 + 10
     
-    user = users_col.find_one({"_id": call.message.chat.id})
+    user = get_cached_user(call.message.chat.id)
     curr = user.get("currency", "BDT")
     markup = types.InlineKeyboardMarkup(row_width=1)
     for s in filtered[start_idx:end_idx]:
@@ -196,7 +201,7 @@ def info_card(call):
     s = next((x for x in services if str(x['service']) == str(sid)), None)
     if not s: return bot.send_message(call.message.chat.id, "❌ Service unavailable.")
     
-    user = users_col.find_one({"_id": call.message.chat.id})
+    user = get_cached_user(call.message.chat.id)
     curr = user.get("currency", "BDT")
     rate = calculate_price(s['rate'], user.get('spent',0), user.get('custom_discount', 0))
     avg_time = s.get('time', 'Instant - 24h') if s.get('time') != "" else 'Instant - 24h'
@@ -215,20 +220,20 @@ def info_card(call):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("ORD|"))
 def start_ord(call):
     sid = call.data.split("|")[1]
-    update_user_session(call.message.chat.id, {"step": "awaiting_link", "temp_sid": sid}) # 🔥 Redis Session
+    update_user_session(call.message.chat.id, {"step": "awaiting_link", "temp_sid": sid})
     bot.send_message(call.message.chat.id, "🔗 **Paste the Target Link:**\n_(Example: https://t.me/yourchannel)_", parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("REORDER|"))
 def reorder_callback(call):
     sid = call.data.split("|")[1]
-    update_user_session(call.message.chat.id, {"step": "awaiting_link", "temp_sid": sid}) # 🔥 Redis Session
+    update_user_session(call.message.chat.id, {"step": "awaiting_link", "temp_sid": sid})
     bot.send_message(call.message.chat.id, "🔗 **Paste the Target Link for Reorder:**\n_(Example: https://t.me/yourchannel)_", parse_mode="Markdown")
 
 # ==========================================
 # 5. UNIVERSAL BUTTONS & PROFILE
 # ==========================================
 def fetch_orders_page(chat_id, page=0):
-    user = users_col.find_one({"_id": chat_id})
+    user = get_cached_user(chat_id)
     curr = user.get("currency", "BDT") if user else "BDT"
     all_orders = list(orders_col.find({"uid": chat_id}).sort("_id", -1))
     if not all_orders: return "📭 No orders found.", None
@@ -272,13 +277,14 @@ def my_orders_pagination(call):
 
 @bot.callback_query_handler(func=lambda c: c.data == "REDEEM_POINTS")
 def redeem_points(call):
-    u = users_col.find_one({"_id": call.message.chat.id})
+    u = get_cached_user(call.message.chat.id)
     pts = u.get("points", 0)
     s = get_settings()
     rate = s.get("points_to_usd_rate", 1000)
     if pts < rate: return bot.answer_callback_query(call.id, f"❌ Minimum {rate} Points required to redeem.", show_alert=True)
     reward = pts / float(rate)
     users_col.update_one({"_id": call.message.chat.id}, {"$inc": {"balance": reward}, "$set": {"points": 0}})
+    clear_cached_user(call.message.chat.id)
     bot.answer_callback_query(call.id, f"✅ Redeemed {pts} Points for ${reward:.2f}!", show_alert=True)
     bot.delete_message(call.message.chat.id, call.message.message_id)
 
@@ -287,11 +293,13 @@ def add_to_favorites(call):
     bot.answer_callback_query(call.id, "⭐ Added to Favorites!", show_alert=True)
     sid = call.data.split("|")[1]
     users_col.update_one({"_id": call.message.chat.id}, {"$addToSet": {"favorites": sid}})
+    clear_cached_user(call.message.chat.id)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("SET_CURR|"))
 def set_currency_callback(call):
     curr = call.data.split("|")[1]
     users_col.update_one({"_id": call.message.chat.id}, {"$set": {"currency": curr}})
+    clear_cached_user(call.message.chat.id)
     bot.answer_callback_query(call.id, f"✅ Currency updated to {curr}")
     bot.delete_message(call.message.chat.id, call.message.message_id)
     call.message.text = "👤 Profile"
@@ -310,15 +318,15 @@ def pay_details(call):
     display_amt = f"${amt_usd:.2f}" if is_crypto else f"{round(amt_usd * float(rate), 2)} Local Currency"
     txt = f"🏦 **{method} Payment Details**\n━━━━━━━━━━━━━━━━━━━━\n💵 **Amount to Send:** `{display_amt}`\n📍 **Account / Address:** `{address}`\n━━━━━━━━━━━━━━━━━━━━\n⚠️ Send the exact amount to the address above, then reply to this message with your **TrxID / Transaction ID**:"
     
-    update_user_session(call.message.chat.id, {"step": "awaiting_trx", "temp_dep_amt": amt_usd, "temp_dep_method": method}) # 🔥 Redis Session
+    update_user_session(call.message.chat.id, {"step": "awaiting_trx", "temp_dep_amt": amt_usd, "temp_dep_method": method})
     bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, parse_mode="Markdown")
 
 def universal_buttons(message):
     uid = message.chat.id
-    clear_user_session(uid) # 🔥 Redis Session Clear
+    clear_user_session(uid)
     
     if check_spam(uid) or check_maintenance(uid) or not check_sub(uid): return
-    u = users_col.find_one({"_id": uid})
+    u = get_cached_user(uid)
     curr = u.get("currency", "BDT") if u else "BDT"
 
     if message.text == "📦 Orders":
@@ -326,7 +334,7 @@ def universal_buttons(message):
         bot.send_message(uid, txt, reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
     
     elif message.text == "💰 Deposit":
-        update_user_session(uid, {"step": "awaiting_deposit_amt"}) # 🔥 Redis Session
+        update_user_session(uid, {"step": "awaiting_deposit_amt"})
         bot.send_message(uid, f"💵 **Enter Deposit Amount ({curr}):**\n_(e.g. 100)_", parse_mode="Markdown")
     
     elif message.text == "👤 Profile":
@@ -377,15 +385,15 @@ def universal_buttons(message):
         bot.send_message(uid, f"🤝 **AFFILIATE NETWORK**\n━━━━━━━━━━━━━━━━━━━━\n🔗 **Your Unique Link:**\n`{ref_link}`\n\n💰 **Monthly Earned:** `{fmt_curr(u.get('ref_earnings', 0.0), curr)}`\n👥 **Total Verified Invites:** `{users_col.count_documents({'ref_by': uid, 'ref_paid': True})}`\n\n_💡 Earn ${s.get('ref_bonus', 0.0)} instantly when they verify + {s.get('dep_commission', 0.0)}% lifetime commission!_", parse_mode="Markdown", disable_web_page_preview=True)
 
     elif message.text == "🎟️ Voucher":
-        update_user_session(uid, {"step": "awaiting_voucher"}) # 🔥 Redis Session
+        update_user_session(uid, {"step": "awaiting_voucher"})
         bot.send_message(uid, "🎁 **REDEEM VOUCHER**\nEnter your secret promo code below:", parse_mode="Markdown")
 
     elif message.text == "🔍 Smart Search":
-        update_user_session(uid, {"step": "awaiting_search"}) # 🔥 Redis Session
+        update_user_session(uid, {"step": "awaiting_search"})
         bot.send_message(uid, "🔍 **SMART SEARCH**\nEnter Service ID or Keyword (e.g., 'Instagram'):", parse_mode="Markdown")
         
     elif message.text == "💬 Live Chat":
-        update_user_session(uid, {"step": "awaiting_ticket"}) # 🔥 Redis Session
+        update_user_session(uid, {"step": "awaiting_ticket"})
         bot.send_message(uid, "💬 **LIVE SUPPORT**\nSend your message here. You can also send Screenshots or Photos! Our Admins will reply directly.", parse_mode="Markdown")
 
 # ==========================================
@@ -394,7 +402,6 @@ def universal_buttons(message):
 @bot.message_handler(content_types=['text', 'photo', 'document'])
 def universal_router(message):
     uid = message.chat.id
-    
     text = message.text.strip() if message.text else message.caption.strip() if message.caption else "📸 [Media/Screenshot attached]"
     
     if text.startswith('/'): return
@@ -418,8 +425,8 @@ def universal_router(message):
     if text in ["🚀 New Order", "⭐ Favorites", "🔍 Smart Search", "📦 Orders", "💰 Deposit", "🤝 Affiliate", "👤 Profile", "🎟️ Voucher", "🏆 Leaderboard", "💬 Live Chat"]:
         return universal_buttons(message)
 
-    u = users_col.find_one({"_id": uid})
-    session_data = get_user_session(uid) # 🔥 Redis Theke Session Ana
+    u = get_cached_user(uid)
+    session_data = get_user_session(uid)
     step = session_data.get("step", "")
 
     # --- ADMIN STATES ---
@@ -427,7 +434,7 @@ def universal_router(message):
         if step == "awaiting_ghost_uid":
             try: target = int(text)
             except: return bot.send_message(uid, "❌ ID must be numbers.")
-            tu = users_col.find_one({"_id": target})
+            tu = get_cached_user(target)
             if not tu: return bot.send_message(uid, "❌ User not found.")
             clear_user_session(uid)
             return bot.send_message(uid, f"👻 **GHOST VIEW - UID: {target}**\nName: {tu.get('name')}\nBal: ${tu.get('balance', 0):.3f}\nSpent: ${tu.get('spent', 0):.3f}\nPoints: {tu.get('points', 0)}")
@@ -524,12 +531,14 @@ def universal_router(message):
             
             config_col.update_one({"_id": "transactions", "valid_list.trx": user_trx}, {"$set": {"valid_list.$.status": "used", "valid_list.$.user": uid}})
             users_col.update_one({"_id": uid}, {"$inc": {"balance": usd_to_add}})
-            clear_user_session(uid) # 🔥 Redis Clear
+            clear_cached_user(uid)
+            clear_user_session(uid)
             
             if u and u.get("ref_by"):
                 comm = usd_to_add * (float(s.get("dep_commission", 5.0)) / 100)
                 if comm > 0:
                     users_col.update_one({"_id": u["ref_by"]}, {"$inc": {"balance": comm, "ref_earnings": comm}})
+                    clear_cached_user(u["ref_by"])
                     try: bot.send_message(u["ref_by"], f"💸 **COMMISSION EARNED!**\nYour referral made an Auto Deposit. You earned `${comm:.3f}`!", parse_mode="Markdown")
                     except: pass
                     
@@ -540,7 +549,7 @@ def universal_router(message):
         else:
             tid = text
             amt = session_data.get("temp_dep_amt", 0.0)
-            clear_user_session(uid) # 🔥 Redis Clear
+            clear_user_session(uid)
             
             bot.send_message(uid, "✅ **Request Submitted!**\nAdmin will verify your TrxID shortly.", parse_mode="Markdown")
             admin_txt = f"🔔 **NEW DEPOSIT (MANUAL)**\n👤 User: `{uid}`\n🏦 Method: **{session_data.get('temp_dep_method', 'Manual')}**\n💰 Amt: **${round(float(amt), 2)}**\n🧾 TrxID: `{tid}`"
@@ -563,7 +572,7 @@ def universal_router(message):
                 is_crypto = any(x in p['name'].lower() for x in ['usdt', 'binance', 'crypto', 'btc', 'pm', 'perfect', 'payeer'])
                 display_amt = f"${amt_usd:.2f}" if is_crypto else f"{round(amt_usd * float(p['rate']), 2)} {curr_code}"
                 markup.add(types.InlineKeyboardButton(f"🏦 {p['name']} (Pay {display_amt})", callback_data=f"PAY|{amt_usd}|{p['name']}"))
-            clear_user_session(uid) # 🔥 Redis Clear
+            clear_user_session(uid)
             return bot.send_message(uid, "💳 **Select Gateway:**", reply_markup=markup, parse_mode="Markdown")
         except ValueError: return bot.send_message(uid, "⚠️ Invalid amount. Numbers only.")
 
@@ -575,7 +584,7 @@ def universal_router(message):
         if existing:
             bot.send_message(uid, "⚠️ **DUPLICATE ORDER WARNING!**\nYou already have a pending order with this exact link. You can still proceed if you want.", parse_mode="Markdown")
         
-        update_user_session(uid, {"step": "awaiting_qty", "temp_link": text}) # 🔥 Redis Session
+        update_user_session(uid, {"step": "awaiting_qty", "temp_link": text})
         return bot.send_message(uid, "🔢 **Enter Quantity (Numbers only):**", parse_mode="Markdown")
 
     elif step == "awaiting_qty":
@@ -633,6 +642,7 @@ def universal_router(message):
         if uid in voucher.get('used_by', []): return bot.send_message(uid, "❌ You have already claimed this voucher.")
         vouchers_col.update_one({"code": code}, {"$push": {"used_by": uid}})
         users_col.update_one({"_id": uid}, {"$inc": {"balance": voucher['amount']}})
+        clear_cached_user(uid)
         curr = u.get("currency", "BDT")
         return bot.send_message(uid, f"✅ **VOUCHER CLAIMED**\nReward: `{fmt_curr(voucher['amount'], curr)}` added to your wallet.", parse_mode="Markdown")
 
@@ -654,18 +664,24 @@ def universal_router(message):
         for s in results: markup.add(types.InlineKeyboardButton(f"⚡ ID:{s['service']} | {clean_service_name(s['name'])[:25]}", callback_data=f"INFO|{s['service']}"))
         return bot.send_message(uid, f"🔍 **Top Results:**", reply_markup=markup, parse_mode="Markdown")
 
+# 🔥 MULTI-THREADING IMPLEMENTATION FOR API CALL (Webhook Non-Blocking)
 @bot.callback_query_handler(func=lambda c: c.data == "PLACE_ORD")
 def final_ord(call):
     uid = call.message.chat.id
-    u = users_col.find_one({"_id": uid})
+    u = get_cached_user(uid)
     session_data = get_user_session(uid)
     draft = session_data.get('draft')
     
     if not draft: return bot.answer_callback_query(call.id, "❌ Session expired.")
     
-    bot.edit_message_text("🛒 **Processing your order with API...**", uid, call.message.message_id, parse_mode="Markdown")
-    curr = u.get("currency", "BDT")
+    bot.edit_message_text("⏳ **Processing your order securely in the background... Please wait.**", uid, call.message.message_id, parse_mode="Markdown")
     
+    # 🔥 Start Background Thread
+    threading.Thread(target=process_order_background, args=(uid, u, draft, call.message.message_id)).start()
+
+def process_order_background(uid, u, draft, message_id):
+    """এটি ব্যাকগ্রাউন্ডে কাজ করবে। ফলে অন্য ইউজাররা ল্যাগ ফিল করবে না।"""
+    curr = u.get("currency", "BDT")
     services = get_cached_services()
     srv = next((x for x in services if str(x['service']) == str(draft['sid'])), None)
     srv_name = clean_service_name(srv['name']) if srv else f"ID: {draft['sid']}"
@@ -681,29 +697,33 @@ def final_ord(call):
     if u.get('shadow_banned'):
         fake_oid = random.randint(100000, 999999)
         users_col.update_one({"_id": uid}, {"$inc": {"balance": -draft['cost'], "spent": draft['cost'], "points": points_earned}})
-        clear_user_session(uid) # 🔥 Redis Clear
+        clear_cached_user(uid)
+        clear_user_session(uid)
         orders_col.insert_one({"oid": fake_oid, "uid": uid, "sid": draft['sid'], "link": draft['link'], "qty": draft['qty'], "cost": draft['cost'], "status": "pending", "date": datetime.now(), "is_shadow": True})
-        bot.edit_message_text(f"✅ **Order Placed Successfully!**\n🆔 Order ID: `{fake_oid}`\n🎁 Points Earned: `+{points_earned}`", uid, call.message.message_id, parse_mode="Markdown")
+        bot.edit_message_text(f"✅ **Order Placed Successfully!**\n🆔 Order ID: `{fake_oid}`\n🎁 Points Earned: `+{points_earned}`", uid, message_id, parse_mode="Markdown")
         if proof_ch:
             try: bot.send_message(proof_ch, channel_post, parse_mode="Markdown")
             except: pass
         return
 
+    # 🔥 API কল করা হচ্ছে
     res = api.place_order(draft['sid'], draft['link'], draft['qty'])
+    
     if res and 'order' in res:
         users_col.update_one({"_id": uid}, {"$inc": {"balance": -draft['cost'], "spent": draft['cost'], "points": points_earned}})
-        clear_user_session(uid) # 🔥 Redis Clear
+        clear_cached_user(uid)
+        clear_user_session(uid)
         orders_col.insert_one({"oid": res['order'], "uid": uid, "sid": draft['sid'], "link": draft['link'], "qty": draft['qty'], "cost": draft['cost'], "status": "pending", "date": datetime.now()})
-        bot.edit_message_text(f"✅ **Order Placed Successfully!**\n🆔 Order ID: `{res['order']}`\n🎁 Points Earned: `+{points_earned}`", uid, call.message.message_id, parse_mode="Markdown")
+        bot.edit_message_text(f"✅ **Order Placed Successfully!**\n🆔 Order ID: `{res['order']}`\n🎁 Points Earned: `+{points_earned}`", uid, message_id, parse_mode="Markdown")
         if proof_ch:
             try: bot.send_message(proof_ch, channel_post, parse_mode="Markdown")
             except: pass
     else:
         err_msg = res.get('error', 'API Timeout') if res else 'API Timeout'
-        bot.edit_message_text(f"❌ **API REJECTED THE ORDER!**\n\n**Reason:** `{err_msg}`\n\nPlease check your link or try another service.", uid, call.message.message_id, parse_mode="Markdown")
+        bot.edit_message_text(f"❌ **API REJECTED THE ORDER!**\n\n**Reason:** `{err_msg}`\n\nPlease check your link or try another service.", uid, message_id, parse_mode="Markdown")
         clear_user_session(uid)
 
 @bot.callback_query_handler(func=lambda c: c.data == "CANCEL_ORD")
 def cancel_ord(call):
-    clear_user_session(call.message.chat.id) # 🔥 Redis Clear
+    clear_user_session(call.message.chat.id)
     bot.edit_message_text("🚫 **Order Cancelled.**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
