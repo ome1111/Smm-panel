@@ -8,6 +8,7 @@ import re
 import random
 import json
 from datetime import datetime, timedelta
+from bson import json_util # 🔥 MongoDB Date/Object serialize করার জন্য
 
 # ASCII Encoding Fix
 if sys.stdout.encoding != 'utf-8':
@@ -65,6 +66,22 @@ def update_settings_cache(key, value):
     s = get_settings()
     s[key] = value
     redis_client.setex("settings_cache", 30, json.dumps(s))
+
+# 🔥 Super Fast User Caching Engine (New)
+def get_cached_user(uid):
+    """MongoDB এর বদলে Redis থেকে ইউজারের ডেটা আনবে"""
+    cached = redis_client.get(f"user_cache_{uid}")
+    if cached:
+        return json.loads(cached, object_hook=json_util.object_hook)
+    
+    user = users_col.find_one({"_id": uid})
+    if user:
+        redis_client.setex(f"user_cache_{uid}", 300, json.dumps(user, default=json_util.default)) # ৫ মিনিট ক্যাশ
+    return user
+
+def clear_cached_user(uid):
+    """ইউজারের ব্যালেন্স বা ডেটা আপডেট হলে ক্যাশ ক্লিয়ার করবে"""
+    redis_client.delete(f"user_cache_{uid}")
 
 # 🔥 Redis Based Anti-Spam (100% Accurate & Distributed)
 def check_spam(uid):
@@ -125,6 +142,7 @@ def drip_campaign_cron():
             now = datetime.now()
             users = list(users_col.find({"is_fake": {"$ne": True}}))
             for u in users:
+                time.sleep(0.05) # 🔥 Anti-CPU Lock (যাতে লুপ সার্ভারকে জ্যাম না করে)
                 joined = u.get("joined")
                 if not joined: continue
                 days = (now - joined).days
@@ -133,14 +151,17 @@ def drip_campaign_cron():
                     try: bot.send_message(uid, "🎁 **Hey! It's been 3 Days!**\nHope you're enjoying our lightning-fast services. Deposit today to boost your socials!", parse_mode="Markdown")
                     except: pass
                     users_col.update_one({"_id": uid}, {"$set": {"drip_3": True}})
+                    clear_cached_user(uid)
                 elif days >= 7 and not u.get("drip_7"):
                     try: bot.send_message(uid, "🔥 **1 Week Anniversary!**\nYou've been with us for 7 days. Check out our Flash Sales and keep growing!", parse_mode="Markdown")
                     except: pass
                     users_col.update_one({"_id": uid}, {"$set": {"drip_7": True}})
+                    clear_cached_user(uid)
                 elif days >= 15 and not u.get("drip_15"):
                     try: bot.send_message(uid, "💎 **VIP Reminder!**\nAs a loyal user, we invite you to check our Best Choice services today!", parse_mode="Markdown")
                     except: pass
                     users_col.update_one({"_id": uid}, {"$set": {"drip_15": True}})
+                    clear_cached_user(uid)
         except: pass
         time.sleep(43200)
 
@@ -151,6 +172,7 @@ def auto_sync_orders_cron():
         try:
             active_orders = orders_col.find({"status": {"$nin": ["completed", "canceled", "refunded", "fail", "partial"]}}).limit(100)
             for o in active_orders:
+                time.sleep(0.1) # 🔥 Anti-CPU Lock
                 if o.get("is_shadow"): continue
                 try: res = api.check_order_status(o['oid'])
                 except: continue
@@ -171,10 +193,11 @@ def auto_sync_orders_cron():
                             bot.send_message(o['uid'], msg, parse_mode="Markdown")
                         except: pass
                         if new_status in ['canceled', 'refunded', 'fail']:
-                            u = users_col.find_one({"_id": o['uid']})
+                            u = get_cached_user(o['uid'])
                             curr = u.get("currency", "BDT") if u else "BDT"
                             cost_str = fmt_curr(o['cost'], curr)
                             users_col.update_one({"_id": o['uid']}, {"$inc": {"balance": o['cost'], "spent": -o['cost']}})
+                            clear_cached_user(o['uid'])
                             try: bot.send_message(o['uid'], f"💰 **ORDER REFUNDED!**\nOrder `{o['oid']}` failed or canceled by server. `{cost_str}` has been added back to your balance.", parse_mode="Markdown")
                             except: pass
         except: pass
