@@ -1,0 +1,9 @@
+flask
+pyTelegramBotAPI
+pymongo
+requests
+gunicorn
+gevent
+google-genai>=0.2.0
+dnspython
+redis>=5.0.1
