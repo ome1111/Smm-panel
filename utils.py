@@ -6,6 +6,7 @@ import os
 import threading
 import re
 import random
+import json
 from datetime import datetime, timedelta
 
 # ASCII Encoding Fix
@@ -14,7 +15,8 @@ if sys.stdout.encoding != 'utf-8':
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 from telebot import types
-from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col
+# 🔥 loader থেকে redis_client ইম্পোর্ট করা হলো
+from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, redis_client
 from config import *
 import api
 
@@ -26,7 +28,6 @@ def update_spy(uid, action_text):
 # ==========================================
 BASE_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://smm-panel-g8ab.onrender.com')
 
-user_actions, blocked_users = {}, {}
 CURRENCY_RATES = {"BDT": 120, "INR": 83, "USD": 1}
 CURRENCY_SYMBOLS = {"BDT": "৳", "INR": "₹", "USD": "$"}
 
@@ -37,12 +38,12 @@ def fmt_curr(usd_amount, curr_code="BDT"):
     decimals = 3 if curr_code == "USD" else 2
     return f"{sym}{val:.{decimals}f}"
 
-SETTINGS_CACHE = {"data": None, "time": 0}
-
+# 🔥 Redis Based Settings Cache (Super Fast)
 def get_settings():
-    global SETTINGS_CACHE
-    if SETTINGS_CACHE["data"] and time.time() - SETTINGS_CACHE["time"] < 30:
-        return SETTINGS_CACHE["data"]
+    cached = redis_client.get("settings_cache")
+    if cached:
+        return json.loads(cached)
+        
     s = config_col.find_one({"_id": "settings"})
     if not s:
         s = {
@@ -56,27 +57,34 @@ def get_settings():
             "proof_channel": "", "profit_tiers": []
         }
         config_col.insert_one(s)
-    SETTINGS_CACHE["data"] = s
-    SETTINGS_CACHE["time"] = time.time()
+        
+    redis_client.setex("settings_cache", 30, json.dumps(s)) # 30 সেকেন্ডের জন্য ক্যাশে থাকবে
     return s
 
 def update_settings_cache(key, value):
-    global SETTINGS_CACHE
-    if SETTINGS_CACHE["data"]:
-        SETTINGS_CACHE["data"][key] = value
+    s = get_settings()
+    s[key] = value
+    redis_client.setex("settings_cache", 30, json.dumps(s))
 
+# 🔥 Redis Based Anti-Spam (100% Accurate & Distributed)
 def check_spam(uid):
     if str(uid) == str(ADMIN_ID): return False 
-    current_time = time.time()
-    if uid in blocked_users and current_time < blocked_users[uid]: return True
-    if uid not in user_actions: user_actions[uid] = []
-    user_actions[uid].append(current_time)
-    user_actions[uid] = [t for t in user_actions[uid] if current_time - t < 3]
-    if len(user_actions[uid]) > 5:
-        blocked_users[uid] = current_time + 300
+    
+    if redis_client.get(f"blocked_{uid}"): 
+        return True
+        
+    key = f"spam_{uid}"
+    reqs = redis_client.incr(key)
+    
+    if reqs == 1: 
+        redis_client.expire(key, 3) # ৩ সেকেন্ডের উইন্ডো
+        
+    if reqs > 5:
+        redis_client.setex(f"blocked_{uid}", 300, "1") # ৫ মিনিটের জন্য ব্লক
         try: bot.send_message(uid, "🛡 **ANTI-SPAM ACTIVATED!**\nYou are clicking too fast. Please wait 5 minutes.", parse_mode="Markdown")
         except: pass
         return True
+        
     return False
 
 def check_maintenance(chat_id):
@@ -90,18 +98,20 @@ def check_maintenance(chat_id):
 # ==========================================
 # 2. PRO-LEVEL CACHE, SYNC & DRIP CAMPAIGNS
 # ==========================================
-GLOBAL_SERVICES_CACHE = []
 
+# 🔥 1xpanel API Auto-Sync (প্রতি ১২ ঘণ্টা বা ৪৩,২০০ সেকেন্ড পর পর)
 def auto_sync_services_cron():
-    global GLOBAL_SERVICES_CACHE
     while True:
         try:
             res = api.get_services()
             if res and isinstance(res, list): 
-                GLOBAL_SERVICES_CACHE = res
+                # Redis এ ১২ ঘণ্টার জন্য সেভ রাখা (43200 সেকেন্ড)
+                redis_client.setex("services_cache", 43200, json.dumps(res))
+                # ডাটাবেসে ব্যাকআপ হিসেবে রাখা
                 config_col.update_one({"_id": "api_cache"}, {"$set": {"data": res, "time": time.time()}}, upsert=True)
         except: pass
-        time.sleep(600)
+        time.sleep(43200) # ১২ ঘণ্টা ঘুমাবে 
+
 threading.Thread(target=auto_sync_services_cron, daemon=True).start()
 
 def exchange_rate_sync_cron():
@@ -133,6 +143,7 @@ def drip_campaign_cron():
                     users_col.update_one({"_id": uid}, {"$set": {"drip_15": True}})
         except: pass
         time.sleep(43200)
+
 threading.Thread(target=drip_campaign_cron, daemon=True).start()
 
 def auto_sync_orders_cron():
@@ -168,23 +179,27 @@ def auto_sync_orders_cron():
                             except: pass
         except: pass
         time.sleep(120)
+
 threading.Thread(target=auto_sync_orders_cron, daemon=True).start()
 
+# 🔥 Get Services strictly from Redis Cache
 def get_cached_services():
-    global GLOBAL_SERVICES_CACHE
-    if GLOBAL_SERVICES_CACHE: return GLOBAL_SERVICES_CACHE
+    cached = redis_client.get("services_cache")
+    if cached: 
+        return json.loads(cached)
+        
     cache = config_col.find_one({"_id": "api_cache"})
-    return cache.get('data', []) if cache else []
+    data = cache.get('data', []) if cache else []
+    if data:
+        redis_client.setex("services_cache", 43200, json.dumps(data))
+    return data
 
-# 🔥 FIX: Notun Tiered Profit Margin System Add kora holo
 def calculate_price(base_rate, user_spent, user_custom_discount=0.0):
     s = get_settings()
     base = float(base_rate)
     
-    # default profit margin
     profit = float(s.get('profit_margin', 20.0))
     
-    # Checking Tiered Profit Margins
     profit_tiers = s.get('profit_tiers', [])
     if profit_tiers:
         for tier in profit_tiers:
