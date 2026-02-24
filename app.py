@@ -276,11 +276,14 @@ def save_settings():
         "reward_top2": float(request.form.get('reward_top2', 5.0)),
         "reward_top3": float(request.form.get('reward_top3', 2.0)),
         
-        # Crypto APIs Data
+        # 🔥 Crypto APIs Data & Toggles
         "cryptomus_merchant": request.form.get('cryptomus_merchant', '').strip(),
         "cryptomus_api": request.form.get('cryptomus_api', '').strip(),
+        "cryptomus_active": 'cryptomus_active' in request.form,
+        
         "coinpayments_pub": request.form.get('coinpayments_pub', '').strip(),
         "coinpayments_priv": request.form.get('coinpayments_priv', '').strip(),
+        "coinpayments_active": 'coinpayments_active' in request.form,
         
         "best_choice_sids": config_col.find_one({"_id": "settings"}).get('best_choice_sids', []) if config_col.find_one({"_id": "settings"}) else []
     }
@@ -554,8 +557,9 @@ def add_transaction():
         return jsonify({"status": "error", "msg": "No SMS text provided"}), 400
 
     try:
-        trx_match = re.search(r'(?i)(?:TrxID|TxnId|Trx)\s*[:\-\*]*\s*([A-Z0-9]{8,12})', sms_text)
-        amt_match = re.search(r'(?i)(?:Tk|Amount|Received)\s*[:\-\*]*\s*([\d,]+\.?\d*)', sms_text)
+        # 🔥 Advanced Regex: 100% bKash & Nagad (Cash In & Receive) সাপোর্ট করবে
+        trx_match = re.search(r'(?i)(?:TrxID|TxnID)\s*[:]?\s*([A-Z0-9]{8,12})', sms_text)
+        amt_match = re.search(r'(?i)(?:Tk\s+|Amount:\s*Tk\s+)([\d,]+\.\d{2})', sms_text)
         
         if trx_match and amt_match:
             trx = trx_match.group(1).upper()
