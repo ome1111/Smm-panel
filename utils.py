@@ -14,6 +14,7 @@ import requests
 import hmac
 from datetime import datetime, timedelta
 from bson import json_util
+from bson.objectid import ObjectId
 
 # ASCII Encoding Fix
 if sys.stdout.encoding != 'utf-8':
@@ -21,7 +22,8 @@ if sys.stdout.encoding != 'utf-8':
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 from telebot import types
-from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, redis_client
+# 🔥 NEW: Added providers_col
+from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, providers_col, redis_client
 from config import *
 import api
 
@@ -110,17 +112,34 @@ def check_maintenance(chat_id):
 # 2. PRO-LEVEL CACHE, SYNC & DRIP CAMPAIGNS
 # ==========================================
 
+# 🔥 NEW: Multi-Provider Service Sync Engine
 def auto_sync_services_cron():
     while True:
         if not redis_client.set("lock_sync_services", "locked", nx=True, ex=43000):
             time.sleep(60)
             continue
         try:
-            res = api.get_services()
-            if res and isinstance(res, list): 
-                redis_client.setex("services_cache", 43200, json.dumps(res))
-                config_col.update_one({"_id": "api_cache"}, {"$set": {"data": res, "time": time.time()}}, upsert=True)
-        except: pass
+            active_providers = list(providers_col.find({"status": "active"}))
+            all_services = []
+            
+            for provider in active_providers:
+                try:
+                    res = api.get_services(provider.get('api_url'), provider.get('api_key'))
+                    if res and isinstance(res, list): 
+                        for srv in res:
+                            # 🎯 Tagging service with provider ID and specific profit margin
+                            srv['provider_id'] = str(provider['_id'])
+                            srv['provider_name'] = provider.get('name', 'Unknown')
+                            srv['provider_margin'] = provider.get('profit_margin', 0.0)
+                            all_services.append(srv)
+                except Exception as e: 
+                    pass
+                    
+            if all_services:
+                redis_client.setex("services_cache", 43200, json.dumps(all_services))
+                config_col.update_one({"_id": "api_cache"}, {"$set": {"data": all_services, "time": time.time()}}, upsert=True)
+        except Exception: 
+            pass
         time.sleep(43200)
 
 threading.Thread(target=auto_sync_services_cron, daemon=True).start()
@@ -178,7 +197,7 @@ def drip_campaign_cron():
 
 threading.Thread(target=drip_campaign_cron, daemon=True).start()
 
-# 🔥 Updated Auto Sync: Now syncs progress (remains)
+# 🔥 NEW: Multi-Provider Order Sync
 def auto_sync_orders_cron():
     while True:
         if not redis_client.set("lock_orders_sync", "locked", nx=True, ex=110):
@@ -191,7 +210,18 @@ def auto_sync_orders_cron():
                 try:
                     time.sleep(0.1) 
                     if o.get("is_shadow"): continue
-                    try: res = api.check_order_status(o['oid'])
+                    
+                    # 🎯 Identify which provider this order belongs to
+                    provider_id = o.get("provider_id")
+                    api_url, api_key = API_URL, API_KEY # Fallback for old orders
+                    
+                    if provider_id:
+                        provider = providers_col.find_one({"_id": ObjectId(provider_id)})
+                        if provider:
+                            api_url = provider.get("api_url")
+                            api_key = provider.get("api_key")
+                            
+                    try: res = api.check_order_status(api_url, api_key, o['oid'])
                     except: continue
                     
                     if res and 'status' in res:
@@ -199,7 +229,6 @@ def auto_sync_orders_cron():
                         old_status = str(o.get('status', '')).lower()
                         remains = res.get('remains', 0)
                         
-                        # Update DB with new status and remains
                         update_data = {"status": new_status, "remains": remains}
                         orders_col.update_one({"_id": o["_id"]}, {"$set": update_data})
                         
@@ -239,10 +268,14 @@ def get_cached_services():
         redis_client.setex("services_cache", 43200, json.dumps(data))
     return data
 
-def calculate_price(base_rate, user_spent, user_custom_discount=0.0):
+# 🔥 UPDATED: Dynamic Provider Profit Margin Check
+def calculate_price(base_rate, user_spent, user_custom_discount=0.0, provider_margin=0.0):
     s = get_settings()
     base = float(base_rate)
-    profit = float(s.get('profit_margin', 20.0))
+    
+    # Check if specific provider has custom margin, otherwise use global panel margin
+    profit = float(provider_margin) if float(provider_margin) > 0 else float(s.get('profit_margin', 20.0))
+    
     profit_tiers = s.get('profit_tiers', [])
     if profit_tiers:
         for tier in profit_tiers:
@@ -290,9 +323,7 @@ def identify_platform(cat_name):
     if 'twitter' in cat or ' x ' in cat: return "🐦 Twitter"
     return "🌐 Other Services"
 
-# 🔥 NEW HELPER: Smart Auto-Routing
 def detect_platform_from_link(link):
-    """লিংক থেকে স্বয়ংক্রিয়ভাবে প্ল্যাটফর্ম চিনে নেওয়া"""
     link = link.lower()
     if 'instagram.com' in link or 'ig.me' in link: return "📸 Instagram"
     if 'facebook.com' in link or 'fb.com' in link or 'fb.watch' in link: return "📘 Facebook"
@@ -302,9 +333,7 @@ def detect_platform_from_link(link):
     if 'twitter.com' in link or 'x.com' in link: return "🐦 Twitter"
     return None
 
-# 🔥 NEW HELPER: Visual Progress Bar Generator
 def generate_progress_bar(remains, quantity):
-    """রিয়েল-টাইম প্রোগ্রেস বার তৈরি করা"""
     try:
         if remains is None or remains == "": remains = quantity
         remains = int(remains)
@@ -328,10 +357,9 @@ def get_user_tier(spent):
 
 def main_menu():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    # Magic link routing is enabled from universal_router, but "New Order" triggers standard flow
     markup.add("🚀 New Order", "⭐ Favorites")
     markup.add("🔍 Smart Search", "📦 Orders")
-    markup.add("💰 Deposit", "📝 Bulk Order") # Bulk order button added
+    markup.add("💰 Deposit", "📝 Bulk Order") 
     markup.add("👤 Profile", "🤝 Affiliate")
     markup.add("🎟️ Voucher", "💬 Live Chat")
     markup.add("🏆 Leaderboard")
@@ -395,4 +423,3 @@ def create_coinpayments_payment(amount, custom_uid, pub_key, priv_key):
     except Exception: 
         pass
     return None
-
