@@ -7,6 +7,7 @@ import json
 import hashlib
 import base64
 import hmac
+import logging
 from io import StringIO
 from datetime import datetime
 from flask import Flask, request, render_template, redirect, url_for, session, jsonify, Response
@@ -29,17 +30,20 @@ app.secret_key = os.environ.get('SECRET_KEY', 'super_secret_nexus_titan_key_1010
 # 🔥 ADMIN PANEL SECURITY (Cookie Theft Protection)
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-# app.config['SESSION_COOKIE_SECURE'] = True  # (Render-এ HTTPS থাকলে এটি Enable করতে পারেন)
+# app.config['SESSION_COOKIE_SECURE'] = True  # Render-এ HTTPS থাকলে এটি Enable করা ভালো
 
 # ==========================================
-# 1. WEBHOOK FAST ENGINE (10x Speed & Memory Leak Fixed)
+# 1. WEBHOOK FAST ENGINE (Memory Leak Fixed)
 # ==========================================
 @app.route(f"/{BOT_TOKEN}", methods=['POST'])
 def webhook():
     if request.headers.get('content-type') == 'application/json':
-        json_string = request.get_data().decode('utf-8')
-        update = telebot.types.Update.de_json(json_string)
-        bot.process_new_updates([update])
+        try:
+            json_string = request.get_data().decode('utf-8')
+            update = telebot.types.Update.de_json(json_string)
+            bot.process_new_updates([update])
+        except Exception as e:
+            logging.error(f"Webhook Error: {e}")
         return 'OK', 200
     return 'Forbidden', 403
 
@@ -47,7 +51,7 @@ def webhook():
 def manual_set_webhook():
     bot.remove_webhook()
     time.sleep(1)
-    RENDER_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://smm-panel-g8ab.onrender.com')
+    RENDER_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://your-app.onrender.com')
     success = bot.set_webhook(url=f"{RENDER_URL.rstrip('/')}/{BOT_TOKEN}")
     if success:
         return "<h1>✅ Webhook Connected Successfully!</h1><p>Your Bot is now LIVE and running fast with Redis Cache & Async Workers!</p>"
@@ -144,11 +148,11 @@ def auto_fake_proof_cron():
                 random_hash = ''.join(random.choices("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=8))
                 masked_link = f"{base_link}{random_hash[:4]}..."
                 
-                msg = f"```text\n╔════ 🟢 𝗡𝗘𝗪 𝗢𝗥𝗗𝗘𝗥 ════╗\n║ 🆔 𝗢𝗿𝗱𝗲𝗿: #{fake_oid}\n║ 👤 𝗨𝘀𝗲𝗿: {masked_id}\n║ 🚀 𝗦𝗲𝗿𝘃𝗶𝗰𝗲: {short_srv}\n║ 🔗 𝗟𝗶𝗻𝗸: {masked_link}\n║ 📦 𝗤𝘁𝘆: {qty}\n║ 💵 𝗖𝗼𝘀𝘁: {display_cost}\n╚════════════════════╝\n```"
+                msg = f"```text\n╔════ 🟢 𝗡𝗘𝗪 𝗢𝗥𝗗𝗘𝗥 ════╗\n║ 🆔 𝗢𝗿𝗱𝗲𝗿: #{fake_oid}\n║ 👤 𝗨𝘀𝗲𝗿: {masked_id}\n║ 🚀 𝗦𝗲𝗿𝘃𝗶𝗰𝗲: {utils.escape_md(short_srv)}\n║ 🔗 𝗟𝗶𝗻𝗸: {utils.escape_md(masked_link)}\n║ 📦 𝗤𝘁𝘆: {qty}\n║ 💵 𝗖𝗼𝘀𝘁: {display_cost}\n╚════════════════════╝\n```"
                 bot.send_message(proof_channel, msg, parse_mode="Markdown")
 
-        except Exception:
-            pass
+        except Exception as e:
+            logging.error(f"Auto Fake Proof Error: {e}")
 
 threading.Thread(target=auto_fake_proof_cron, daemon=True).start()
 
@@ -179,8 +183,7 @@ def index():
     vouchers = list(vouchers_col.find().sort("_id", -1))
     
     services = utils.get_cached_services()
-    # 🔥 FIXED: Safely handle None categories from external API
-    unique_categories = sorted(list(set(str(s.get('category', 'Uncategorized')) for s in services))) if services else []
+    unique_categories = sorted(list(set(s['category'] for s in services))) if services else []
     
     saved_orders_doc = config_col.find_one({"_id": "service_orders"}) or {}
     saved_service_orders = saved_orders_doc.get("orders", {})
@@ -194,6 +197,7 @@ def index():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
+        # ADMIN_PASSWORD environment variable থেকে নেওয়া হয়েছে
         if request.form.get('password') == ADMIN_PASSWORD:
             session['admin'] = True
             return redirect(url_for('index'))
@@ -277,7 +281,6 @@ def save_settings():
         "reward_top2": float(request.form.get('reward_top2', 5.0)),
         "reward_top3": float(request.form.get('reward_top3', 2.0)),
         
-        # 🔥 Crypto APIs Data & Toggles
         "cryptomus_merchant": request.form.get('cryptomus_merchant', '').strip(),
         "cryptomus_api": request.form.get('cryptomus_api', '').strip(),
         "cryptomus_active": 'cryptomus_active' in request.form,
@@ -340,7 +343,7 @@ def edit_user():
     elif bal_action == "sub":
         users_col.update_one({"_id": uid}, {"$set": update_query, "$inc": {"balance": -bal_val}})
         
-    utils.clear_cached_user(uid) # 🔥 User Cache Clear
+    utils.clear_cached_user(uid) 
     return redirect(url_for('index'))
 
 @app.route('/add_fake_user', methods=['POST'])
@@ -455,13 +458,13 @@ def approve_dep(uid, amt, tid):
             utils.clear_cached_user(u["ref_by"])
             try: bot.send_message(u["ref_by"], f"💸 **COMMISSION EARNED!**\nYour referral made a deposit. You earned `${comm:.3f}`!", parse_mode="Markdown")
             except: pass
-    try: bot.send_message(uid, f"✅ **DEPOSIT APPROVED!**\nAmount: `${float(amt):.2f}` added to your wallet.\nTrxID: `{tid}`", parse_mode="Markdown")
+    try: bot.send_message(uid, f"✅ **DEPOSIT APPROVED!**\nAmount: `${float(amt):.2f}` added to your wallet.\nTrxID: `{utils.escape_md(tid)}`", parse_mode="Markdown")
     except: pass
     return "✅ Deposit Approved and user notified. You can close this window."
 
 @app.route('/reject_dep/<int:uid>/<tid>')
 def reject_dep(uid, tid):
-    try: bot.send_message(uid, f"❌ **DEPOSIT REJECTED!**\nYour TrxID `{tid}` was invalid. Contact Admin.", parse_mode="Markdown")
+    try: bot.send_message(uid, f"❌ **DEPOSIT REJECTED!**\nYour TrxID `{utils.escape_md(tid)}` was invalid. Contact Admin.", parse_mode="Markdown")
     except: pass
     return "❌ Deposit Rejected. User notified."
 
@@ -473,8 +476,9 @@ def send_bc():
     return redirect(url_for('index'))
     
 def bc_task(msg):
+    safe_msg = utils.escape_md(msg)
     for u in users_col.find({"is_fake": {"$ne": True}}):
-        try: bot.send_message(u["_id"], f"📢 **BROADCAST**\n━━━━━━━━━━━━\n{msg}", parse_mode="Markdown")
+        try: bot.send_message(u["_id"], f"📢 **BROADCAST**\n━━━━━━━━━━━━\n{safe_msg}", parse_mode="Markdown")
         except: pass
 
 @app.route('/smart_cast', methods=['POST'])
@@ -485,8 +489,9 @@ def smart_cast():
     return redirect(url_for('index'))
 
 def smart_bc_task(msg):
+    safe_msg = utils.escape_md(msg)
     for u in users_col.find({"spent": {"$gt": 0}, "is_fake": {"$ne": True}}):
-        try: bot.send_message(u["_id"], f"🎁 **EXCLUSIVE VIP OFFER**\n━━━━━━━━━━━━\n{msg}", parse_mode="Markdown")
+        try: bot.send_message(u["_id"], f"🎁 **EXCLUSIVE VIP OFFER**\n━━━━━━━━━━━━\n{safe_msg}", parse_mode="Markdown")
         except: pass
 
 @app.route('/create_voucher', methods=['POST'])
@@ -505,7 +510,7 @@ def reply_ticket():
     uid = int(request.form.get('uid'))
     msg = request.form.get('reply_msg')
     tickets_col.update_one({"_id": ObjectId(tid)}, {"$set": {"status": "closed", "reply": msg}})
-    try: bot.send_message(uid, f"🎧 **TICKET UPDATE**\nAdmin Replied: {msg}", parse_mode="Markdown")
+    try: bot.send_message(uid, f"🎧 **TICKET UPDATE**\nAdmin Replied: {utils.escape_md(msg)}", parse_mode="Markdown")
     except: pass
     return redirect(url_for('index'))
 
@@ -541,9 +546,8 @@ def refund_order(oid):
         except: pass
     return redirect(url_for('index'))
 
-
 # ==========================================
-# 8. LOCAL AUTO PAYMENT WEBHOOK API (For MacroDroid)
+# 8. LOCAL AUTO PAYMENT WEBHOOK API
 # ==========================================
 @app.route('/api/add_transaction', methods=['POST', 'GET'])
 def add_transaction():
@@ -558,7 +562,6 @@ def add_transaction():
         return jsonify({"status": "error", "msg": "No SMS text provided"}), 400
 
     try:
-        # 🔥 Advanced Regex: 100% bKash & Nagad (Cash In & Receive) সাপোর্ট করবে
         trx_match = re.search(r'(?i)(?:TrxID|TxnID)\s*[:]?\s*([A-Z0-9]{8,12})', sms_text)
         amt_match = re.search(r'(?i)(?:Tk\s+|Amount:\s*Tk\s+)([\d,]+\.\d{2})', sms_text)
         
@@ -578,9 +581,8 @@ def add_transaction():
     except Exception as e:
         return jsonify({"status": "error", "msg": str(e)})
 
-
 # ==========================================
-# 🔥 9. NEW: GLOBAL CRYPTO PAYMENT WEBHOOKS
+# 9. NEW: GLOBAL CRYPTO PAYMENT WEBHOOKS
 # ==========================================
 @app.route('/cryptomus_webhook', methods=['POST'])
 def cryptomus_webhook():
@@ -597,19 +599,16 @@ def cryptomus_webhook():
         dict_data = data.copy()
         dict_data.pop('sign', None)
         
-        # Cryptomus Hash Validation
         encoded_data = base64.b64encode(json.dumps(dict_data, separators=(',', ':')).encode('utf-8')).decode('utf-8')
         expected_sign = hashlib.md5((encoded_data + api_key).encode('utf-8')).hexdigest()
         
         if sign != expected_sign: return "Invalid signature", 400
         
         if data.get('status') in ['paid', 'paid_over']:
-            # Assuming format: order_id = "UID_RANDOMID" (e.g. "123456789_X83M")
             uid = int(str(data.get('order_id', '0')).split('_')[0]) 
             amt = float(data.get('amount'))
             trx = data.get('uuid')
             
-            # Check if processed
             if config_col.find_one({"_id": "transactions", "valid_list.trx": trx}):
                 return "Already processed", 200
                 
@@ -622,6 +621,7 @@ def cryptomus_webhook():
             
         return "OK", 200
     except Exception as e:
+        logging.error(f"Cryptomus Webhook Error: {e}")
         return str(e), 500
 
 @app.route('/coinpayments_ipn', methods=['POST'])
@@ -641,9 +641,9 @@ def coinpayments_ipn():
         if hmac_header != calculated_hmac: return "Invalid HMAC", 400
         
         status = int(request.form.get('status', -1))
-        if status >= 100 or status == 2: # 100 or 2 means complete/confirmed
-            uid = int(request.form.get('custom', 0)) # User ID needs to be sent in the 'custom' field
-            amt = float(request.form.get('amount1', 0)) # Amount in USD/Base Currency
+        if status >= 100 or status == 2:
+            uid = int(request.form.get('custom', 0)) 
+            amt = float(request.form.get('amount1', 0)) 
             trx = request.form.get('txn_id')
             
             if config_col.find_one({"_id": "transactions", "valid_list.trx": trx}):
@@ -658,8 +658,9 @@ def coinpayments_ipn():
             
         return "OK", 200
     except Exception as e:
+        logging.error(f"CoinPayments IPN Error: {e}")
         return str(e), 500
 
-
+# Gunicorn-এর ক্ষেত্রে app.run() ফায়ার হবে না, এটি শুধু লোকাল টেস্টিংয়ের জন্য
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
