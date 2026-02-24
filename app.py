@@ -12,7 +12,6 @@ from bson.objectid import ObjectId
 import re
 
 # Import from loader and config
-# 🔥 redis_client ইম্পোর্ট করা হলো
 from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, redis_client
 from config import BOT_TOKEN, ADMIN_ID, ADMIN_PASSWORD
 
@@ -69,7 +68,7 @@ def auto_fake_proof_cron():
 
             # 🔥 Redis Lock: মাল্টিপল Gunicorn Worker থাকলেও শুধু একজন পোস্ট করবে
             if not redis_client.set("fake_proof_lock", "locked", nx=True, ex=40):
-                continue # অন্য ওয়ার্কার কাজ করছে, তাই স্কিপ করবে
+                continue
 
             dep_freq = s.get('fake_dep_freq', 2)
             ord_freq = s.get('fake_ord_freq', 3)
@@ -149,7 +148,6 @@ threading.Thread(target=auto_fake_proof_cron, daemon=True).start()
 # 3. ADMIN WEB PANEL ROUTES (GOD MODE)
 # ==========================================
 def get_dashboard_stats():
-    # 🔥 Redis Cache for Settings 
     cached = redis_client.get("settings_cache")
     if cached:
         s = json.loads(cached)
@@ -228,7 +226,7 @@ def save_best_choice():
     raw_sids = request.form.get('best_choice_sids', '')
     sids = [s.strip() for s in raw_sids.split(',') if s.strip()]
     config_col.update_one({"_id": "settings"}, {"$set": {"best_choice_sids": sids}}, upsert=True)
-    utils.update_settings_cache("best_choice_sids", sids) # 🔥 Update Redis Cache
+    utils.update_settings_cache("best_choice_sids", sids)
     return redirect(url_for('index'))
 
 @app.route('/save_service_order', methods=['POST'])
@@ -297,7 +295,7 @@ def save_settings():
     s["profit_tiers"] = profit_tiers
 
     config_col.update_one({"_id": "settings"}, {"$set": s}, upsert=True)
-    redis_client.setex("settings_cache", 30, json.dumps(s)) # 🔥 Update Redis Cache
+    redis_client.setex("settings_cache", 30, json.dumps(s))
     return redirect(url_for('index'))
 
 @app.route('/edit_user', methods=['POST'])
@@ -342,11 +340,37 @@ def remove_fake_users():
     users_col.delete_many({"is_fake": True})
     return redirect(url_for('index'))
 
+# 🔥 NEW SMART CLEANUP ROUTE (Database Optimization)
+@app.route('/smart_cleanup')
+def smart_cleanup():
+    if 'admin' not in session: return redirect(url_for('login'))
+    
+    # 1. Remove Closed Tickets
+    t_del = tickets_col.delete_many({"status": "closed"}).deleted_count
+    
+    # 2. Remove Canceled, Failed & Refunded Orders
+    o_del = orders_col.delete_many({"status": {"$in": ["canceled", "fail", "refunded"]}}).deleted_count
+    
+    # 3. Remove Fully Used Vouchers
+    v_del = 0
+    for v in vouchers_col.find():
+        if len(v.get('used_by', [])) >= v.get('limit', 1):
+            vouchers_col.delete_one({"_id": v["_id"]})
+            v_del += 1
+            
+    # Send Report to Admin via Telegram
+    try:
+        report = f"🧹 **SMART CLEANUP COMPLETE**\n━━━━━━━━━━━━━━━━━━━━\n🗑️ Closed Tickets Deleted: `{t_del}`\n🗑️ Failed/Canceled Orders: `{o_del}`\n🗑️ Used Vouchers Removed: `{v_del}`\n\n✅ Database is now fresh, fast & optimized!"
+        bot.send_message(ADMIN_ID, report, parse_mode="Markdown")
+    except: pass
+    
+    return redirect(url_for('index'))
+
 @app.route('/delete_user/<int:uid>')
 def delete_user(uid):
     if 'admin' not in session: return redirect(url_for('login'))
     users_col.delete_one({"_id": uid})
-    redis_client.delete(f"session_{uid}") # 🔥 Clear Session Data
+    redis_client.delete(f"session_{uid}")
     return redirect(url_for('index'))
 
 @app.route('/toggle_shadow_ban/<int:uid>')
@@ -530,4 +554,3 @@ def add_transaction():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
-
