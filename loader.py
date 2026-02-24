@@ -4,22 +4,22 @@ import logging
 import telebot
 import redis
 from pymongo import MongoClient, ASCENDING, DESCENDING
-from config import BOT_TOKEN, MONGO_URL, REDIS_URL, ADMIN_ID
+from config import BOT_TOKEN, MONGO_URL, REDIS_URL
 
 # ==========================================
 # 1. TIMEZONE & LOGGING SETUP (PRO-LEVEL)
 # ==========================================
-# Default Timezone செট করা হলো (Asia/Dhaka)
+# Default Timezone সেট করা হলো (Asia/Dhaka)
 os.environ['TZ'] = 'Asia/Dhaka'
 try:
     time.tzset()  
 except AttributeError:
     pass
 
-# Advanced Logging System
+# Advanced Logging System (Added Process ID for Gunicorn Workers)
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
+    format='%(asctime)s [%(levelname)s] [Worker-%(process)d] %(message)s',
     datefmt='%Y-%m-%d %I:%M:%S %p'
 )
 
@@ -31,12 +31,15 @@ class CrashPreventer(telebot.ExceptionHandler):
         logging.error(f"🔥 BOT CRASH PREVENTED: {exception}")
         return True  
 
+# Webhook ব্যবহারের সময় threaded=False রাখা বাধ্যতামূলক
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False, exception_handler=CrashPreventer())
 
 # ==========================================
-# 3. MONGODB CONNECTION & HEALTH CHECK
+# 3. MONGODB CONNECTION (Optimized for Gunicorn)
 # ==========================================
-client = MongoClient(MONGO_URL + ("&maxPoolSize=20" if "?" in MONGO_URL else "?maxPoolSize=20"))
+# Gunicorn-এর একাধিক ওয়ার্কার সামলানোর জন্য Pool Size বাড়ানো হয়েছে
+mongo_options = "&maxPoolSize=50&connectTimeoutMS=10000" if "?" in MONGO_URL else "?maxPoolSize=50&connectTimeoutMS=10000"
+client = MongoClient(MONGO_URL + mongo_options)
 
 try:
     client.admin.command('ping')
@@ -57,8 +60,9 @@ logs_col = db['logs']
 # 4. REDIS CONNECTION (FAST CACHE ENGINE)
 # ==========================================
 try:
-    # Upstash Redis TLS/SSL Connection
-    redis_client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
+    # ConnectionPool ব্যবহার করা হয়েছে যাতে Gunicorn ওয়ার্কারগুলো কানেকশন শেয়ার করতে পারে
+    redis_pool = redis.ConnectionPool.from_url(REDIS_URL, decode_responses=True, max_connections=20)
+    redis_client = redis.Redis(connection_pool=redis_pool)
     redis_client.ping()
     logging.info("✅ Redis Engine Connected Successfully! Lightning Speed ON 🚀")
 except Exception as e:
