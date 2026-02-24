@@ -1,8 +1,18 @@
+import json
 from telebot import types
-from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col
+# 🔥 redis_client ইম্পোর্ট করা হলো
+from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, redis_client
 from config import *
 import api
 from utils import *
+
+# ==========================================
+# 🔥 ADMIN REDIS SESSION MANAGER
+# ==========================================
+def set_admin_step(uid, step):
+    """অ্যাডমিনের বর্তমান কমান্ড সেশন Redis এ সেভ রাখা"""
+    session = {"step": step}
+    redis_client.setex(f"session_{uid}", 3600, json.dumps(session))
 
 # ==========================================
 # 6. GOD MODE ADMIN COMMANDS
@@ -52,19 +62,19 @@ def admin_callbacks(call):
         bot.edit_message_text("⚙️ **ADVANCED BOT SETTINGS**\nControl automation features here:", uid, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
         
     elif call.data == "ADM_PROFIT":
-        users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_profit"}})
+        set_admin_step(uid, "awaiting_profit") # 🔥 Redis Session
         bot.send_message(uid, "💰 **PROFIT MARGIN**\nEnter new profit margin percentage (e.g. 20.5):")
 
     elif call.data == "ADM_WBONUS":
-        users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_wbonus"}})
+        set_admin_step(uid, "awaiting_wbonus") # 🔥 Redis Session
         bot.send_message(uid, "🎁 **WELCOME BONUS**\nEnter new welcome bonus amount (e.g. 0.5):")
 
     elif call.data == "ADM_FSALE":
-        users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_fsale"}})
+        set_admin_step(uid, "awaiting_fsale") # 🔥 Redis Session
         bot.send_message(uid, "⚡ **FLASH SALE**\nEnter flash sale discount percentage (e.g. 10.0):")
 
     elif call.data == "ADM_BEST":
-        users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_best"}})
+        set_admin_step(uid, "awaiting_best") # 🔥 Redis Session
         bot.send_message(uid, "🌟 **BEST CHOICE SIDs**\nEnter comma-separated Service IDs (e.g. 10, 25, 102):")
 
     elif call.data == "ADM_STATS":
@@ -73,19 +83,19 @@ def admin_callbacks(call):
         bot.send_message(uid, f"📈 **FINANCIAL REPORT**\n\n💰 **Bot Net Worth:** `${bal:.2f}`\n💸 **Total Sales:** `${spt:.2f}`", parse_mode="Markdown")
         
     elif call.data == "ADM_GHOST":
-        users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_ghost_uid"}})
+        set_admin_step(uid, "awaiting_ghost_uid") # 🔥 Redis Session
         bot.send_message(uid, "👻 **GHOST LOGIN**\nEnter Target User's ID:")
         
     elif call.data == "ADM_ALERT":
-        users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_alert_uid"}})
+        set_admin_step(uid, "awaiting_alert_uid") # 🔥 Redis Session
         bot.send_message(uid, "📩 **CUSTOM ALERT**\nEnter Target User's ID:")
         
     elif call.data == "ADM_BC":
-        users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_bc"}})
+        set_admin_step(uid, "awaiting_bc") # 🔥 Redis Session
         bot.send_message(uid, "📢 **Enter message for broadcast:**")
         
     elif call.data == "ADM_POINTS":
-        users_col.update_one({"_id": uid}, {"$set": {"step": "awaiting_points_cfg"}})
+        set_admin_step(uid, "awaiting_points_cfg") # 🔥 Redis Session
         s = get_settings()
         bot.send_message(uid, f"💎 **POINTS CONFIGURATION**\nCurrent Setup:\n- Per $1 Spent: `{s.get('points_per_usd', 100)} Points`\n- To get $1 Reward: `{s.get('points_to_usd_rate', 1000)} Points`\n\n**Reply with new values separated by comma (e.g., 50, 2000):**", parse_mode="Markdown")
         
@@ -95,4 +105,3 @@ def admin_callbacks(call):
         config_col.update_one({"_id": "settings"}, {"$set": {"maintenance": ns}})
         update_settings_cache("maintenance", ns)
         bot.send_message(uid, f"✅ Maintenance Mode is now: {'**ON**' if ns else '**OFF**'}", parse_mode="Markdown")
-
