@@ -128,13 +128,13 @@
                         <tr class="hover:bg-slate-800/30 transition border-b border-slate-800/50">
                             <td class="p-4">
                                 <div class="font-bold text-white flex items-center gap-2">
-                                    {{ u.name }}
-                                    {% if u.is_fake %}<span class="bg-violet-500/20 text-violet-400 text-xs px-2 py-0.5 rounded border border-violet-500/30">Fake</span>{% endif %}
+                                    {{ u.get('name', 'Unknown User') }}
+                                    {% if u.get('is_fake') %}<span class="bg-violet-500/20 text-violet-400 text-xs px-2 py-0.5 rounded border border-violet-500/30">Fake</span>{% endif %}
                                 </div>
-                                <div class="text-slate-500 data-font text-xs mt-1">{{ u._id }}</div>
+                                <div class="text-slate-500 data-font text-xs mt-1">{{ u.get('_id', 'N/A') }}</div>
                             </td>
                             <td class="p-4">
-                                <div class="text-emerald-400 font-bold data-font">${{ "%.3f"|format(u.balance) }}</div>
+                                <div class="text-emerald-400 font-bold data-font">${{ "%.3f"|format(u.get('balance', 0)) }}</div>
                                 <div class="text-slate-500 text-xs mt-1">Pts: {{ u.get('points', 0) }}</div>
                             </td>
                             <td class="p-4">
@@ -151,17 +151,17 @@
                                 {% endif %}
                             </td>
                             <td class="p-4 text-right space-x-2">
-                                <button onclick="openEditModal({{ u._id }}, '{{ u.name }}', {{ u.balance }}, {{ u.get('spent',0) }}, {{ u.get('ref_earnings',0) }}, {{ u.get('points',0) }}, {{ u.get('custom_discount',0) }}, '{{ u.get('tier_override', 'none') }}')" class="text-sky-400 hover:text-sky-300" title="Edit User"><i class="fas fa-edit"></i></button>
+                                <button onclick="openEditModal({{ u.get('_id', 0) }}, '{{ u.get('name', 'Unknown') | replace('\'', '\\\'') }}', {{ u.get('balance', 0) }}, {{ u.get('spent',0) }}, {{ u.get('ref_earnings',0) }}, {{ u.get('points',0) }}, {{ u.get('custom_discount',0) }}, '{{ u.get('tier_override', 'none') }}')" class="text-sky-400 hover:text-sky-300" title="Edit User"><i class="fas fa-edit"></i></button>
                                 
-                                <a href="/toggle_shadow_ban/{{ u._id }}" class="text-stone-400 hover:text-stone-300" title="Toggle Shadow Ban"><i class="fas fa-ghost"></i></a>
+                                <a href="/toggle_shadow_ban/{{ u.get('_id') }}" class="text-stone-400 hover:text-stone-300" title="Toggle Shadow Ban"><i class="fas fa-ghost"></i></a>
                                 
                                 {% if u.get('banned') %}
-                                    <a href="/unban_user/{{ u._id }}" class="text-emerald-400 hover:text-emerald-300" title="Unban"><i class="fas fa-check-circle"></i></a>
+                                    <a href="/unban_user/{{ u.get('_id') }}" class="text-emerald-400 hover:text-emerald-300" title="Unban"><i class="fas fa-check-circle"></i></a>
                                 {% else %}
-                                    <a href="/ban_user/{{ u._id }}" class="text-orange-400 hover:text-orange-300" title="Ban"><i class="fas fa-ban"></i></a>
+                                    <a href="/ban_user/{{ u.get('_id') }}" class="text-orange-400 hover:text-orange-300" title="Ban"><i class="fas fa-ban"></i></a>
                                 {% endif %}
                                 
-                                <a href="/delete_user/{{ u._id }}" onclick="return confirm('Delete this user completely?')" class="text-red-500 hover:text-red-400" title="Delete"><i class="fas fa-trash"></i></a>
+                                <a href="/delete_user/{{ u.get('_id') }}" onclick="return confirm('Delete this user completely?')" class="text-red-500 hover:text-red-400" title="Delete"><i class="fas fa-trash"></i></a>
                             </td>
                         </tr>
                         {% endfor %}
@@ -187,12 +187,12 @@
                         {% for o in orders %}
                         <tr class="hover:bg-slate-800/30 transition border-b border-slate-800/50">
                             <td class="p-4 text-white data-font font-bold">
-                                {{ o.oid }}
+                                {{ o.get('oid', 'N/A') }}
                                 {% if o.get('is_shadow') %}<br><span class="text-xs text-stone-400">Shadow Order</span>{% endif %}
                             </td>
-                            <td class="p-4 text-sky-400 data-font">{{ o.uid }}</td>
+                            <td class="p-4 text-sky-400 data-font">{{ o.get('uid', 'N/A') }}</td>
                             <td class="p-4">
-                                <div class="text-white font-bold">SID: {{ o.sid }}</div>
+                                <div class="text-white font-bold">SID: {{ o.get('sid', 'N/A') }}</div>
                                 <div class="text-slate-400 text-xs truncate max-w-xs mt-1">{{ o.get('link', o.get('username', 'N/A')) }}</div>
                                 <div class="text-slate-500 text-xs mt-1">Qty: {{ o.get('qty', 0) }}</div>
                             </td>
@@ -202,14 +202,14 @@
                                 {% elif st in ['canceled', 'fail', 'refunded'] %}<span class="text-red-500 font-bold uppercase">{{ st }}</span>
                                 {% elif st in ['processing', 'in progress'] %}<span class="text-sky-400 font-bold uppercase">{{ st }}</span>
                                 {% else %}<span class="text-amber-400 font-bold uppercase">{{ st }}</span>{% endif %}
-                                <div class="text-slate-400 data-font mt-1">${{ "%.3f"|format(o.cost) }}</div>
+                                <div class="text-slate-400 data-font mt-1">${{ "%.3f"|format(o.get('cost', 0)) }}</div>
                             </td>
                             <td class="p-4 text-right space-x-2">
                                 {% if st not in ['refunded', 'canceled'] %}
-                                    <a href="/refund_order/{{ o.oid }}" onclick="return confirm('Refund this order to user?')" class="text-amber-400 hover:text-amber-300 text-xs font-bold border border-amber-500/50 px-2 py-1 rounded">Refund</a>
+                                    <a href="/refund_order/{{ o.get('oid') }}" onclick="return confirm('Refund this order to user?')" class="text-amber-400 hover:text-amber-300 text-xs font-bold border border-amber-500/50 px-2 py-1 rounded">Refund</a>
                                 {% endif %}
-                                <a href="/override_order/{{ o.oid }}/completed" class="text-emerald-400 hover:text-emerald-300" title="Force Complete"><i class="fas fa-check"></i></a>
-                                <a href="/delete_order/{{ o.oid }}" onclick="return confirm('Delete this order log?')" class="text-red-500 hover:text-red-400"><i class="fas fa-trash"></i></a>
+                                <a href="/override_order/{{ o.get('oid') }}/completed" class="text-emerald-400 hover:text-emerald-300" title="Force Complete"><i class="fas fa-check"></i></a>
+                                <a href="/delete_order/{{ o.get('oid') }}" onclick="return confirm('Delete this order log?')" class="text-red-500 hover:text-red-400"><i class="fas fa-trash"></i></a>
                             </td>
                         </tr>
                         {% endfor %}
@@ -225,20 +225,20 @@
                 <div class="glass-card p-6 flex flex-col justify-between">
                     <div>
                         <div class="flex justify-between items-start mb-4">
-                            <span class="bg-sky-500/20 text-sky-400 px-2 py-1 rounded text-xs font-bold data-font border border-sky-500/30">UID: {{ t.uid }}</span>
-                            {% if t.status == 'open' %}
+                            <span class="bg-sky-500/20 text-sky-400 px-2 py-1 rounded text-xs font-bold data-font border border-sky-500/30">UID: {{ t.get('uid', 'N/A') }}</span>
+                            {% if t.get('status', 'open') == 'open' %}
                                 <span class="bg-amber-500/20 text-amber-400 px-2 py-1 rounded text-xs font-bold border border-amber-500/30 animate-pulse">OPEN</span>
                             {% else %}
                                 <span class="bg-slate-700/50 text-slate-400 px-2 py-1 rounded text-xs font-bold border border-slate-600/50">CLOSED</span>
                             {% endif %}
                         </div>
-                        <p class="text-white text-sm mb-4 bg-slate-900/50 p-3 rounded border border-slate-700/50">{{ t.msg }}</p>
+                        <p class="text-white text-sm mb-4 bg-slate-900/50 p-3 rounded border border-slate-700/50">{{ t.get('msg', 'No Message') }}</p>
                     </div>
                     
-                    {% if t.status == 'open' %}
+                    {% if t.get('status', 'open') == 'open' %}
                     <form action="/reply_ticket" method="POST" class="mt-4 flex gap-2">
-                        <input type="hidden" name="ticket_id" value="{{ t._id }}">
-                        <input type="hidden" name="uid" value="{{ t.uid }}">
+                        <input type="hidden" name="ticket_id" value="{{ t.get('_id') }}">
+                        <input type="hidden" name="uid" value="{{ t.get('uid') }}">
                         <input type="text" name="reply_msg" placeholder="Type reply..." class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white text-sm outline-none focus:border-sky-500" required>
                         <button type="submit" class="bg-sky-500 hover:bg-sky-400 text-slate-900 px-3 py-2 rounded font-bold"><i class="fas fa-paper-plane"></i></button>
                     </form>
@@ -246,7 +246,7 @@
                     <div class="mt-4 border-t border-slate-700 pt-3">
                         <p class="text-xs text-slate-400 mb-1">Your Reply:</p>
                         <p class="text-emerald-400 text-sm font-semibold">{{ t.get('reply', 'No reply logged') }}</p>
-                        <a href="/delete_ticket/{{ t._id }}" class="mt-3 block text-center text-red-500 text-xs hover:underline">Delete Ticket Log</a>
+                        <a href="/delete_ticket/{{ t.get('_id') }}" class="mt-3 block text-center text-red-500 text-xs hover:underline">Delete Ticket Log</a>
                     </div>
                     {% endif %}
                 </div>
@@ -298,11 +298,11 @@
                             {% for v in vouchers %}
                             <div class="bg-slate-900/50 p-2 border border-slate-700/50 rounded flex justify-between items-center">
                                 <div>
-                                    <span class="text-white font-bold data-font">{{ v.code }}</span>
-                                    <span class="text-emerald-400 text-xs ml-2">${{ v.amount }}</span>
+                                    <span class="text-white font-bold data-font">{{ v.get('code') }}</span>
+                                    <span class="text-emerald-400 text-xs ml-2">${{ v.get('amount', 0) }}</span>
                                 </div>
                                 <div class="text-xs text-slate-500">
-                                    Used: {{ v.get('used_by', []) | length }} / {{ v.limit }}
+                                    Used: {{ v.get('used_by', []) | length }} / {{ v.get('limit', 1) }}
                                 </div>
                             </div>
                             {% endfor %}
