@@ -3,10 +3,11 @@ import math
 import random
 import json
 import threading
+import logging
 from datetime import datetime, timedelta
 from telebot import types
 
-# 🔥 redis_client ইম্পোর্ট করা হলো
+# 🔥 loader এবং utils থেকে প্রয়োজনীয় ফাংশন ইম্পোর্ট
 from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, redis_client
 from config import *
 import api
@@ -34,7 +35,7 @@ def clear_user_session(uid):
 # 3. FORCE SUB, REFERRAL & START LOGIC
 # ==========================================
 def process_new_user_bonuses(uid):
-    user = get_cached_user(uid) # 🔥 Redis Cache Use
+    user = get_cached_user(uid)
     if not user: return
     s = get_settings()
     
@@ -42,7 +43,7 @@ def process_new_user_bonuses(uid):
         w_bonus = float(s.get('welcome_bonus', 0.0))
         if w_bonus > 0:
             users_col.update_one({"_id": uid}, {"$inc": {"balance": w_bonus}, "$set": {"welcome_paid": True}})
-            clear_cached_user(uid) # 🔥 Cache Clear
+            clear_cached_user(uid)
             try: bot.send_message(uid, f"🎁 **WELCOME BONUS!**\nCongratulations! You received `${w_bonus}` just for verifying your account.", parse_mode="Markdown")
             except: pass
         else:
@@ -63,7 +64,6 @@ def process_new_user_bonuses(uid):
 @bot.message_handler(commands=['start'])
 def start(message):
     uid = message.chat.id
-    
     user = get_cached_user(uid)
     args = message.text.split()
     referrer = int(args[1]) if len(args) > 1 and args[1].isdigit() and int(args[1]) != uid else None
@@ -89,12 +89,13 @@ def start(message):
 
     process_new_user_bonuses(uid)
 
-    welcome_text = f"""{greeting}, {message.from_user.first_name}! ⚡️
+    safe_name = escape_md(message.from_user.first_name)
+    welcome_text = f"""{greeting}, {safe_name}! ⚡️
 
 🚀 **𝗪𝗘𝗟𝗖𝗢𝗠𝗘 𝗧𝗢 𝗡𝗘𝗫𝗨𝗦 𝗦𝗠𝗠**
 _"Your Ultimate Social Growth Engine"_
 ━━━━━━━━━━━━━━━━━━━━━
-👤 **𝗨𝘀𝗲𝗿:** {message.from_user.first_name}
+👤 **𝗨𝘀𝗲𝗿:** {safe_name}
 🆔 **𝗦𝘆𝘀𝘁𝗲𝗺 𝗜𝗗:** `{uid}`
 👑 **𝗦𝘁𝗮𝘁𝘂𝘀:** Connected 🟢
 💡 _Pro Tip: Paste any profile/post link directly here to Quick-Order!_
@@ -181,7 +182,9 @@ def show_cats(call):
     if page > 0: nav.append(types.InlineKeyboardButton("⬅️ Prev", callback_data=f"PLAT|{platform}|{page-1}"))
     if end_idx < len(cats): nav.append(types.InlineKeyboardButton("Next ➡️", callback_data=f"PLAT|{platform}|{page+1}"))
     if nav: markup.row(*nav)
-    bot.edit_message_text(f"📍 **{platform}**\n━━━━━━━━━━━━━━━━━━━━\n📂 **Choose Category:**", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+    
+    safe_plat = escape_md(platform)
+    bot.edit_message_text(f"📍 **{safe_plat}**\n━━━━━━━━━━━━━━━━━━━━\n📂 **Choose Category:**", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("CAT|"))
 def list_servs(call):
@@ -204,8 +207,11 @@ def list_servs(call):
     if end_idx < len(filtered): nav.append(types.InlineKeyboardButton("Next ➡️", callback_data=f"CAT|{cat_idx}|{int(page)+1}"))
     if nav: markup.row(*nav)
     markup.add(types.InlineKeyboardButton("🔙 Back", callback_data=f"PLAT|{identify_platform(cat_name)}|0"))
-    try: bot.edit_message_text(f"📦 **{cat_name[:30]}**\n━━━━━━━━━━━━━━━━━━━━\nSelect Service:", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
-    except: bot.send_message(call.message.chat.id, f"📦 **{cat_name[:30]}**\n━━━━━━━━━━━━━━━━━━━━\nSelect Service:", reply_markup=markup, parse_mode="Markdown")
+    
+    safe_cat = escape_md(cat_name[:30])
+    msg_text = f"📦 **{safe_cat}**\n━━━━━━━━━━━━━━━━━━━━\nSelect Service:"
+    try: bot.edit_message_text(msg_text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+    except: bot.send_message(call.message.chat.id, msg_text, reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("INFO|"))
 def info_card(call):
@@ -219,12 +225,12 @@ def info_card(call):
     rate = calculate_price(s['rate'], user.get('spent',0), user.get('custom_discount', 0))
     avg_time = s.get('time', 'Instant - 24h') if s.get('time') != "" else 'Instant - 24h'
 
-    txt = (f"ℹ️ **SERVICE DETAILS**\n━━━━━━━━━━━━━━━━━━━━\n🏷 **Name:** {clean_service_name(s['name'])}\n🆔 **ID:** `{sid}`\n"
+    safe_name = escape_md(clean_service_name(s['name']))
+    txt = (f"ℹ️ **SERVICE DETAILS**\n━━━━━━━━━━━━━━━━━━━━\n🏷 **Name:** {safe_name}\n🆔 **ID:** `{sid}`\n"
            f"💰 **Price:** `{fmt_curr(rate, curr)}` / 1000\n📉 **Min:** {s.get('min','0')} | 📈 **Max:** {s.get('max','0')}\n"
-           f"⏱ **Live Avg Time:** `{avg_time}`⚡️\n━━━━━━━━━━━━━━━━━━━━")
+           f"⏱ **Live Avg Time:** `{escape_md(avg_time)}`⚡️\n━━━━━━━━━━━━━━━━━━━━")
     
     markup = types.InlineKeyboardMarkup(row_width=2)
-    # 🔥 Drip-feed & Subscriptions Options
     markup.add(types.InlineKeyboardButton("🚀 Normal Order", callback_data=f"TYPE|{sid}|normal"))
     if str(s.get('dripfeed', 'False')).lower() == 'true':
         markup.add(types.InlineKeyboardButton("💧 Drip-Feed (Organic)", callback_data=f"TYPE|{sid}|drip"))
@@ -240,19 +246,16 @@ def info_card(call):
     else: 
         bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
-# 🔥 Order Wizard Routing
 @bot.callback_query_handler(func=lambda c: c.data.startswith("TYPE|"))
 def order_type_router(call):
     _, sid, o_type = call.data.split("|")
     session = get_user_session(call.message.chat.id)
-    
-    # If link is already available via Magic Link
     magic_link = session.get("temp_link", "")
     
     if o_type == "normal":
         if magic_link:
             update_user_session(call.message.chat.id, {"step": "awaiting_qty", "temp_sid": sid, "order_type": "normal"})
-            bot.send_message(call.message.chat.id, f"🎯 **Link Detected:** {magic_link}\n🔢 **Enter Quantity (Numbers only):**", parse_mode="Markdown")
+            bot.send_message(call.message.chat.id, f"🎯 **Link Detected:** {escape_md(magic_link)}\n🔢 **Enter Quantity (Numbers only):**", parse_mode="Markdown", disable_web_page_preview=True)
         else:
             update_user_session(call.message.chat.id, {"step": "awaiting_link", "temp_sid": sid, "order_type": "normal"})
             bot.send_message(call.message.chat.id, "🔗 **Paste the Target Link:**\n_(Example: https://t.me/yourchannel)_", parse_mode="Markdown")
@@ -265,7 +268,6 @@ def order_type_router(call):
         update_user_session(call.message.chat.id, {"step": "awaiting_sub_user", "temp_sid": sid, "order_type": "sub"})
         bot.send_message(call.message.chat.id, "🔄 **AUTO-SUBSCRIPTION WIZARD**\n👤 **Enter Target Username:**\n_(e.g., @cristiano or cristiano)_", parse_mode="Markdown")
 
-# Old ORD/REORDER backward compatibility
 @bot.callback_query_handler(func=lambda c: c.data.startswith("ORD|"))
 def start_ord(call):
     sid = call.data.split("|")[1]
@@ -308,17 +310,17 @@ def fetch_orders_page(chat_id, page=0, filter_type="all"):
         elif st in ["in progress", "processing"]: st_emoji = "🔄"
         elif st == "partial": st_emoji = "⚠️"
         
-        # 🔥 LIVE PROGRESS BAR
         remains = o.get('remains', o.get('qty', 0))
         qty = o.get('qty', 0)
         p_bar, delivered = generate_progress_bar(remains, qty)
         
         txt += f"🆔 `{o['oid']}` | 💰 `{fmt_curr(o['cost'], curr)}`\n"
         if o.get("is_sub"):
-            txt += f"👤 Target: {str(o.get('username', 'N/A'))}\n"
+            txt += f"👤 Target: {escape_md(str(o.get('username', 'N/A')))}\n"
             txt += f"📸 Posts: {o.get('posts', 0)} | Qty/Post: {qty}\n"
         else:
-            txt += f"🔗 {str(o.get('link', 'N/A'))[:25]}...\n"
+            safe_link = escape_md(str(o.get('link', 'N/A'))[:25])
+            txt += f"🔗 {safe_link}...\n"
             
         txt += f"🏷 Status: {st_emoji} {st.upper()}\n"
         if st in ['in progress', 'processing', 'pending'] and not o.get("is_sub"):
@@ -393,7 +395,11 @@ def pay_details(call):
     rate = pay_data.get('rate', 120) if pay_data else 120
     is_crypto = any(x in method.lower() for x in ['usdt', 'binance', 'crypto', 'btc', 'pm', 'perfect', 'payeer'])
     display_amt = f"${amt_usd:.2f}" if is_crypto else f"{round(amt_usd * float(rate), 2)} Local Currency"
-    txt = f"🏦 **{method} Payment Details**\n━━━━━━━━━━━━━━━━━━━━\n💵 **Amount to Send:** `{display_amt}`\n📍 **Account / Address:** `{address}`\n━━━━━━━━━━━━━━━━━━━━\n⚠️ Send the exact amount to the address above, then reply to this message with your **TrxID / Transaction ID**:"
+    
+    safe_method = escape_md(method)
+    safe_address = escape_md(address)
+    
+    txt = f"🏦 **{safe_method} Payment Details**\n━━━━━━━━━━━━━━━━━━━━\n💵 **Amount to Send:** `{display_amt}`\n📍 **Account / Address:** `{safe_address}`\n━━━━━━━━━━━━━━━━━━━━\n⚠️ Send the exact amount to the address above, then reply to this message with your **TrxID / Transaction ID**:"
     
     update_user_session(call.message.chat.id, {"step": "awaiting_trx", "temp_dep_amt": amt_usd, "temp_dep_method": method})
     bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, parse_mode="Markdown")
@@ -417,7 +423,7 @@ def pay_crypto_details(call):
     if pay_url:
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton(f"💳 PAY ${amt_usd:.2f} NOW", url=pay_url))
-        txt = f"🔗 **{method} Secure Checkout**\n━━━━━━━━━━━━━━━━━━━━\n💵 **Amount to Send:** `${amt_usd:.2f}`\n\nClick the button below to complete your transaction on the secure gateway. Your balance will be added automatically once confirmed by the network!"
+        txt = f"🔗 **{escape_md(method)} Secure Checkout**\n━━━━━━━━━━━━━━━━━━━━\n💵 **Amount to Send:** `${amt_usd:.2f}`\n\nClick the button below to complete your transaction on the secure gateway. Your balance will be added automatically once confirmed by the network!"
         bot.edit_message_text(txt, uid, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
     else:
         bot.edit_message_text(f"❌ Failed to generate {method} invoice. Please check API keys or contact Admin.", uid, call.message.message_id)
@@ -443,7 +449,10 @@ def universal_buttons(message):
         markup = types.InlineKeyboardMarkup(row_width=3)
         markup.add(types.InlineKeyboardButton("🟢 BDT", callback_data="SET_CURR|BDT"), types.InlineKeyboardButton("🟠 INR", callback_data="SET_CURR|INR"), types.InlineKeyboardButton("🔵 USD", callback_data="SET_CURR|USD"))
         markup.add(types.InlineKeyboardButton(f"🎁 Redeem Points ({u.get('points', 0)} pts)", callback_data="REDEEM_POINTS"))
-        card = f"```text\n╔════════════════════════════════╗\n║  🌟 NEXUS VIP PASSPORT         ║\n╠════════════════════════════════╣\n║  👤 Name: {str(message.from_user.first_name)[:12].ljust(19)}║\n║  🆔 UID: {str(uid).ljust(20)}║\n║  💳 Balance: {fmt_curr(u.get('balance',0), curr).ljust(18)}║\n║  💸 Spent: {fmt_curr(u.get('spent',0), curr).ljust(20)}║\n║  🏆 Points: {str(u.get('points', 0)).ljust(19)}║\n║  👑 Tier: {tier.ljust(19)}║\n╚════════════════════════════════╝\n```"
+        
+        safe_name = escape_md(str(message.from_user.first_name)[:12])
+        safe_tier = escape_md(tier)
+        card = f"```text\n╔════════════════════════════════╗\n║  🌟 NEXUS VIP PASSPORT         ║\n╠════════════════════════════════╣\n║  👤 Name: {safe_name.ljust(19)}║\n║  🆔 UID: {str(uid).ljust(20)}║\n║  💳 Balance: {fmt_curr(u.get('balance',0), curr).ljust(18)}║\n║  💸 Spent: {fmt_curr(u.get('spent',0), curr).ljust(20)}║\n║  🏆 Points: {str(u.get('points', 0)).ljust(19)}║\n║  👑 Tier: {safe_tier.ljust(19)}║\n╚════════════════════════════════╝\n```"
         bot.send_message(uid, card, reply_markup=markup, parse_mode="Markdown")
         
     elif message.text == "🏆 Leaderboard":
@@ -459,14 +468,16 @@ def universal_buttons(message):
         else:
             for i, tu in enumerate(top_spenders):
                 rt = f" (+${[r1, r2, r3][i]})" if i < 3 else ""
-                txt += f"{medals[i]} {tu.get('name', 'N/A')[:10]} - `{fmt_curr(tu.get('spent', 0), curr)}`{rt}\n"
+                safe_name = escape_md(tu.get('name', 'N/A')[:10])
+                txt += f"{medals[i]} {safe_name} - `{fmt_curr(tu.get('spent', 0), curr)}`{rt}\n"
 
         txt += "\n👥 **TOP AFFILIATES (By Earnings):**\n"
         top_refs = list(users_col.find({"ref_earnings": {"$gt": 0}}).sort("ref_earnings", -1).limit(5))
         if not top_refs: txt += "_No affiliates yet!_\n"
         else:
             for i, tu in enumerate(top_refs):
-                txt += f"{medals[i]} {tu.get('name', 'N/A')[:10]} - `{fmt_curr(tu.get('ref_earnings', 0), curr)}`\n"
+                safe_name = escape_md(tu.get('name', 'N/A')[:10])
+                txt += f"{medals[i]} {safe_name} - `{fmt_curr(tu.get('ref_earnings', 0), curr)}`\n"
 
         bot.send_message(uid, txt + "\n_Be in the Top 3 to earn real wallet cash!_", parse_mode="Markdown")
 
@@ -477,7 +488,9 @@ def universal_buttons(message):
         markup = types.InlineKeyboardMarkup(row_width=1)
         for sid in favs:
             s = next((x for x in services if str(x['service']) == str(sid)), None)
-            if s: markup.add(types.InlineKeyboardButton(f"⭐ ID:{s['service']} | {clean_service_name(s['name'])[:25]}", callback_data=f"INFO|{s['service']}"))
+            if s: 
+                safe_name = escape_md(clean_service_name(s['name'])[:25])
+                markup.add(types.InlineKeyboardButton(f"⭐ ID:{s['service']} | {safe_name}", callback_data=f"INFO|{s['service']}"))
         bot.send_message(uid, "⭐ **YOUR SAVED SERVICES:**", reply_markup=markup, parse_mode="Markdown")
 
     elif message.text == "🤝 Affiliate":
@@ -510,7 +523,7 @@ def send_media_to_admin(msg_obj, admin_text):
         else:
             bot.send_message(ADMIN_ID, admin_text, parse_mode="Markdown")
     except Exception as e:
-        pass
+        logging.error(f"Media forwarding to admin failed: {e}")
 
 # ==========================================
 # 7. MASTER ROUTER (Smart Errors & Ordering)
@@ -531,7 +544,8 @@ def universal_router(message):
                 else:
                     target_uid = int(reply_text.split("ID: ")[1].split("\n")[0].strip().replace("`", ""))
                     
-                bot.send_message(target_uid, f"👨‍💻 **ADMIN REPLY:**\n━━━━━━━━━━━━━━━━━━━━\n{text}", parse_mode="Markdown")
+                safe_text = escape_md(text)
+                bot.send_message(target_uid, f"👨‍💻 **ADMIN REPLY:**\n━━━━━━━━━━━━━━━━━━━━\n{safe_text}", parse_mode="Markdown")
                 tickets_col.update_many({"uid": target_uid, "status": "open"}, {"$set": {"status": "closed", "reply": text}})
                 return bot.send_message(ADMIN_ID, f"✅ Reply sent successfully to user `{target_uid}`!")
             except Exception as e: 
@@ -558,7 +572,7 @@ def universal_router(message):
                 for cat in cats[:15]:
                     idx = sorted(list(set(s['category'] for s in services))).index(cat)
                     markup.add(types.InlineKeyboardButton(f"📁 {cat[:35]}", callback_data=f"CAT|{idx}|0"))
-                return bot.send_message(uid, f"✨ **Magic Link Detected!**\n📍 Platform: **{platform}**\n📂 Choose Category for your link:", reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
+                return bot.send_message(uid, f"✨ **Magic Link Detected!**\n📍 Platform: **{escape_md(platform)}**\n📂 Choose Category for your link:", reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
 
     # --- ADMIN STATES ---
     if str(uid) == str(ADMIN_ID):
@@ -568,7 +582,7 @@ def universal_router(message):
             tu = get_cached_user(target)
             if not tu: return bot.send_message(uid, "❌ User not found.")
             clear_user_session(uid)
-            return bot.send_message(uid, f"👻 **GHOST VIEW - UID: {target}**\nName: {tu.get('name')}\nBal: ${tu.get('balance', 0):.3f}\nSpent: ${tu.get('spent', 0):.3f}\nPoints: {tu.get('points', 0)}")
+            return bot.send_message(uid, f"👻 **GHOST VIEW - UID: {target}**\nName: {escape_md(tu.get('name'))}\nBal: ${tu.get('balance', 0):.3f}\nSpent: ${tu.get('spent', 0):.3f}\nPoints: {tu.get('points', 0)}")
             
         elif step == "awaiting_alert_uid":
             try:
@@ -581,7 +595,7 @@ def universal_router(message):
             target = session_data.get("temp_uid")
             clear_user_session(uid)
             try:
-                bot.send_message(target, f"⚠️ **SYSTEM ALERT**\n━━━━━━━━━━━━━━━━━━━━\n{text}", parse_mode="Markdown")
+                bot.send_message(target, f"⚠️ **SYSTEM ALERT**\n━━━━━━━━━━━━━━━━━━━━\n{escape_md(text)}", parse_mode="Markdown")
                 return bot.send_message(uid, "✅ Alert Sent!")
             except: return bot.send_message(uid, "❌ Failed to send.")
             
@@ -622,8 +636,9 @@ def universal_router(message):
         elif step == "awaiting_bc":
             clear_user_session(uid)
             c = 0
+            safe_text = escape_md(text)
             for usr in users_col.find({"is_fake": {"$ne": True}}):
-                try: bot.send_message(usr["_id"], f"📢 **MESSAGE FROM ADMIN**\n━━━━━━━━━━━━━━━━━━━━\n{text}", parse_mode="Markdown"); c+=1
+                try: bot.send_message(usr["_id"], f"📢 **MESSAGE FROM ADMIN**\n━━━━━━━━━━━━━━━━━━━━\n{safe_text}", parse_mode="Markdown"); c+=1
                 except: pass
             return bot.send_message(uid, f"✅ Broadcast sent to `{c}` users!")
 
@@ -678,15 +693,15 @@ def universal_router(message):
             return
             
         else:
-            tid = text
+            tid = escape_md(text)
             amt = session_data.get("temp_dep_amt", 0.0)
             clear_user_session(uid)
             
             bot.send_message(uid, "✅ **Request Submitted!**\nAdmin will verify your TrxID shortly.", parse_mode="Markdown")
-            admin_txt = f"🔔 **NEW DEPOSIT (MANUAL)**\n👤 User: `{uid}`\n🏦 Method: **{session_data.get('temp_dep_method', 'Manual')}**\n💰 Amt: **${round(float(amt), 2)}**\n🧾 TrxID: `{tid}`"
+            admin_txt = f"🔔 **NEW DEPOSIT (MANUAL)**\n👤 User: `{uid}`\n🏦 Method: **{escape_md(session_data.get('temp_dep_method', 'Manual'))}**\n💰 Amt: **${round(float(amt), 2)}**\n🧾 TrxID: `{tid}`"
             markup = types.InlineKeyboardMarkup(row_width=2)
             app_url = BASE_URL.rstrip('/')
-            markup.add(types.InlineKeyboardButton("✅ APPROVE", url=f"{app_url}/approve_dep/{uid}/{amt}/{tid}"), types.InlineKeyboardButton("❌ REJECT", url=f"{app_url}/reject_dep/{uid}/{tid}"))
+            markup.add(types.InlineKeyboardButton("✅ APPROVE", url=f"{app_url}/approve_dep/{uid}/{amt}/{text}"), types.InlineKeyboardButton("❌ REJECT", url=f"{app_url}/reject_dep/{uid}/{text}"))
             try: bot.send_message(ADMIN_ID, admin_txt, reply_markup=markup, parse_mode="Markdown")
             except: pass
             return
@@ -696,7 +711,8 @@ def universal_router(message):
         try:
             amt = float(text)
             curr_code = u.get("currency", "BDT")
-            amt_usd = amt / CURRENCY_RATES.get(curr_code, 1)
+            rates = get_currency_rates()
+            amt_usd = amt / rates.get(curr_code, 1)
             
             s = get_settings()
             payments = s.get("payments", [])
@@ -758,7 +774,8 @@ def universal_router(message):
             
             update_user_session(uid, {"draft": {"sid": sid, "link": session_data.get("temp_link"), "qty": qty, "cost": cost, "type": "normal"}, "step": ""})
             markup = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("✅ CONFIRM", callback_data="PLACE_ORD"), types.InlineKeyboardButton("❌ CANCEL", callback_data="CANCEL_ORD"))
-            bot.send_message(uid, f"⚠️ **ORDER PREVIEW**\n━━━━━━━━━━━━━━━━━━━━\n🆔 Service ID: `{sid}`\n🔗 Link: {session_data.get('temp_link')}\n🔢 Quantity: {qty}\n💰 Cost: `{fmt_curr(cost, curr)}`\n━━━━━━━━━━━━━━━━━━━━\nConfirm your order?", reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
+            safe_link = escape_md(session_data.get('temp_link'))
+            bot.send_message(uid, f"⚠️ **ORDER PREVIEW**\n━━━━━━━━━━━━━━━━━━━━\n🆔 Service ID: `{sid}`\n🔗 Link: {safe_link}\n🔢 Quantity: {qty}\n💰 Cost: `{fmt_curr(cost, curr)}`\n━━━━━━━━━━━━━━━━━━━━\nConfirm your order?", reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
         except ValueError: bot.send_message(uid, "⚠️ **ERROR:** Please enter valid numbers only.")
 
     elif step == "awaiting_drip_runs":
@@ -788,7 +805,8 @@ def universal_router(message):
             
             update_user_session(uid, {"draft": {"sid": sid, "link": session_data.get("temp_link"), "qty": qty, "runs": runs, "interval": interval, "total_qty": total_qty, "cost": cost, "type": "drip"}, "step": ""})
             markup = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("✅ CONFIRM DRIP", callback_data="PLACE_ORD"), types.InlineKeyboardButton("❌ CANCEL", callback_data="CANCEL_ORD"))
-            bot.send_message(uid, f"💧 **DRIP-FEED PREVIEW**\n━━━━━━━━━━━━━━━━━━━━\n🆔 Service: `{sid}`\n🔗 Link: {session_data.get('temp_link')}\n📦 Total Qty: {total_qty} ({qty} x {runs} runs)\n⏱️ Interval: {interval} mins\n💰 Total Cost: `{fmt_curr(cost, curr)}`\n━━━━━━━━━━━━━━━━━━━━\nConfirm?", reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
+            safe_link = escape_md(session_data.get('temp_link'))
+            bot.send_message(uid, f"💧 **DRIP-FEED PREVIEW**\n━━━━━━━━━━━━━━━━━━━━\n🆔 Service: `{sid}`\n🔗 Link: {safe_link}\n📦 Total Qty: {total_qty} ({qty} x {runs} runs)\n⏱️ Interval: {interval} mins\n💰 Total Cost: `{fmt_curr(cost, curr)}`\n━━━━━━━━━━━━━━━━━━━━\nConfirm?", reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
         except ValueError: bot.send_message(uid, "⚠️ Enter numbers only.")
 
     # --- SUBSCRIPTION FLOW ---
@@ -825,7 +843,8 @@ def universal_router(message):
             
             update_user_session(uid, {"draft": {"sid": sid, "username": username, "posts": posts, "qty": qty, "delay": delay, "cost": cost, "type": "sub"}, "step": ""})
             markup = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("✅ START SUBSCRIPTION", callback_data="PLACE_ORD"), types.InlineKeyboardButton("❌ CANCEL", callback_data="CANCEL_ORD"))
-            bot.send_message(uid, f"🔄 **SUBSCRIPTION PREVIEW**\n━━━━━━━━━━━━━━━━━━━━\n🆔 Service: `{sid}`\n👤 Target: {username}\n📸 Posts: {posts}\n📦 Qty/Post: {qty}\n⏱️ Delay: {delay} mins\n💰 Estimated Total: `{fmt_curr(cost, curr)}`\n━━━━━━━━━━━━━━━━━━━━\nConfirm?", reply_markup=markup, parse_mode="Markdown")
+            safe_user = escape_md(username)
+            bot.send_message(uid, f"🔄 **SUBSCRIPTION PREVIEW**\n━━━━━━━━━━━━━━━━━━━━\n🆔 Service: `{sid}`\n👤 Target: {safe_user}\n📸 Posts: {posts}\n📦 Qty/Post: {qty}\n⏱️ Delay: {delay} mins\n💰 Estimated Total: `{fmt_curr(cost, curr)}`\n━━━━━━━━━━━━━━━━━━━━\nConfirm?", reply_markup=markup, parse_mode="Markdown")
         except ValueError: bot.send_message(uid, "⚠️ Enter numbers only.")
 
     # 🔥 BULK ORDER FLOW
@@ -861,12 +880,15 @@ def universal_router(message):
     elif step == "awaiting_refill":
         clear_user_session(uid)
         bot.send_message(uid, "✅ Refill Requested! Admin will check it.")
-        return bot.send_message(ADMIN_ID, f"🔄 **REFILL REQUEST:**\nOrder ID: `{text}`\nBy User: `{uid}`")
+        safe_text = escape_md(text)
+        return bot.send_message(ADMIN_ID, f"🔄 **REFILL REQUEST:**\nOrder ID: `{safe_text}`\nBy User: `{uid}`")
 
     elif step == "awaiting_ticket":
         clear_user_session(uid)
         tickets_col.insert_one({"uid": uid, "msg": text, "status": "open", "date": datetime.now()})
-        admin_msg = f"📩 **NEW LIVE CHAT**\n👤 User: `{message.from_user.first_name}`\n🆔 ID: `{uid}`\n\n💬 **Message:**\n{text}\n\n_Reply to this message to send an answer directly._"
+        safe_name = escape_md(message.from_user.first_name)
+        safe_text = escape_md(text)
+        admin_msg = f"📩 **NEW LIVE CHAT**\n👤 User: `{safe_name}`\n🆔 ID: `{uid}`\n\n💬 **Message:**\n{safe_text}\n\n_Reply to this message to send an answer directly._"
         threading.Thread(target=send_media_to_admin, args=(message, admin_msg)).start()
         return bot.send_message(uid, "✅ **Message Sent Successfully!** Admin will reply soon.", parse_mode="Markdown")
 
@@ -892,14 +914,17 @@ def universal_router(message):
             s = next((x for x in services if str(x['service']) == query and query not in hidden), None)
             if s: 
                 markup = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("ℹ️ Order Now", callback_data=f"INFO|{query}"))
-                return bot.send_message(uid, f"✅ **Found:** {clean_service_name(s['name'])}", reply_markup=markup, parse_mode="Markdown")
+                safe_name = escape_md(clean_service_name(s['name']))
+                return bot.send_message(uid, f"✅ **Found:** {safe_name}", reply_markup=markup, parse_mode="Markdown")
         results = [s for s in services if str(s['service']) not in hidden and (query in s['name'].lower() or query in s['category'].lower())][:10]
         if not results: return bot.send_message(uid, "❌ No related services found.")
         markup = types.InlineKeyboardMarkup(row_width=1)
-        for s in results: markup.add(types.InlineKeyboardButton(f"⚡ ID:{s['service']} | {clean_service_name(s['name'])[:25]}", callback_data=f"INFO|{s['service']}"))
+        for s in results: 
+            safe_name = escape_md(clean_service_name(s['name'])[:25])
+            markup.add(types.InlineKeyboardButton(f"⚡ ID:{s['service']} | {safe_name}", callback_data=f"INFO|{s['service']}"))
         return bot.send_message(uid, f"🔍 **Top Results:**", reply_markup=markup, parse_mode="Markdown")
 
-# 🔥 MULTI-THREADING IMPLEMENTATION FOR API CALL (Webhook Non-Blocking)
+# 🔥 MULTI-THREADING WITH EXCEPTION HANDLING
 @bot.callback_query_handler(func=lambda c: c.data in ["PLACE_ORD", "PLACE_BULK"])
 def final_ord(call):
     uid = call.message.chat.id
@@ -918,88 +943,93 @@ def final_ord(call):
         threading.Thread(target=process_order_background, args=(uid, u, draft, call.message.message_id)).start()
 
 def process_bulk_background(uid, u, drafts, message_id):
-    success_count = 0
-    total_cost_deducted = 0
-    points_earned = 0
-    s = get_settings()
-    
-    for d in drafts:
-        time.sleep(0.5)
-        res = api.place_order(d['sid'], link=d['link'], quantity=d['qty'])
-        if res and 'order' in res:
-            success_count += 1
-            total_cost_deducted += d['cost']
-            pts = int(float(d['cost']) * float(s.get("points_per_usd", 100)))
-            points_earned += pts
-            orders_col.insert_one({"oid": res['order'], "uid": uid, "sid": d['sid'], "link": d['link'], "qty": d['qty'], "cost": d['cost'], "status": "pending", "date": datetime.now()})
-            
-    users_col.update_one({"_id": uid}, {"$inc": {"balance": -total_cost_deducted, "spent": total_cost_deducted, "points": points_earned}})
-    clear_cached_user(uid)
-    clear_user_session(uid)
-    bot.edit_message_text(f"✅ **BULK PROCESS COMPLETE!**\n━━━━━━━━━━━━━━━━━━━━\n📦 Successful: {success_count} / {len(drafts)}\n💰 Cost Deducted: `${total_cost_deducted:.3f}`\n🎁 Points Earned: `+{points_earned}`", uid, message_id, parse_mode="Markdown")
+    try:
+        success_count = 0
+        total_cost_deducted = 0
+        points_earned = 0
+        s = get_settings()
+        
+        for d in drafts:
+            time.sleep(0.5)
+            res = api.place_order(d['sid'], link=d['link'], quantity=d['qty'])
+            if res and 'order' in res:
+                success_count += 1
+                total_cost_deducted += d['cost']
+                pts = int(float(d['cost']) * float(s.get("points_per_usd", 100)))
+                points_earned += pts
+                orders_col.insert_one({"oid": res['order'], "uid": uid, "sid": d['sid'], "link": d['link'], "qty": d['qty'], "cost": d['cost'], "status": "pending", "date": datetime.now()})
+                
+        users_col.update_one({"_id": uid}, {"$inc": {"balance": -total_cost_deducted, "spent": total_cost_deducted, "points": points_earned}})
+        clear_cached_user(uid)
+        clear_user_session(uid)
+        bot.edit_message_text(f"✅ **BULK PROCESS COMPLETE!**\n━━━━━━━━━━━━━━━━━━━━\n📦 Successful: {success_count} / {len(drafts)}\n💰 Cost Deducted: `${total_cost_deducted:.3f}`\n🎁 Points Earned: `+{points_earned}`", uid, message_id, parse_mode="Markdown")
+    except Exception as e:
+        logging.error(f"Bulk Process Background Error: {e}")
 
 def process_order_background(uid, u, draft, message_id):
     """এটি ব্যাকগ্রাউন্ডে কাজ করবে। ফলে অন্য ইউজাররা ল্যাগ ফিল করবে না।"""
-    s = get_settings()
-    points_earned = int(float(draft['cost']) * float(s.get("points_per_usd", 100)))
-    o_type = draft.get("type", "normal")
-    
-    # Check if user is shadow banned
-    if u.get('shadow_banned'):
-        fake_oid = random.randint(100000, 999999)
-        users_col.update_one({"_id": uid}, {"$inc": {"balance": -draft['cost'], "spent": draft['cost'], "points": points_earned}})
-        clear_cached_user(uid)
-        clear_user_session(uid)
+    try:
+        s = get_settings()
+        points_earned = int(float(draft['cost']) * float(s.get("points_per_usd", 100)))
+        o_type = draft.get("type", "normal")
         
-        insert_data = {"oid": fake_oid, "uid": uid, "sid": draft['sid'], "cost": draft['cost'], "status": "pending", "date": datetime.now(), "is_shadow": True}
-        if o_type == "sub": insert_data.update({"is_sub": True, "username": draft['username'], "posts": draft['posts'], "qty": draft['qty']})
-        else: insert_data.update({"link": draft.get('link'), "qty": draft.get('total_qty', draft.get('qty'))})
-        
-        orders_col.insert_one(insert_data)
-        bot.edit_message_text(f"✅ **Order Placed Successfully!**\n🆔 Order ID: `{fake_oid}`\n🎁 Points Earned: `+{points_earned}`", uid, message_id, parse_mode="Markdown")
-        
-        # Fake order proof if needed
-        proof_ch = s.get('proof_channel', '')
-        if proof_ch:
-            masked_id = f"***{str(uid)[-4:]}"
-            channel_post = f"```text\n╔════ 🟢 𝗡𝗘𝗪 𝗢𝗥𝗗𝗘𝗥 ════╗\n║ 👤 𝗜𝗗: {masked_id}\n║ 🚀 𝗦𝗲𝗿𝘃𝗶𝗰𝗲 𝗜𝗗: {draft['sid']}\n║ 💵 𝗖𝗼𝘀𝘁: ${draft['cost']:.3f}\n╚════════════════════╝\n```"
-            try: bot.send_message(proof_ch, channel_post, parse_mode="Markdown")
-            except: pass
-        return
+        if u.get('shadow_banned'):
+            fake_oid = random.randint(100000, 999999)
+            users_col.update_one({"_id": uid}, {"$inc": {"balance": -draft['cost'], "spent": draft['cost'], "points": points_earned}})
+            clear_cached_user(uid)
+            clear_user_session(uid)
+            
+            insert_data = {"oid": fake_oid, "uid": uid, "sid": draft['sid'], "cost": draft['cost'], "status": "pending", "date": datetime.now(), "is_shadow": True}
+            if o_type == "sub": insert_data.update({"is_sub": True, "username": draft['username'], "posts": draft['posts'], "qty": draft['qty']})
+            else: insert_data.update({"link": draft.get('link'), "qty": draft.get('total_qty', draft.get('qty'))})
+            
+            orders_col.insert_one(insert_data)
+            bot.edit_message_text(f"✅ **Order Placed Successfully!**\n🆔 Order ID: `{fake_oid}`\n🎁 Points Earned: `+{points_earned}`", uid, message_id, parse_mode="Markdown")
+            
+            proof_ch = s.get('proof_channel', '')
+            if proof_ch:
+                masked_id = f"***{str(uid)[-4:]}"
+                channel_post = f"```text\n╔════ 🟢 𝗡𝗘𝗪 𝗢𝗥𝗗𝗘𝗥 ════╗\n║ 👤 𝗜𝗗: {masked_id}\n║ 🚀 𝗦𝗲𝗿𝘃𝗶𝗰𝗲 𝗜𝗗: {draft['sid']}\n║ 💵 𝗖𝗼𝘀𝘁: ${draft['cost']:.3f}\n╚════════════════════╝\n```"
+                try: bot.send_message(proof_ch, channel_post, parse_mode="Markdown")
+                except: pass
+            return
 
-    # Call API dynamically based on order type
-    if o_type == "drip":
-        res = api.place_order(draft['sid'], link=draft['link'], quantity=draft['qty'], runs=draft['runs'], interval=draft['interval'])
-    elif o_type == "sub":
-        res = api.place_order(draft['sid'], username=draft['username'], min=draft['qty'], max=draft['qty'], posts=draft['posts'], delay=draft['delay'])
-    else:
-        res = api.place_order(draft['sid'], link=draft['link'], quantity=draft['qty'])
-    
-    if res and 'order' in res:
-        users_col.update_one({"_id": uid}, {"$inc": {"balance": -draft['cost'], "spent": draft['cost'], "points": points_earned}})
-        clear_cached_user(uid)
-        clear_user_session(uid)
+        # Call API dynamically based on order type
+        if o_type == "drip":
+            res = api.place_order(draft['sid'], link=draft['link'], quantity=draft['qty'], runs=draft['runs'], interval=draft['interval'])
+        elif o_type == "sub":
+            res = api.place_order(draft['sid'], username=draft['username'], min=draft['qty'], max=draft['qty'], posts=draft['posts'], delay=draft['delay'])
+        else:
+            res = api.place_order(draft['sid'], link=draft['link'], quantity=draft['qty'])
         
-        insert_data = {"oid": res['order'], "uid": uid, "sid": draft['sid'], "cost": draft['cost'], "status": "pending", "date": datetime.now()}
-        if o_type == "sub": insert_data.update({"is_sub": True, "username": draft['username'], "posts": draft['posts'], "qty": draft['qty']})
-        else: insert_data.update({"link": draft['link'], "qty": draft.get('total_qty', draft['qty'])})
-        
-        orders_col.insert_one(insert_data)
-        bot.edit_message_text(f"✅ **Order Placed Successfully!**\n🆔 Order ID: `{res['order']}`\n🎁 Points Earned: `+{points_earned}`", uid, message_id, parse_mode="Markdown")
-        
-        proof_ch = s.get('proof_channel', '')
-        if proof_ch:
-            masked_id = f"***{str(uid)[-4:]}"
-            channel_post = f"```text\n╔════ 🟢 𝗡𝗘𝗪 𝗢𝗥𝗗𝗘𝗥 ════╗\n║ 👤 𝗜𝗗: {masked_id}\n║ 🚀 𝗦𝗲𝗿𝘃𝗶𝗰𝗲 𝗜𝗗: {draft['sid']}\n║ 💵 𝗖𝗼𝘀𝘁: ${draft['cost']:.3f}\n╚════════════════════╝\n```"
-            try: bot.send_message(proof_ch, channel_post, parse_mode="Markdown")
-            except: pass
-    else:
-        err_msg = res.get('error', 'API Timeout') if res else 'API Timeout'
-        bot.edit_message_text(f"❌ **API REJECTED THE ORDER!**\n\n**Reason:** `{err_msg}`\n\nPlease check your link or try another service.", uid, message_id, parse_mode="Markdown")
-        clear_user_session(uid)
+        if res and 'order' in res:
+            users_col.update_one({"_id": uid}, {"$inc": {"balance": -draft['cost'], "spent": draft['cost'], "points": points_earned}})
+            clear_cached_user(uid)
+            clear_user_session(uid)
+            
+            insert_data = {"oid": res['order'], "uid": uid, "sid": draft['sid'], "cost": draft['cost'], "status": "pending", "date": datetime.now()}
+            if o_type == "sub": insert_data.update({"is_sub": True, "username": draft['username'], "posts": draft['posts'], "qty": draft['qty']})
+            else: insert_data.update({"link": draft['link'], "qty": draft.get('total_qty', draft['qty'])})
+            
+            orders_col.insert_one(insert_data)
+            bot.edit_message_text(f"✅ **Order Placed Successfully!**\n🆔 Order ID: `{res['order']}`\n🎁 Points Earned: `+{points_earned}`", uid, message_id, parse_mode="Markdown")
+            
+            proof_ch = s.get('proof_channel', '')
+            if proof_ch:
+                masked_id = f"***{str(uid)[-4:]}"
+                channel_post = f"```text\n╔════ 🟢 𝗡𝗘𝗪 𝗢𝗥𝗗𝗘𝗥 ════╗\n║ 👤 𝗜𝗗: {masked_id}\n║ 🚀 𝗦𝗲𝗿𝘃𝗶𝗰𝗲 𝗜𝗗: {draft['sid']}\n║ 💵 𝗖𝗼𝘀𝘁: ${draft['cost']:.3f}\n╚════════════════════╝\n```"
+                try: bot.send_message(proof_ch, channel_post, parse_mode="Markdown")
+                except: pass
+        else:
+            err_msg = escape_md(res.get('error', 'API Timeout') if res else 'API Timeout')
+            bot.edit_message_text(f"❌ **API REJECTED THE ORDER!**\n\n**Reason:** `{err_msg}`\n\nPlease check your link or try another service.", uid, message_id, parse_mode="Markdown")
+            clear_user_session(uid)
+    except Exception as e:
+        logging.error(f"Process Order Background Error: {e}")
+        try: bot.edit_message_text("❌ **Internal Server Error!** Could not process order. Try again later.", uid, message_id, parse_mode="Markdown")
+        except: pass
 
 @bot.callback_query_handler(func=lambda c: c.data == "CANCEL_ORD")
 def cancel_ord(call):
     clear_user_session(call.message.chat.id)
     bot.edit_message_text("🚫 **Order Cancelled.**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
-
