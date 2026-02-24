@@ -334,6 +334,34 @@ def pay_details(call):
     update_user_session(call.message.chat.id, {"step": "awaiting_trx", "temp_dep_amt": amt_usd, "temp_dep_method": method})
     bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, parse_mode="Markdown")
 
+# ==========================================
+# 🔥 NEW: CRYPTO AUTO-CHECKOUT HANDLER
+# ==========================================
+@bot.callback_query_handler(func=lambda c: c.data.startswith("PAY_CRYPTO|"))
+def pay_crypto_details(call):
+    bot.answer_callback_query(call.id, "Generating secure payment link... Please wait.", show_alert=False)
+    _, amt_usd, method = call.data.split("|")
+    amt_usd = float(amt_usd)
+    uid = call.message.chat.id
+    s = get_settings()
+    
+    pay_url = None
+    if method == "Cryptomus":
+        # Order ID format (e.g. "123456_8293") - matching webhook logic
+        order_id = f"{uid}_{random.randint(100000, 999999)}"
+        pay_url = create_cryptomus_payment(amt_usd, order_id, s.get('cryptomus_merchant'), s.get('cryptomus_api'))
+    
+    elif method == "CoinPayments":
+        pay_url = create_coinpayments_payment(amt_usd, uid, s.get('coinpayments_pub'), s.get('coinpayments_priv'))
+        
+    if pay_url:
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton(f"💳 PAY ${amt_usd:.2f} NOW", url=pay_url))
+        txt = f"🔗 **{method} Secure Checkout**\n━━━━━━━━━━━━━━━━━━━━\n💵 **Amount to Send:** `${amt_usd:.2f}`\n\nClick the button below to complete your transaction on the secure gateway. Your balance will be added automatically once confirmed by the network!"
+        bot.edit_message_text(txt, uid, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+    else:
+        bot.edit_message_text(f"❌ Failed to generate {method} invoice. Please check API keys or contact Admin.", uid, call.message.message_id)
+
 def universal_buttons(message):
     uid = message.chat.id
     clear_user_session(uid)
@@ -593,12 +621,23 @@ def universal_router(message):
             amt = float(text)
             curr_code = u.get("currency", "BDT")
             amt_usd = amt / CURRENCY_RATES.get(curr_code, 1)
-            payments = get_settings().get("payments", [])
+            
+            # 🔥 Dynamic Gateways including Crypto
+            s = get_settings()
+            payments = s.get("payments", [])
             markup = types.InlineKeyboardMarkup(row_width=1)
+            
             for p in payments: 
                 is_crypto = any(x in p['name'].lower() for x in ['usdt', 'binance', 'crypto', 'btc', 'pm', 'perfect', 'payeer'])
                 display_amt = f"${amt_usd:.2f}" if is_crypto else f"{round(amt_usd * float(p['rate']), 2)} {curr_code}"
                 markup.add(types.InlineKeyboardButton(f"🏦 {p['name']} (Pay {display_amt})", callback_data=f"PAY|{amt_usd}|{p['name']}"))
+            
+            # Auto Crypto Options
+            if s.get("cryptomus_active") and s.get("cryptomus_merchant") and s.get("cryptomus_api"):
+                markup.add(types.InlineKeyboardButton(f"🤖 Cryptomus (Pay ${amt_usd:.2f})", callback_data=f"PAY_CRYPTO|{amt_usd}|Cryptomus"))
+            if s.get("coinpayments_active") and s.get("coinpayments_pub") and s.get("coinpayments_priv"):
+                markup.add(types.InlineKeyboardButton(f"🪙 CoinPayments (Pay ${amt_usd:.2f})", callback_data=f"PAY_CRYPTO|{amt_usd}|CoinPayments"))
+
             clear_user_session(uid)
             return bot.send_message(uid, "💳 **Select Gateway:**", reply_markup=markup, parse_mode="Markdown")
         except ValueError: return bot.send_message(uid, "⚠️ Invalid amount. Numbers only.")
@@ -755,4 +794,3 @@ def process_order_background(uid, u, draft, message_id):
 def cancel_ord(call):
     clear_user_session(call.message.chat.id)
     bot.edit_message_text("🚫 **Order Cancelled.**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
-
