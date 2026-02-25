@@ -82,7 +82,10 @@ def get_settings():
             "best_choice_sids": [], "points_per_usd": 100, "points_to_usd_rate": 1000,
             "proof_channel": "", "profit_tiers": [], "external_apis": [],
             "cryptomus_merchant": "", "cryptomus_api": "", "coinpayments_pub": "", "coinpayments_priv": "",
-            "cryptomus_active": False, "coinpayments_active": False
+            "cryptomus_active": False, "coinpayments_active": False,
+            "nowpayments_api": "", "nowpayments_ipn": "", "nowpayments_active": False,
+            "payeer_merchant": "", "payeer_secret": "", "payeer_active": False,
+            "stars_rate": 50, "stars_active": False
         }
         config_col.insert_one(s)
         
@@ -343,7 +346,6 @@ def calculate_price(base_rate, user_spent, user_custom_discount=0.0):
     
     return max(final_rate, 0.001)
 
-# 🔥 FIXED: Short Form Converter (TG, IG, etc.)
 def clean_service_name(raw_name):
     if not raw_name: return "Premium Service ⚡"
     try:
@@ -351,29 +353,24 @@ def clean_service_name(raw_name):
         emojis = ""
         n_lower = n.lower()
         
-        # Add emojis based on keywords
         if "instant" in n_lower or "fast" in n_lower: emojis += "⚡"
         if "non drop" in n_lower or "norefill" in n_lower or "no refill" in n_lower: emojis += "💎"
         elif "refill" in n_lower: emojis += "♻️"
         if "stable" in n_lower: emojis += "🛡️"
         if "real" in n_lower: emojis += "👤"
         
-        # Clean unnecessary parameters
         n = re.sub(r'(?i)speed\s*[:\-]?\s*', '', n)
         n = re.sub(r'📍?\s*\d+(-\d+)?[KkMm]?/[Dd]\s*', '', n)
         
-        # 🔥 Convert Long names to Short Form
         n = re.sub(r'(?i)\bTelegram\b', 'TG', n)
         n = re.sub(r'(?i)\bInstagram\b|\bInsta\b', 'IG', n)
         n = re.sub(r'(?i)\bFacebook\b', 'FB', n)
         n = re.sub(r'(?i)\bYouTube\b', 'YT', n)
         n = re.sub(r'(?i)\bTwitter\b', 'X', n)
         
-        # Remove brackets from shortforms like [TG] -> TG
         n = re.sub(r'\[(TG|IG|FB|YT|X|TikTok)\]', r'\1', n, flags=re.IGNORECASE)
         n = re.sub(r'\((TG|IG|FB|YT|X|TikTok)\)', r'\1', n, flags=re.IGNORECASE)
         
-        # Words to remove entirely
         words = ["1xpanel", "Instant", "fast", "NoRefill", "No refill", "Refill", "Stable", "price", "Non drop", "real"]
         for w in words: 
             n = re.sub(r'(?i)\b' + re.escape(w) + r'\b', '', n)
@@ -496,4 +493,35 @@ def create_coinpayments_payment(amount, custom_uid, pub_key, priv_key):
     except Exception as e: 
         logging.error(f"CoinPayments URL Error: {e}")
     return None
+
+def create_nowpayments_payment(amount, order_id, api_key, ipn_url):
+    url = "https://api.nowpayments.io/v1/invoice"
+    headers = {
+        "x-api-key": api_key,
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "price_amount": amount,
+        "price_currency": "usd",
+        "order_id": str(order_id),
+        "ipn_callback_url": ipn_url,
+        "success_url": "https://t.me/nexusbot", 
+        "cancel_url": "https://t.me/nexusbot"
+    }
+    try:
+        r = requests.post(url, json=payload, headers=headers)
+        if r.status_code == 200:
+            return r.json().get("invoice_url")
+    except Exception as e:
+        logging.error(f"NowPayments URL Error: {e}")
+    return None
+
+def create_payeer_payment(amount, order_id, merchant_id, secret_key):
+    amount_str = f"{float(amount):.2f}"
+    desc = base64.b64encode(f"Deposit_{order_id}".encode('utf-8')).decode('utf-8')
+    sign_str = f"{merchant_id}:{order_id}:{amount_str}:USD:{desc}:{secret_key}"
+    sign = hashlib.sha256(sign_str.encode('utf-8')).hexdigest().upper()
+    
+    url = f"https://payeer.com/merchant/?m_shop={merchant_id}&m_orderid={order_id}&m_amount={amount_str}&m_curr=USD&m_desc={desc}&m_sign={sign}"
+    return url
 
