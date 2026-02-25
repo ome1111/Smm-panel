@@ -36,7 +36,7 @@ except ValueError:
 PAYMENT_NUMBER = os.environ.get('PAYMENT_NUMBER', '01700000000') 
 
 # --- RENDER URL ---
-RENDER_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://your-app-name.onrender.com')
+RENDER_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://smm-panel-g8ab.onrender.com')
 
 # --- BONUS SETTINGS ---
 REF_BONUS = float(os.environ.get('REF_BONUS', '0.05'))
