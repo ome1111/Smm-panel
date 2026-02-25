@@ -18,17 +18,37 @@
         .modal { display: none; }
         .modal.active { display: flex; animation: fadeIn 0.3s ease; }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #38bdf8; border-radius: 10px; }
     </style>
 </head>
-<body class="flex h-screen overflow-hidden bg-[url('https://www.transparenttextures.com/patterns/stardust.png')]">
+<body class="flex flex-col md:flex-row h-screen overflow-hidden bg-[url('https://www.transparenttextures.com/patterns/stardust.png')]">
 
-    <aside class="w-64 glass-card m-4 flex flex-col justify-between hidden md:flex z-20">
+    <header class="md:hidden flex justify-between items-center p-4 glass-card m-4 z-30">
         <div>
-            <div class="p-6 text-center border-b border-slate-700/50">
-                <h1 class="text-3xl font-bold text-sky-400 tracking-wider">NEXUS SMM</h1>
-                <p class="text-xs text-slate-500 uppercase tracking-widest mt-1">Titan Control</p>
+            <h1 class="text-2xl font-bold text-sky-400 tracking-wider">NEXUS SMM</h1>
+            <p class="text-[10px] text-slate-500 uppercase tracking-widest">Titan Control</p>
+        </div>
+        <button onclick="toggleSidebar()" class="text-sky-400 text-2xl focus:outline-none hover:text-white transition">
+            <i class="fas fa-bars"></i>
+        </button>
+    </header>
+
+    <div id="sidebarBackdrop" onclick="toggleSidebar()" class="fixed inset-0 bg-black/80 z-40 hidden md:hidden backdrop-blur-sm transition-opacity"></div>
+
+    <aside id="sidebar" class="w-64 glass-card m-4 flex flex-col justify-between fixed md:relative z-50 h-[calc(100vh-2rem)] transform -translate-x-[150%] md:translate-x-0 transition-transform duration-300">
+        <div>
+            <div class="p-6 text-center border-b border-slate-700/50 relative">
+                <button onclick="toggleSidebar()" class="md:hidden absolute top-4 right-4 text-slate-400 hover:text-red-500 text-xl">
+                    <i class="fas fa-times"></i>
+                </button>
+                <h1 class="text-3xl font-bold text-sky-400 tracking-wider">NEXUS</h1>
+                <p class="text-xs text-slate-500 uppercase tracking-widest mt-1">Admin Panel</p>
             </div>
-            <nav class="p-4 space-y-2">
+            <nav class="p-4 space-y-2 overflow-y-auto max-h-[60vh]">
                 <button onclick="switchTab('dashboard')" class="tab-btn active w-full text-left px-4 py-3 rounded-r-lg font-bold text-slate-300 hover:bg-slate-800 flex items-center gap-3">
                     <i class="fas fa-home w-5"></i> Dashboard
                 </button>
@@ -51,37 +71,37 @@
         </div>
         <div class="p-4 border-t border-slate-700/50">
             <a href="/logout" class="block text-center bg-red-500/10 text-red-500 border border-red-500/50 hover:bg-red-500 hover:text-white py-2 rounded font-bold transition">
-                <i class="fas fa-sign-out-alt"></i> SYSTEM LOGOUT
+                <i class="fas fa-sign-out-alt"></i> LOGOUT
             </a>
         </div>
     </aside>
 
-    <main class="flex-1 p-4 md:p-8 overflow-y-auto z-10">
+    <main class="flex-1 p-4 md:p-8 overflow-y-auto relative z-10">
         
         <section id="tab-dashboard" class="tab-content block">
-            <div class="flex justify-between items-center mb-8">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
                 <div>
                     <h2 class="text-2xl font-bold text-white">System Overview</h2>
                     <p class="text-slate-400 text-sm">Real-time statistics and insights</p>
                 </div>
                 <div class="flex gap-2">
-                    <a href="/smart_cleanup" class="bg-amber-500/20 text-amber-400 border border-amber-500/50 px-4 py-2 rounded font-bold hover:bg-amber-500 hover:text-slate-900 transition">
-                        <i class="fas fa-broom"></i> Smart Cleanup
+                    <a href="/smart_cleanup" class="bg-amber-500/20 text-amber-400 border border-amber-500/50 px-4 py-2 rounded font-bold hover:bg-amber-500 hover:text-slate-900 transition flex items-center gap-2">
+                        <i class="fas fa-broom"></i> <span class="hidden md:inline">Smart Cleanup</span>
                     </a>
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 <div class="glass-card p-6 border-l-4 border-l-sky-500">
                     <p class="text-slate-400 text-sm font-bold uppercase">Total Users</p>
                     <h3 class="text-3xl font-bold text-white data-font mt-2">{{ u_count }}</h3>
                 </div>
                 <div class="glass-card p-6 border-l-4 border-l-emerald-500">
-                    <p class="text-slate-400 text-sm font-bold uppercase">Total Deposits (Bal)</p>
+                    <p class="text-slate-400 text-sm font-bold uppercase">Total Deposits</p>
                     <h3 class="text-3xl font-bold text-emerald-400 data-font mt-2">{{ bal }}</h3>
                 </div>
                 <div class="glass-card p-6 border-l-4 border-l-violet-500">
-                    <p class="text-slate-400 text-sm font-bold uppercase">Total Sales Spent</p>
+                    <p class="text-slate-400 text-sm font-bold uppercase">Total Sales</p>
                     <h3 class="text-3xl font-bold text-violet-400 data-font mt-2">{{ sales }}</h3>
                 </div>
                 <div class="glass-card p-6 border-l-4 border-l-rose-500">
@@ -91,29 +111,29 @@
             </div>
 
             <div class="glass-card p-6 mb-8">
-                <h3 class="text-xl font-bold text-white mb-4"><i class="fas fa-star text-amber-400"></i> Admin Best Choice Configuration</h3>
-                <form action="/save_best_choice" method="POST" class="flex gap-4">
-                    <input type="text" name="best_choice_sids" value="{{ s.get('best_choice_sids', []) | join(', ') }}" placeholder="Enter Service IDs separated by comma (e.g., 102, 55, 301)" class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white outline-none focus:border-sky-500 data-font">
-                    <button type="submit" class="bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold px-6 py-2 rounded-lg transition"><i class="fas fa-save"></i> Save</button>
+                <h3 class="text-xl font-bold text-white mb-4"><i class="fas fa-star text-amber-400"></i> Admin Best Choice Setup</h3>
+                <form action="/save_best_choice" method="POST" class="flex flex-col sm:flex-row gap-4">
+                    <input type="text" name="best_choice_sids" value="{{ s.get('best_choice_sids', []) | join(', ') }}" placeholder="Enter Service IDs (e.g., 102, 55, 301)" class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white outline-none focus:border-sky-500 data-font">
+                    <button type="submit" class="bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold px-8 py-3 rounded-lg transition shadow-lg shadow-sky-500/30"><i class="fas fa-save"></i> Save IDs</button>
                 </form>
             </div>
         </section>
 
         <section id="tab-users" class="tab-content hidden">
-            <div class="flex justify-between items-center mb-6">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                 <h2 class="text-2xl font-bold text-white">Users Manager</h2>
-                <div class="flex gap-2">
-                    <button onclick="openModal('fakeUserModal')" class="bg-violet-500/20 text-violet-400 border border-violet-500/50 px-4 py-2 rounded font-bold hover:bg-violet-500 hover:text-white transition">
-                        <i class="fas fa-user-ninja"></i> Add Fake User
+                <div class="flex gap-2 w-full sm:w-auto">
+                    <button onclick="openModal('fakeUserModal')" class="flex-1 sm:flex-none bg-violet-500/20 text-violet-400 border border-violet-500/50 px-4 py-2 rounded font-bold hover:bg-violet-500 hover:text-white transition">
+                        <i class="fas fa-user-ninja"></i> Fake User
                     </button>
-                    <a href="/export_csv" class="bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 px-4 py-2 rounded font-bold hover:bg-emerald-500 hover:text-slate-900 transition">
+                    <a href="/export_csv" class="flex-1 sm:flex-none text-center bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 px-4 py-2 rounded font-bold hover:bg-emerald-500 hover:text-slate-900 transition">
                         <i class="fas fa-file-csv"></i> Export CSV
                     </a>
                 </div>
             </div>
 
-            <div class="glass-card overflow-x-auto">
-                <table class="w-full text-left border-collapse">
+            <div class="glass-card overflow-x-auto rounded-lg">
+                <table class="w-full text-left border-collapse whitespace-nowrap">
                     <thead>
                         <tr class="bg-slate-800/50 text-slate-400 text-sm uppercase tracking-wider">
                             <th class="p-4 border-b border-slate-700 font-semibold">UID / Name</th>
@@ -150,18 +170,18 @@
                                     <span class="bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded text-xs font-bold border border-emerald-500/30">Active</span>
                                 {% endif %}
                             </td>
-                            <td class="p-4 text-right space-x-2">
-                                <button onclick="openEditModal({{ u.get('_id', 0) }}, '{{ u.get('name', 'Unknown') | replace('\'', '\\\'') }}', {{ u.get('balance', 0) }}, {{ u.get('spent',0) }}, {{ u.get('ref_earnings',0) }}, {{ u.get('points',0) }}, {{ u.get('custom_discount',0) }}, '{{ u.get('tier_override', 'none') }}')" class="text-sky-400 hover:text-sky-300" title="Edit User"><i class="fas fa-edit"></i></button>
+                            <td class="p-4 text-right space-x-3">
+                                <button onclick="openEditModal({{ u.get('_id', 0) }}, '{{ u.get('name', 'Unknown') | replace('\'', '\\\'') }}', {{ u.get('balance', 0) }}, {{ u.get('spent',0) }}, {{ u.get('ref_earnings',0) }}, {{ u.get('points',0) }}, {{ u.get('custom_discount',0) }}, '{{ u.get('tier_override', 'none') }}')" class="text-sky-400 hover:text-sky-300 text-lg" title="Edit User"><i class="fas fa-edit"></i></button>
                                 
-                                <a href="/toggle_shadow_ban/{{ u.get('_id') }}" class="text-stone-400 hover:text-stone-300" title="Toggle Shadow Ban"><i class="fas fa-ghost"></i></a>
+                                <a href="/toggle_shadow_ban/{{ u.get('_id') }}" class="text-stone-400 hover:text-stone-300 text-lg" title="Toggle Shadow Ban"><i class="fas fa-ghost"></i></a>
                                 
                                 {% if u.get('banned') %}
-                                    <a href="/unban_user/{{ u.get('_id') }}" class="text-emerald-400 hover:text-emerald-300" title="Unban"><i class="fas fa-check-circle"></i></a>
+                                    <a href="/unban_user/{{ u.get('_id') }}" class="text-emerald-400 hover:text-emerald-300 text-lg" title="Unban"><i class="fas fa-check-circle"></i></a>
                                 {% else %}
-                                    <a href="/ban_user/{{ u.get('_id') }}" class="text-orange-400 hover:text-orange-300" title="Ban"><i class="fas fa-ban"></i></a>
+                                    <a href="/ban_user/{{ u.get('_id') }}" class="text-orange-400 hover:text-orange-300 text-lg" title="Ban"><i class="fas fa-ban"></i></a>
                                 {% endif %}
                                 
-                                <a href="/delete_user/{{ u.get('_id') }}" onclick="return confirm('Delete this user completely?')" class="text-red-500 hover:text-red-400" title="Delete"><i class="fas fa-trash"></i></a>
+                                <a href="/delete_user/{{ u.get('_id') }}" onclick="return confirm('Delete this user completely?')" class="text-red-500 hover:text-red-400 text-lg" title="Delete"><i class="fas fa-trash"></i></a>
                             </td>
                         </tr>
                         {% endfor %}
@@ -172,8 +192,8 @@
 
         <section id="tab-orders" class="tab-content hidden">
             <h2 class="text-2xl font-bold text-white mb-6">Live Orders</h2>
-            <div class="glass-card overflow-x-auto">
-                <table class="w-full text-left border-collapse">
+            <div class="glass-card overflow-x-auto rounded-lg">
+                <table class="w-full text-left border-collapse whitespace-nowrap">
                     <thead>
                         <tr class="bg-slate-800/50 text-slate-400 text-sm uppercase tracking-wider">
                             <th class="p-4 border-b border-slate-700 font-semibold">Order ID</th>
@@ -188,12 +208,12 @@
                         <tr class="hover:bg-slate-800/30 transition border-b border-slate-800/50">
                             <td class="p-4 text-white data-font font-bold">
                                 {{ o.get('oid', 'N/A') }}
-                                {% if o.get('is_shadow') %}<br><span class="text-xs text-stone-400">Shadow Order</span>{% endif %}
+                                {% if o.get('is_shadow') %}<br><span class="text-xs text-stone-400 font-normal">Shadow Order</span>{% endif %}
                             </td>
                             <td class="p-4 text-sky-400 data-font">{{ o.get('uid', 'N/A') }}</td>
                             <td class="p-4">
                                 <div class="text-white font-bold">SID: {{ o.get('sid', 'N/A') }}</div>
-                                <div class="text-slate-400 text-xs truncate max-w-xs mt-1">{{ o.get('link', o.get('username', 'N/A')) }}</div>
+                                <div class="text-slate-400 text-xs truncate max-w-[200px] mt-1">{{ o.get('link', o.get('username', 'N/A')) }}</div>
                                 <div class="text-slate-500 text-xs mt-1">Qty: {{ o.get('qty', 0) }}</div>
                             </td>
                             <td class="p-4">
@@ -204,12 +224,12 @@
                                 {% else %}<span class="text-amber-400 font-bold uppercase">{{ st }}</span>{% endif %}
                                 <div class="text-slate-400 data-font mt-1">${{ "%.3f"|format(o.get('cost', 0)) }}</div>
                             </td>
-                            <td class="p-4 text-right space-x-2">
+                            <td class="p-4 text-right space-x-3">
                                 {% if st not in ['refunded', 'canceled'] %}
                                     <a href="/refund_order/{{ o.get('oid') }}" onclick="return confirm('Refund this order to user?')" class="text-amber-400 hover:text-amber-300 text-xs font-bold border border-amber-500/50 px-2 py-1 rounded">Refund</a>
                                 {% endif %}
-                                <a href="/override_order/{{ o.get('oid') }}/completed" class="text-emerald-400 hover:text-emerald-300" title="Force Complete"><i class="fas fa-check"></i></a>
-                                <a href="/delete_order/{{ o.get('oid') }}" onclick="return confirm('Delete this order log?')" class="text-red-500 hover:text-red-400"><i class="fas fa-trash"></i></a>
+                                <a href="/override_order/{{ o.get('oid') }}/completed" class="text-emerald-400 hover:text-emerald-300 text-lg" title="Force Complete"><i class="fas fa-check"></i></a>
+                                <a href="/delete_order/{{ o.get('oid') }}" onclick="return confirm('Delete this order log?')" class="text-red-500 hover:text-red-400 text-lg"><i class="fas fa-trash"></i></a>
                             </td>
                         </tr>
                         {% endfor %}
@@ -240,7 +260,7 @@
                         <input type="hidden" name="ticket_id" value="{{ t.get('_id') }}">
                         <input type="hidden" name="uid" value="{{ t.get('uid') }}">
                         <input type="text" name="reply_msg" placeholder="Type reply..." class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white text-sm outline-none focus:border-sky-500" required>
-                        <button type="submit" class="bg-sky-500 hover:bg-sky-400 text-slate-900 px-3 py-2 rounded font-bold"><i class="fas fa-paper-plane"></i></button>
+                        <button type="submit" class="bg-sky-500 hover:bg-sky-400 text-slate-900 px-4 py-2 rounded font-bold transition"><i class="fas fa-paper-plane"></i></button>
                     </form>
                     {% else %}
                     <div class="mt-4 border-t border-slate-700 pt-3">
@@ -253,7 +273,7 @@
                 {% endfor %}
                 {% if not tickets %}
                 <div class="col-span-full text-center py-10 text-slate-500">
-                    <i class="fas fa-inbox text-4xl mb-3"></i><br>No support tickets right now.
+                    <i class="fas fa-inbox text-5xl mb-4 opacity-50"></i><br>No support tickets right now.
                 </div>
                 {% endif %}
             </div>
@@ -267,7 +287,7 @@
                     <h3 class="text-xl font-bold text-white mb-4"><i class="fas fa-bullhorn text-amber-400"></i> Global Broadcast</h3>
                     <form action="/send_broadcast" method="POST">
                         <textarea name="msg" rows="4" placeholder="Type your message here... Markdown supported!" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white outline-none focus:border-amber-500 mb-4" required></textarea>
-                        <button type="submit" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold py-3 rounded-lg transition">Send to All Users</button>
+                        <button type="submit" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold py-3 rounded-lg transition shadow-lg shadow-amber-500/20">Send to All Users</button>
                     </form>
                 </div>
 
@@ -275,20 +295,20 @@
                     <h3 class="text-xl font-bold text-white mb-4"><i class="fas fa-gem text-violet-400"></i> VIP Smart Cast</h3>
                     <form action="/smart_cast" method="POST">
                         <textarea name="msg" rows="4" placeholder="This message will ONLY be sent to users who have spent money..." class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white outline-none focus:border-violet-500 mb-4" required></textarea>
-                        <button type="submit" class="w-full bg-violet-500 hover:bg-violet-400 text-white font-bold py-3 rounded-lg transition">Send to VIPs Only</button>
+                        <button type="submit" class="w-full bg-violet-500 hover:bg-violet-400 text-white font-bold py-3 rounded-lg transition shadow-lg shadow-violet-500/20">Send to VIPs Only</button>
                     </form>
                 </div>
 
                 <div class="glass-card p-6">
                     <h3 class="text-xl font-bold text-white mb-4"><i class="fas fa-ticket-alt text-emerald-400"></i> Create Voucher</h3>
                     <form action="/create_voucher" method="POST" class="space-y-4">
-                        <div class="flex gap-4">
-                            <input type="text" name="code" placeholder="VOUCHER_CODE" class="flex-1 bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white data-font uppercase" required>
-                            <input type="number" step="0.01" name="amount" placeholder="Amount ($)" class="w-32 bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white data-font" required>
+                        <div class="flex flex-col sm:flex-row gap-4">
+                            <input type="text" name="code" placeholder="VOUCHER_CODE" class="flex-1 bg-slate-900 border border-slate-700 rounded px-4 py-3 text-white data-font uppercase outline-none focus:border-emerald-500" required>
+                            <input type="number" step="0.01" name="amount" placeholder="Amount ($)" class="w-full sm:w-32 bg-slate-900 border border-slate-700 rounded px-4 py-3 text-white data-font outline-none focus:border-emerald-500" required>
                         </div>
-                        <div class="flex gap-4 items-center">
-                            <input type="number" name="limit" placeholder="Usage Limit" value="1" class="w-1/2 bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white data-font" required>
-                            <button type="submit" class="w-1/2 bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold py-2 rounded transition">Generate</button>
+                        <div class="flex flex-col sm:flex-row gap-4 items-center">
+                            <input type="number" name="limit" placeholder="Usage Limit" value="1" class="w-full sm:w-1/2 bg-slate-900 border border-slate-700 rounded px-4 py-3 text-white data-font outline-none" required>
+                            <button type="submit" class="w-full sm:w-1/2 bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold py-3 rounded transition shadow-lg shadow-emerald-500/20">Generate Voucher</button>
                         </div>
                     </form>
                     
@@ -296,16 +316,19 @@
                         <h4 class="text-sm font-bold text-slate-400 mb-3">Active Vouchers</h4>
                         <div class="space-y-2 max-h-40 overflow-y-auto pr-2">
                             {% for v in vouchers %}
-                            <div class="bg-slate-900/50 p-2 border border-slate-700/50 rounded flex justify-between items-center">
+                            <div class="bg-slate-900/50 p-3 border border-slate-700/50 rounded flex justify-between items-center">
                                 <div>
-                                    <span class="text-white font-bold data-font">{{ v.get('code') }}</span>
-                                    <span class="text-emerald-400 text-xs ml-2">${{ v.get('amount', 0) }}</span>
+                                    <span class="text-white font-bold data-font tracking-wider">{{ v.get('code') }}</span>
+                                    <span class="bg-emerald-500/20 text-emerald-400 text-xs px-2 py-0.5 rounded ml-2 border border-emerald-500/30">${{ v.get('amount', 0) }}</span>
                                 </div>
-                                <div class="text-xs text-slate-500">
-                                    Used: {{ v.get('used_by', []) | length }} / {{ v.get('limit', 1) }}
+                                <div class="text-xs font-bold text-slate-500 bg-slate-800 px-2 py-1 rounded">
+                                    {{ v.get('used_by', []) | length }} / {{ v.get('limit', 1) }}
                                 </div>
                             </div>
                             {% endfor %}
+                            {% if not vouchers %}
+                                <p class="text-slate-500 text-sm text-center py-2">No active vouchers.</p>
+                            {% endif %}
                         </div>
                     </div>
                 </div>
@@ -313,21 +336,21 @@
                 <div class="glass-card p-6">
                     <h3 class="text-xl font-bold text-white mb-4"><i class="fas fa-bolt text-sky-400"></i> Quick Actions</h3>
                     <div class="space-y-3">
-                        <a href="/distribute_rewards" onclick="return confirm('Distribute balance to Top 3 Spenders and Affiliates?')" class="block text-center border border-amber-500/50 text-amber-400 hover:bg-amber-500 hover:text-slate-900 py-3 rounded font-bold transition">
-                            <i class="fas fa-trophy"></i> Distribute Leaderboard Rewards
+                        <a href="/distribute_rewards" onclick="return confirm('Distribute balance to Top 3 Spenders and Affiliates?')" class="block text-center border border-amber-500/50 text-amber-400 hover:bg-amber-500 hover:text-slate-900 py-3 rounded-lg font-bold transition">
+                            <i class="fas fa-trophy mr-2"></i> Distribute Leaderboard Rewards
                         </a>
-                        <a href="/reset_monthly" onclick="return confirm('Reset all spent and ref earnings to 0?')" class="block text-center border border-red-500/50 text-red-500 hover:bg-red-500 hover:text-white py-3 rounded font-bold transition">
-                            <i class="fas fa-calendar-times"></i> Reset Monthly Leaderboard
+                        <a href="/reset_monthly" onclick="return confirm('Reset all spent and ref earnings to 0?')" class="block text-center border border-red-500/50 text-red-500 hover:bg-red-500 hover:text-white py-3 rounded-lg font-bold transition">
+                            <i class="fas fa-calendar-times mr-2"></i> Reset Monthly Leaderboard
                         </a>
-                        <a href="/remove_fake_users" onclick="return confirm('Delete all fake users?')" class="block text-center border border-violet-500/50 text-violet-400 hover:bg-violet-500 hover:text-white py-3 rounded font-bold transition">
-                            <i class="fas fa-user-minus"></i> Remove All Fake Users
+                        <a href="/remove_fake_users" onclick="return confirm('Delete all fake users?')" class="block text-center border border-violet-500/50 text-violet-400 hover:bg-violet-500 hover:text-white py-3 rounded-lg font-bold transition">
+                            <i class="fas fa-user-minus mr-2"></i> Remove All Fake Users
                         </a>
                     </div>
                 </div>
             </div>
         </section>
 
-        <section id="tab-settings" class="tab-content hidden">
+        <section id="tab-settings" class="tab-content hidden pb-20">
             <h2 class="text-2xl font-bold text-white mb-6">Core Configurations</h2>
             <form action="/settings" method="POST" class="space-y-8">
                 
@@ -336,23 +359,24 @@
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
                             <label class="block text-sm font-bold text-slate-400 mb-2">Base Profit Margin (%)</label>
-                            <input type="number" step="0.1" name="profit_margin" value="{{ s.get('profit_margin', 20.0) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white data-font outline-none">
+                            <input type="number" step="0.1" name="profit_margin" value="{{ s.get('profit_margin', 20.0) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-3 text-white data-font outline-none focus:border-sky-500 transition">
                             <p class="text-xs text-slate-500 mt-1">Default profit added to main panel price.</p>
                         </div>
                         <div>
-                            <label class="block text-sm font-bold text-slate-400 mb-2">Force Sub Channels (Comma separated)</label>
-                            <input type="text" name="channels" value="{{ s.get('channels', []) | join(', ') }}" placeholder="@channel1, @channel2" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white outline-none">
+                            <label class="block text-sm font-bold text-slate-400 mb-2">Force Sub Channels</label>
+                            <input type="text" name="channels" value="{{ s.get('channels', []) | join(', ') }}" placeholder="@channel1, @channel2" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-3 text-white outline-none focus:border-sky-500 transition">
+                            <p class="text-xs text-slate-500 mt-1">Separate with comma (,)</p>
                         </div>
                         <div>
                             <label class="block text-sm font-bold text-slate-400 mb-2">Proof/Logs Channel ID</label>
-                            <input type="text" name="proof_channel" value="{{ s.get('proof_channel', '') }}" placeholder="-100xxxxxxx" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white data-font outline-none">
+                            <input type="text" name="proof_channel" value="{{ s.get('proof_channel', '') }}" placeholder="-100xxxxxxx" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-3 text-white data-font outline-none focus:border-sky-500 transition">
                         </div>
-                        <div class="flex flex-col justify-center">
-                            <label class="flex items-center gap-3 cursor-pointer mt-4">
+                        <div class="flex flex-col justify-center bg-red-500/5 border border-red-500/20 p-4 rounded-lg">
+                            <label class="flex items-center gap-3 cursor-pointer">
                                 <input type="checkbox" name="maintenance" {% if s.get('maintenance') %}checked{% endif %} class="w-5 h-5 accent-red-500">
                                 <span class="text-red-400 font-bold">Activate Maintenance Mode</span>
                             </label>
-                            <input type="text" name="maintenance_msg" value="{{ s.get('maintenance_msg', 'Bot is upgrading.') }}" placeholder="Maintenance message..." class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white mt-2 outline-none">
+                            <input type="text" name="maintenance_msg" value="{{ s.get('maintenance_msg', 'Bot is upgrading.') }}" placeholder="Maintenance message..." class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white mt-3 outline-none focus:border-red-500 transition">
                         </div>
                     </div>
                 </div>
@@ -360,155 +384,172 @@
                 <div class="glass-card p-6">
                     <h3 class="text-xl font-bold text-white border-b border-slate-700/50 pb-3 mb-4"><i class="fas fa-wallet text-emerald-400"></i> Payment Gateways</h3>
                     
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                        <div class="bg-slate-900/50 p-4 border border-slate-700/50 rounded-lg">
-                            <label class="flex items-center gap-2 mb-3 cursor-pointer">
-                                <input type="checkbox" name="cryptomus_active" {% if s.get('cryptomus_active') %}checked{% endif %} class="w-4 h-4 accent-emerald-500">
-                                <span class="font-bold text-white">Cryptomus Auto-Pay</span>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                        <div class="bg-slate-900/50 p-5 border border-slate-700/50 rounded-xl">
+                            <label class="flex items-center gap-2 mb-4 cursor-pointer">
+                                <input type="checkbox" name="cryptomus_active" {% if s.get('cryptomus_active') %}checked{% endif %} class="w-5 h-5 accent-emerald-500">
+                                <span class="font-bold text-white text-lg">Cryptomus Auto-Pay</span>
                             </label>
-                            <input type="text" name="cryptomus_merchant" value="{{ s.get('cryptomus_merchant', '') }}" placeholder="Merchant ID" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white text-sm mb-2 outline-none">
-                            <input type="password" name="cryptomus_api" value="{{ s.get('cryptomus_api', '') }}" placeholder="API Payment Key" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white text-sm outline-none">
+                            <input type="text" name="cryptomus_merchant" value="{{ s.get('cryptomus_merchant', '') }}" placeholder="Merchant ID" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-3 text-white text-sm mb-3 outline-none focus:border-emerald-500 transition">
+                            <input type="password" name="cryptomus_api" value="{{ s.get('cryptomus_api', '') }}" placeholder="API Payment Key" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-3 text-white text-sm outline-none focus:border-emerald-500 transition">
                         </div>
 
-                        <div class="bg-slate-900/50 p-4 border border-slate-700/50 rounded-lg">
-                            <label class="flex items-center gap-2 mb-3 cursor-pointer">
-                                <input type="checkbox" name="coinpayments_active" {% if s.get('coinpayments_active') %}checked{% endif %} class="w-4 h-4 accent-emerald-500">
-                                <span class="font-bold text-white">CoinPayments Auto-Pay</span>
+                        <div class="bg-slate-900/50 p-5 border border-slate-700/50 rounded-xl">
+                            <label class="flex items-center gap-2 mb-4 cursor-pointer">
+                                <input type="checkbox" name="coinpayments_active" {% if s.get('coinpayments_active') %}checked{% endif %} class="w-5 h-5 accent-emerald-500">
+                                <span class="font-bold text-white text-lg">CoinPayments Auto-Pay</span>
                             </label>
-                            <input type="text" name="coinpayments_pub" value="{{ s.get('coinpayments_pub', '') }}" placeholder="Public Key" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white text-sm mb-2 outline-none">
-                            <input type="password" name="coinpayments_priv" value="{{ s.get('coinpayments_priv', '') }}" placeholder="Private / IPN Secret" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white text-sm outline-none">
+                            <input type="text" name="coinpayments_pub" value="{{ s.get('coinpayments_pub', '') }}" placeholder="Public Key" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-3 text-white text-sm mb-3 outline-none focus:border-emerald-500 transition">
+                            <input type="password" name="coinpayments_priv" value="{{ s.get('coinpayments_priv', '') }}" placeholder="Private / IPN Secret" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-3 text-white text-sm outline-none focus:border-emerald-500 transition">
                         </div>
                     </div>
 
-                    <h4 class="font-bold text-slate-300 mb-3">Manual / Local Gateways (bKash, Nagad, Bank, etc.)</h4>
+                    <div class="flex items-center justify-between mb-4">
+                        <h4 class="font-bold text-slate-300">Local Gateways (bKash, Nagad, etc.)</h4>
+                        <button type="button" onclick="addPaymentRow()" class="text-sky-400 text-sm font-bold bg-sky-500/10 px-3 py-1 rounded hover:bg-sky-500/20 transition"><i class="fas fa-plus"></i> Add Method</button>
+                    </div>
+                    
                     <div id="payment-methods" class="space-y-3">
                         {% for p in s.get('payments', []) %}
-                        <div class="payment-row flex flex-col sm:flex-row gap-2 bg-slate-900/50 p-3 rounded border border-slate-700/50 relative">
-                            <input type="text" name="pay_name[]" value="{{ p.name }}" placeholder="Method Name (e.g. bKash Auto)" class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none" required>
-                            <input type="number" step="0.01" name="pay_rate[]" value="{{ p.rate }}" placeholder="Rate (e.g. 120)" class="w-full sm:w-32 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white data-font outline-none" required>
-                            <input type="text" name="pay_address[]" value="{{ p.address }}" placeholder="Account/Address" class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none" required>
-                            <button type="button" onclick="this.closest('.payment-row').remove()" class="text-slate-500 hover:text-red-500 px-2"><i class="fas fa-times"></i></button>
+                        <div class="payment-row flex flex-col sm:flex-row gap-3 bg-slate-900/50 p-4 rounded-lg border border-slate-700/50 relative">
+                            <input type="text" name="pay_name[]" value="{{ p.name }}" placeholder="Method Name (e.g. bKash Auto)" class="flex-1 bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white outline-none focus:border-sky-500" required>
+                            <input type="number" step="0.01" name="pay_rate[]" value="{{ p.rate }}" placeholder="Rate (e.g. 120)" class="w-full sm:w-32 bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white data-font outline-none focus:border-sky-500" required>
+                            <input type="text" name="pay_address[]" value="{{ p.address }}" placeholder="Account/Address" class="flex-1 bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white outline-none focus:border-sky-500" required>
+                            <button type="button" onclick="this.closest('.payment-row').remove()" class="text-slate-500 hover:text-red-500 px-2 py-2 sm:py-0 absolute top-2 right-2 sm:relative sm:top-0 sm:right-0"><i class="fas fa-times"></i></button>
                         </div>
                         {% endfor %}
                     </div>
-                    <button type="button" onclick="addPaymentRow()" class="mt-4 text-sky-400 text-sm font-bold hover:underline"><i class="fas fa-plus"></i> Add Another Method</button>
                 </div>
 
                 <div class="glass-card p-6">
                     <h3 class="text-xl font-bold text-white border-b border-slate-700/50 pb-3 mb-4"><i class="fas fa-gift text-rose-400"></i> Marketing & Bonuses</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
                         <div>
                             <label class="block text-sm font-bold text-slate-400 mb-2">Referral Bonus ($)</label>
-                            <input type="number" step="0.01" name="ref_bonus" value="{{ s.get('ref_bonus', 0.05) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white data-font outline-none">
+                            <input type="number" step="0.01" name="ref_bonus" value="{{ s.get('ref_bonus', 0.05) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-3 text-white data-font outline-none focus:border-rose-500 transition">
                         </div>
                         <div>
                             <label class="block text-sm font-bold text-slate-400 mb-2">Deposit Commission (%)</label>
-                            <input type="number" step="0.1" name="dep_commission" value="{{ s.get('dep_commission', 5.0) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white data-font outline-none">
+                            <input type="number" step="0.1" name="dep_commission" value="{{ s.get('dep_commission', 5.0) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-3 text-white data-font outline-none focus:border-rose-500 transition">
                         </div>
-                        <div class="flex flex-col justify-center bg-rose-500/10 p-3 rounded border border-rose-500/30">
-                            <label class="flex items-center gap-2 cursor-pointer mb-2">
-                                <input type="checkbox" name="flash_sale_active" {% if s.get('flash_sale_active') %}checked{% endif %} class="w-4 h-4 accent-rose-500">
-                                <span class="text-rose-400 font-bold text-sm">Flash Sale Active</span>
+                        <div class="flex flex-col justify-center bg-rose-500/5 border border-rose-500/20 p-4 rounded-lg">
+                            <label class="flex items-center gap-2 cursor-pointer mb-3">
+                                <input type="checkbox" name="flash_sale_active" {% if s.get('flash_sale_active') %}checked{% endif %} class="w-5 h-5 accent-rose-500">
+                                <span class="text-rose-400 font-bold">Flash Sale Active</span>
                             </label>
-                            <input type="number" step="0.1" name="flash_sale_discount" value="{{ s.get('flash_sale_discount', 0.0) }}" placeholder="Discount %" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-white data-font text-sm outline-none">
+                            <input type="number" step="0.1" name="flash_sale_discount" value="{{ s.get('flash_sale_discount', 0.0) }}" placeholder="Global Discount %" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white data-font outline-none focus:border-rose-500 transition">
                         </div>
                     </div>
                 </div>
 
                 <div class="glass-card p-6">
-                    <h3 class="text-xl font-bold text-white border-b border-slate-700/50 pb-3 mb-4"><i class="fas fa-robot text-violet-400"></i> Cyber Box (Auto Proofs)</h3>
-                    <div class="mb-4 flex gap-4">
-                        <label class="flex items-center gap-2 cursor-pointer bg-violet-500/10 border border-violet-500/30 px-4 py-2 rounded">
-                            <input type="checkbox" name="fake_proof_status" {% if s.get('fake_proof_status') %}checked{% endif %} class="w-5 h-5 accent-violet-500">
-                            <span class="text-violet-400 font-bold">Engine Master Switch</span>
+                    <h3 class="text-xl font-bold text-white border-b border-slate-700/50 pb-3 mb-4"><i class="fas fa-robot text-violet-400"></i> Cyber Box (Auto Proofs Engine)</h3>
+                    <div class="mb-6 flex flex-col sm:flex-row gap-4">
+                        <label class="flex-1 flex items-center justify-center gap-3 cursor-pointer bg-violet-500/10 border border-violet-500/30 px-4 py-4 rounded-lg hover:bg-violet-500/20 transition">
+                            <input type="checkbox" name="fake_proof_status" {% if s.get('fake_proof_status') %}checked{% endif %} class="w-6 h-6 accent-violet-500">
+                            <span class="text-violet-400 font-bold text-lg">Engine Master Switch</span>
                         </label>
-                        <label class="flex items-center gap-2 cursor-pointer bg-slate-800 border border-slate-700 px-4 py-2 rounded">
-                            <input type="checkbox" name="night_mode" {% if s.get('night_mode') %}checked{% endif %} class="w-5 h-5 accent-slate-500">
-                            <span class="text-slate-300 font-bold text-sm">Sleep at Night (2AM-8AM)</span>
+                        <label class="flex-1 flex items-center justify-center gap-3 cursor-pointer bg-slate-800 border border-slate-700 px-4 py-4 rounded-lg hover:bg-slate-700 transition">
+                            <input type="checkbox" name="night_mode" {% if s.get('night_mode') %}checked{% endif %} class="w-6 h-6 accent-slate-500">
+                            <span class="text-slate-300 font-bold">Sleep at Night (2AM - 8AM)</span>
                         </label>
                     </div>
                     
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <div class="bg-slate-900/50 p-4 rounded border border-slate-700/50">
-                            <h4 class="font-bold text-white mb-3 text-sm">💰 Fake Deposit Settings</h4>
-                            <div class="space-y-3">
-                                <div class="flex justify-between items-center">
-                                    <span class="text-sm text-slate-400">Frequency (per hour)</span>
-                                    <input type="number" name="fake_dep_freq" value="{{ s.get('fake_dep_freq', 2) }}" class="w-20 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-center data-font outline-none">
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div class="bg-slate-900/50 p-5 rounded-xl border border-slate-700/50">
+                            <h4 class="font-bold text-white mb-4 text-lg border-b border-slate-700/50 pb-2">💰 Fake Deposit Settings</h4>
+                            <div class="space-y-4">
+                                <div class="flex justify-between items-center bg-slate-800/50 p-3 rounded">
+                                    <span class="text-slate-300 font-semibold">Frequency (per hour)</span>
+                                    <input type="number" name="fake_dep_freq" value="{{ s.get('fake_dep_freq', 2) }}" class="w-24 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white text-center data-font outline-none focus:border-violet-500">
                                 </div>
-                                <div class="flex gap-2">
-                                    <input type="number" step="0.1" name="fake_deposit_min" value="{{ s.get('fake_deposit_min', 5.0) }}" placeholder="Min $" class="w-1/2 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white data-font outline-none text-sm">
-                                    <input type="number" step="0.1" name="fake_deposit_max" value="{{ s.get('fake_deposit_max', 50.0) }}" placeholder="Max $" class="w-1/2 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white data-font outline-none text-sm">
+                                <div class="flex gap-3">
+                                    <div class="flex-1">
+                                        <label class="text-xs text-slate-500 block mb-1">Min Amount ($)</label>
+                                        <input type="number" step="0.1" name="fake_deposit_min" value="{{ s.get('fake_deposit_min', 5.0) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white data-font outline-none focus:border-violet-500">
+                                    </div>
+                                    <div class="flex-1">
+                                        <label class="text-xs text-slate-500 block mb-1">Max Amount ($)</label>
+                                        <input type="number" step="0.1" name="fake_deposit_max" value="{{ s.get('fake_deposit_max', 50.0) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white data-font outline-none focus:border-violet-500">
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                        <div class="bg-slate-900/50 p-4 rounded border border-slate-700/50">
-                            <h4 class="font-bold text-white mb-3 text-sm">🛒 Fake Order Settings</h4>
-                            <div class="space-y-3">
-                                <div class="flex justify-between items-center">
-                                    <span class="text-sm text-slate-400">Frequency (per hour)</span>
-                                    <input type="number" name="fake_ord_freq" value="{{ s.get('fake_ord_freq', 3) }}" class="w-20 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-center data-font outline-none">
+                        <div class="bg-slate-900/50 p-5 rounded-xl border border-slate-700/50">
+                            <h4 class="font-bold text-white mb-4 text-lg border-b border-slate-700/50 pb-2">🛒 Fake Order Settings</h4>
+                            <div class="space-y-4">
+                                <div class="flex justify-between items-center bg-slate-800/50 p-3 rounded">
+                                    <span class="text-slate-300 font-semibold">Frequency (per hour)</span>
+                                    <input type="number" name="fake_ord_freq" value="{{ s.get('fake_ord_freq', 3) }}" class="w-24 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white text-center data-font outline-none focus:border-violet-500">
                                 </div>
-                                <div class="flex gap-2">
-                                    <input type="number" step="0.1" name="fake_order_min" value="{{ s.get('fake_order_min', 1.0) }}" placeholder="Min $" class="w-1/2 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white data-font outline-none text-sm">
-                                    <input type="number" step="0.1" name="fake_order_max" value="{{ s.get('fake_order_max', 20.0) }}" placeholder="Max $" class="w-1/2 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white data-font outline-none text-sm">
+                                <div class="flex gap-3">
+                                    <div class="flex-1">
+                                        <label class="text-xs text-slate-500 block mb-1">Min Cost ($)</label>
+                                        <input type="number" step="0.1" name="fake_order_min" value="{{ s.get('fake_order_min', 1.0) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white data-font outline-none focus:border-violet-500">
+                                    </div>
+                                    <div class="flex-1">
+                                        <label class="text-xs text-slate-500 block mb-1">Max Cost ($)</label>
+                                        <input type="number" step="0.1" name="fake_order_max" value="{{ s.get('fake_order_max', 20.0) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white data-font outline-none focus:border-violet-500">
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <div class="sticky bottom-0 bg-[#020617] p-4 border-t border-slate-800 z-50 text-right">
-                    <button type="submit" class="bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold px-8 py-3 rounded-lg shadow-[0_0_15px_rgba(56,189,248,0.4)] transition text-lg w-full md:w-auto">
-                        <i class="fas fa-save mr-2"></i> SAVE ALL CONFIGURATIONS
-                    </button>
+                <div class="fixed bottom-0 left-0 md:left-64 right-0 bg-[#020617]/90 backdrop-blur-md p-4 border-t border-slate-800/80 z-40 text-right shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
+                    <div class="max-w-7xl mx-auto flex justify-end">
+                        <button type="submit" class="bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold px-8 py-3 rounded-lg shadow-[0_0_15px_rgba(56,189,248,0.4)] transition transform hover:scale-105 text-lg w-full sm:w-auto">
+                            <i class="fas fa-save mr-2"></i> SAVE CONFIGURATIONS
+                        </button>
+                    </div>
                 </div>
             </form>
         </section>
 
     </main>
 
-    <div id="editUserModal" class="modal fixed inset-0 bg-black/80 backdrop-blur-sm z-50 justify-center items-center">
+    <div id="editUserModal" class="modal fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] justify-center items-center p-4">
         <div class="bg-slate-900 p-6 rounded-xl border border-slate-700 w-full max-w-lg shadow-2xl relative overflow-hidden">
             <div class="absolute top-0 left-0 w-full h-1 bg-sky-500"></div>
             <div class="flex justify-between items-center mb-6">
-                <h3 class="text-xl font-bold text-white">Edit User: <span id="e_name" class="text-sky-400"></span></h3>
-                <button onclick="closeModal('editUserModal')" class="text-slate-400 hover:text-white text-xl"><i class="fas fa-times"></i></button>
+                <h3 class="text-xl font-bold text-white truncate pr-4">Edit User: <span id="e_name" class="text-sky-400"></span></h3>
+                <button onclick="closeModal('editUserModal')" class="text-slate-400 hover:text-white text-2xl focus:outline-none"><i class="fas fa-times"></i></button>
             </div>
             
             <form action="/edit_user" method="POST" class="space-y-4">
                 <input type="hidden" name="user_id" id="e_uid">
                 
-                <div class="grid grid-cols-2 gap-4">
-                    <div class="col-span-2">
-                        <label class="block text-xs text-slate-400 font-bold mb-1">Balance Modification</label>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="col-span-1 sm:col-span-2">
+                        <label class="block text-xs text-slate-400 font-bold mb-1">Balance Modification ($)</label>
                         <div class="flex gap-2">
-                            <select name="bal_action" class="bg-slate-800 border border-slate-700 rounded px-3 py-2 text-white outline-none">
-                                <option value="set">Set Exact Amount</option>
-                                <option value="add">Add Funds (+)</option>
-                                <option value="sub">Deduct Funds (-)</option>
+                            <select name="bal_action" class="bg-slate-800 border border-slate-700 rounded px-3 py-2 text-white outline-none focus:border-sky-500">
+                                <option value="set">Set Exact</option>
+                                <option value="add">Add (+)</option>
+                                <option value="sub">Deduct (-)</option>
                             </select>
-                            <input type="number" step="0.001" name="balance_val" id="e_bal" class="flex-1 bg-slate-800 border border-slate-700 rounded px-3 py-2 text-white data-font outline-none" required>
+                            <input type="number" step="0.001" name="balance_val" id="e_bal" class="flex-1 bg-slate-800 border border-slate-700 rounded px-3 py-2 text-white data-font outline-none focus:border-sky-500" required>
                         </div>
                     </div>
                     
                     <div>
                         <label class="block text-xs text-slate-400 font-bold mb-1">Total Spent ($)</label>
-                        <input type="number" step="0.001" name="spent" id="e_spent" class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-white data-font outline-none">
+                        <input type="number" step="0.001" name="spent" id="e_spent" class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-white data-font outline-none focus:border-sky-500">
                     </div>
                     <div>
                         <label class="block text-xs text-slate-400 font-bold mb-1">Ref Earnings ($)</label>
-                        <input type="number" step="0.001" name="ref_earnings" id="e_ref" class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-white data-font outline-none">
+                        <input type="number" step="0.001" name="ref_earnings" id="e_ref" class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-white data-font outline-none focus:border-sky-500">
                     </div>
                     <div>
                         <label class="block text-xs text-slate-400 font-bold mb-1">Reward Points</label>
-                        <input type="number" name="points" id="e_pts" class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-white data-font outline-none">
+                        <input type="number" name="points" id="e_pts" class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-white data-font outline-none focus:border-sky-500">
                     </div>
                     <div>
                         <label class="block text-xs text-amber-400 font-bold mb-1">Custom Discount (%)</label>
                         <input type="number" step="0.1" name="custom_discount" id="e_disc" class="w-full bg-amber-500/10 border border-amber-500/30 rounded px-3 py-2 text-amber-400 data-font outline-none focus:border-amber-500">
                     </div>
-                    <div class="col-span-2">
+                    <div class="col-span-1 sm:col-span-2">
                         <label class="block text-xs text-violet-400 font-bold mb-1">Force VIP Tier</label>
                         <select name="tier_override" id="e_tier" class="w-full bg-violet-500/10 border border-violet-500/30 rounded px-3 py-2 text-violet-400 outline-none focus:border-violet-500">
                             <option value="none">Auto (Based on Spent)</option>
@@ -519,40 +560,59 @@
                     </div>
                 </div>
                 
-                <button type="submit" class="w-full bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold py-3 rounded mt-4 transition">Update User</button>
+                <button type="submit" class="w-full bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold py-3 rounded-lg mt-4 transition shadow-lg shadow-sky-500/20">Update User</button>
             </form>
         </div>
     </div>
 
-    <div id="fakeUserModal" class="modal fixed inset-0 bg-black/80 backdrop-blur-sm z-50 justify-center items-center">
+    <div id="fakeUserModal" class="modal fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] justify-center items-center p-4">
         <div class="bg-slate-900 p-6 rounded-xl border border-violet-500/50 w-full max-w-sm shadow-[0_0_20px_rgba(139,92,246,0.2)]">
             <h3 class="text-xl font-bold text-violet-400 mb-4"><i class="fas fa-user-ninja"></i> Generate Fake User</h3>
             <form action="/add_fake_user" method="POST" class="space-y-4">
-                <input type="text" name="fake_name" placeholder="Name (e.g. John Doe)" class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-white outline-none focus:border-violet-500" required>
-                <div class="flex gap-2">
-                    <input type="number" step="0.1" name="fake_spent" placeholder="Spent $" class="w-1/2 bg-slate-800 border border-slate-700 rounded px-3 py-2 text-white data-font outline-none" required>
-                    <input type="number" step="0.1" name="fake_ref" placeholder="Ref Earn $" class="w-1/2 bg-slate-800 border border-slate-700 rounded px-3 py-2 text-white data-font outline-none" required>
+                <input type="text" name="fake_name" placeholder="Name (e.g. John Doe)" class="w-full bg-slate-800 border border-slate-700 rounded px-4 py-3 text-white outline-none focus:border-violet-500" required>
+                <div class="flex gap-3">
+                    <input type="number" step="0.1" name="fake_spent" placeholder="Spent $" class="w-1/2 bg-slate-800 border border-slate-700 rounded px-4 py-3 text-white data-font outline-none focus:border-violet-500" required>
+                    <input type="number" step="0.1" name="fake_ref" placeholder="Ref Earn $" class="w-1/2 bg-slate-800 border border-slate-700 rounded px-4 py-3 text-white data-font outline-none focus:border-violet-500" required>
                 </div>
-                <div class="flex gap-2 mt-4">
-                    <button type="button" onclick="closeModal('fakeUserModal')" class="w-1/3 border border-slate-600 text-slate-300 hover:bg-slate-800 py-2 rounded font-bold transition">Cancel</button>
-                    <button type="submit" class="w-2/3 bg-violet-500 hover:bg-violet-400 text-white font-bold py-2 rounded transition">Generate</button>
+                <div class="flex gap-3 mt-6">
+                    <button type="button" onclick="closeModal('fakeUserModal')" class="w-1/3 border border-slate-600 text-slate-300 hover:bg-slate-800 py-3 rounded font-bold transition">Cancel</button>
+                    <button type="submit" class="w-2/3 bg-violet-500 hover:bg-violet-400 text-white font-bold py-3 rounded transition shadow-lg shadow-violet-500/20">Generate</button>
                 </div>
             </form>
         </div>
     </div>
 
     <script>
+        // Tab Switcher with Mobile auto-close
         function switchTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(t => t.classList.add('hidden'));
             document.getElementById('tab-' + tabId).classList.remove('hidden');
             
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             event.currentTarget.classList.add('active');
+            
+            // Auto close sidebar on mobile after clicking a menu item
+            if(window.innerWidth < 768) {
+                const sidebar = document.getElementById('sidebar');
+                if(!sidebar.classList.contains('-translate-x-[150%]')) {
+                    toggleSidebar();
+                }
+            }
         }
 
+        // Mobile Sidebar Toggle Logic
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-[150%]');
+            backdrop.classList.toggle('hidden');
+        }
+
+        // Modal Logic
         function openModal(id) { document.getElementById(id).classList.add('active'); }
         function closeModal(id) { document.getElementById(id).classList.remove('active'); }
 
+        // User Edit Populate Logic
         function openEditModal(uid, name, bal, spent, ref, pts, disc, tier) {
             document.getElementById('e_uid').value = uid;
             document.getElementById('e_name').innerText = name + ' (' + uid + ')';
@@ -565,15 +625,16 @@
             openModal('editUserModal');
         }
 
+        // Dynamic Payment Row Adder
         function addPaymentRow() {
             const container = document.getElementById('payment-methods');
             const row = document.createElement('div');
-            row.className = 'payment-row flex flex-col sm:flex-row gap-2 bg-slate-900/50 p-3 rounded border border-slate-700/50 relative mt-3 animate-[fadeIn_0.2s_ease-out]';
+            row.className = 'payment-row flex flex-col sm:flex-row gap-3 bg-slate-900/50 p-4 rounded-lg border border-slate-700/50 relative mt-3 animate-[fadeIn_0.2s_ease-out]';
             row.innerHTML = `
-                <input type="text" name="pay_name[]" placeholder="Method Name (e.g. Binance Pay)" class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none" required>
-                <input type="number" step="0.01" name="pay_rate[]" placeholder="Rate (e.g. 1)" class="w-full sm:w-32 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white data-font outline-none" required>
-                <input type="text" name="pay_address[]" placeholder="Account Number or Crypto Address" class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white outline-none" required>
-                <button type="button" onclick="this.closest('.payment-row').remove()" class="text-slate-500 hover:text-red-500 px-2"><i class="fas fa-times"></i></button>
+                <input type="text" name="pay_name[]" placeholder="Method Name (e.g. Binance Pay)" class="flex-1 bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white outline-none focus:border-sky-500" required>
+                <input type="number" step="0.01" name="pay_rate[]" placeholder="Rate (e.g. 1)" class="w-full sm:w-32 bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white data-font outline-none focus:border-sky-500" required>
+                <input type="text" name="pay_address[]" placeholder="Account Number or Crypto Address" class="flex-1 bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white outline-none focus:border-sky-500" required>
+                <button type="button" onclick="this.closest('.payment-row').remove()" class="text-slate-500 hover:text-red-500 px-2 py-2 sm:py-0 absolute top-2 right-2 sm:relative sm:top-0 sm:right-0"><i class="fas fa-times"></i></button>
             `;
             container.appendChild(row);
         }
