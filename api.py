@@ -26,13 +26,12 @@ def _make_request(action, timeout=10, retries=2, **kwargs):
     
     for attempt in range(retries):
         try:
-            # Gunicorn worker timeout থেকে বাঁচতে timeout লিমিট অপ্টিমাইজ করা হয়েছে
             response = requests.post(API_URL, data=payload, headers=headers, timeout=timeout)
             try:
                 return response.json()
             except ValueError:
                 if attempt < retries - 1:
-                    time.sleep(1) # Webhook যাতে আটকে না থাকে তাই 1s sleep
+                    time.sleep(1)
                     continue
                 logging.error(f"API Error: Invalid JSON response. Status: {response.status_code}")
                 return {"error": f"Invalid response from panel. Status: {response.status_code}"}
@@ -55,13 +54,21 @@ def _make_request(action, timeout=10, retries=2, **kwargs):
             logging.error(f"API General Error on action '{action}': {e}")
             return {"error": str(e)}
 
+    return {"error": "Max retries exceeded"}
+
 # ==========================================
 # 📦 SMM PANEL API FUNCTIONS
 # ==========================================
 def get_services():
     """প্যানেল থেকে সব সার্ভিসের লিস্ট আনা (Price Auto-Sync)"""
     res = _make_request('services', timeout=15)
-    return res if isinstance(res, list) else []
+    
+    # 🔥 FIX: API fail korle ba onno format e asle crash thekanor jonno protection
+    if isinstance(res, list):
+        return res
+    else:
+        logging.error(f"API Error in get_services: Expected list, got {type(res)}. Response: {res}")
+        return []
 
 def place_order(sid, **kwargs):
     """
@@ -81,7 +88,7 @@ def send_refill(order_id):
 def get_balance():
     """মেইন প্যানেলের ব্যালেন্স চেক করা"""
     res = _make_request('balance', timeout=10)
-    if isinstance(res, dict):
+    if isinstance(res, dict) and 'balance' in res:
         return f"{res.get('balance', '0.00')} {res.get('currency', 'USD')}"
     return "N/A"
 
@@ -103,4 +110,4 @@ def get_live_exchange_rates():
     except Exception as e:
         logging.error(f"Exchange Rate Sync Failed: {e}")
         pass
-    return None # ফেইল করলে ডিফল্ট রেট ব্যবহার হবে
+    return None
