@@ -114,7 +114,7 @@ def sub_callback(call):
     else: bot.send_message(uid, "❌ You haven't joined all channels.")
 
 # ==========================================
-# 4. ORDERING ENGINE
+# 4. ORDERING ENGINE (🔥 NoneType Fixed)
 # ==========================================
 @bot.message_handler(func=lambda m: m.text == "🚀 New Order")
 def new_order_start(message):
@@ -122,10 +122,13 @@ def new_order_start(message):
     clear_user_session(uid)
     if check_spam(uid) or check_maintenance(uid) or not check_sub(uid): return
     services = get_cached_services()
-    if not services: return bot.send_message(uid, "⏳ **API Syncing...** Try again in 5 seconds.")
+    if not services: return bot.send_message(uid, "⏳ **API Syncing...** Try again in a few seconds.")
     
     hidden = get_settings().get("hidden_services", [])
-    platforms = sorted(list(set(identify_platform(s['category']) for s in services if str(s['service']) not in hidden)))
+    
+    # 🔥 FIX: Safely extract category and service ID without crashing
+    platforms = sorted(list(set(identify_platform(str(s.get('category', 'Other'))) for s in services if str(s.get('service', '0')) not in hidden)))
+    
     markup = types.InlineKeyboardMarkup(row_width=2)
     best_sids = get_settings().get("best_choice_sids", [])
     if best_sids: markup.add(types.InlineKeyboardButton("🌟 ADMIN BEST CHOICE 🌟", callback_data="SHOW_BEST_CHOICE|0"))
@@ -147,10 +150,10 @@ def show_best_choices(call):
     start_idx, end_idx = page * 10, page * 10 + 10
     
     for tsid in best_sids[start_idx:end_idx]:
-        srv = next((x for x in services if str(x['service']) == str(tsid).strip()), None)
+        srv = next((x for x in services if str(x.get('service', '')) == str(tsid).strip()), None)
         if srv:
-            rate = calculate_price(srv['rate'], user.get('spent', 0), user.get('custom_discount', 0))
-            markup.add(types.InlineKeyboardButton(f"ID:{srv['service']} | {fmt_curr(rate, curr)} | {clean_service_name(srv['name'])}", callback_data=f"INFO|{tsid}"))
+            rate = calculate_price(srv.get('rate', 0.0), user.get('spent', 0), user.get('custom_discount', 0))
+            markup.add(types.InlineKeyboardButton(f"ID:{srv.get('service', '0')} | {fmt_curr(rate, curr)} | {clean_service_name(srv.get('name'))}", callback_data=f"INFO|{tsid}"))
             
     nav = []
     if page > 0: nav.append(types.InlineKeyboardButton("⬅️ Prev", callback_data=f"SHOW_BEST_CHOICE|{page-1}"))
@@ -172,12 +175,18 @@ def show_cats(call):
     page = int(page)
     services = get_cached_services()
     hidden = get_settings().get("hidden_services", [])
-    cats = sorted(list(set(s['category'] for s in services if identify_platform(s['category']) == platform and str(s['service']) not in hidden)))
+    
+    # 🔥 FIX: Extract categories safely
+    cats = sorted(list(set(str(s.get('category', 'Other')) for s in services if identify_platform(str(s.get('category', 'Other'))) == platform and str(s.get('service', '0')) not in hidden)))
+    
     start_idx, end_idx = page * 15, page * 15 + 15
     markup = types.InlineKeyboardMarkup(row_width=1)
+    
+    all_cats_sorted = sorted(list(set(str(s.get('category', 'Other')) for s in services)))
     for cat in cats[start_idx:end_idx]:
-        idx = sorted(list(set(s['category'] for s in services))).index(cat)
+        idx = all_cats_sorted.index(cat)
         markup.add(types.InlineKeyboardButton(f"📁 {cat[:35]}", callback_data=f"CAT|{idx}|0"))
+        
     nav = []
     if page > 0: nav.append(types.InlineKeyboardButton("⬅️ Prev", callback_data=f"PLAT|{platform}|{page-1}"))
     if end_idx < len(cats): nav.append(types.InlineKeyboardButton("Next ➡️", callback_data=f"PLAT|{platform}|{page+1}"))
@@ -190,17 +199,21 @@ def show_cats(call):
 def list_servs(call):
     _, cat_idx, page = call.data.split("|")
     services = get_cached_services()
-    cat_name = sorted(list(set(s['category'] for s in services)))[int(cat_idx)]
+    all_cats = sorted(list(set(str(s.get('category', 'Other')) for s in services)))
+    
+    if int(cat_idx) >= len(all_cats): return bot.answer_callback_query(call.id, "❌ Error loading category.")
+    cat_name = all_cats[int(cat_idx)]
+    
     hidden = get_settings().get("hidden_services", [])
-    filtered = [s for s in services if s['category'] == cat_name and str(s['service']) not in hidden]
+    filtered = [s for s in services if str(s.get('category', 'Other')) == cat_name and str(s.get('service', '0')) not in hidden]
     start_idx, end_idx = int(page) * 10, int(page) * 10 + 10
     
     user = get_cached_user(call.message.chat.id)
     curr = user.get("currency", "BDT")
     markup = types.InlineKeyboardMarkup(row_width=1)
     for s in filtered[start_idx:end_idx]:
-        rate = calculate_price(s['rate'], user.get('spent',0), user.get('custom_discount', 0))
-        markup.add(types.InlineKeyboardButton(f"ID:{s['service']} | {fmt_curr(rate, curr)} | {clean_service_name(s['name'])}", callback_data=f"INFO|{s['service']}"))
+        rate = calculate_price(s.get('rate', 0.0), user.get('spent',0), user.get('custom_discount', 0))
+        markup.add(types.InlineKeyboardButton(f"ID:{s.get('service', '0')} | {fmt_curr(rate, curr)} | {clean_service_name(s.get('name'))}", callback_data=f"INFO|{s.get('service', '0')}"))
     
     nav = []
     if int(page) > 0: nav.append(types.InlineKeyboardButton("⬅️ Prev", callback_data=f"CAT|{cat_idx}|{int(page)-1}"))
@@ -217,15 +230,15 @@ def list_servs(call):
 def info_card(call):
     sid = call.data.split("|")[1]
     services = get_cached_services()
-    s = next((x for x in services if str(x['service']) == str(sid)), None)
+    s = next((x for x in services if str(x.get('service', '0')) == str(sid)), None)
     if not s: return bot.send_message(call.message.chat.id, "❌ Service unavailable.")
     
     user = get_cached_user(call.message.chat.id)
     curr = user.get("currency", "BDT")
-    rate = calculate_price(s['rate'], user.get('spent',0), user.get('custom_discount', 0))
-    avg_time = s.get('time', 'Instant - 24h') if s.get('time') != "" else 'Instant - 24h'
+    rate = calculate_price(s.get('rate', 0.0), user.get('spent',0), user.get('custom_discount', 0))
+    avg_time = s.get('time', 'Instant - 24h') if s.get('time') else 'Instant - 24h'
 
-    safe_name = escape_md(clean_service_name(s['name']))
+    safe_name = escape_md(clean_service_name(s.get('name')))
     txt = (f"ℹ️ **SERVICE DETAILS**\n━━━━━━━━━━━━━━━━━━━━\n🏷 **Name:** {safe_name}\n🆔 **ID:** `{sid}`\n"
            f"💰 **Price:** `{fmt_curr(rate, curr)}` / 1000\n📉 **Min:** {s.get('min','0')} | 📈 **Max:** {s.get('max','0')}\n"
            f"⏱ **Live Avg Time:** `{escape_md(avg_time)}`⚡️\n━━━━━━━━━━━━━━━━━━━━")
@@ -237,8 +250,12 @@ def info_card(call):
     markup.add(types.InlineKeyboardButton("🔄 Auto-Subscription (Posts)", callback_data=f"TYPE|{sid}|sub"))
     
     markup.add(types.InlineKeyboardButton("⭐ Fav", callback_data=f"FAV_ADD|{sid}"))
-    try: cat_idx = sorted(list(set(x['category'] for x in services))).index(s['category'])
+    
+    try: 
+        all_cats = sorted(list(set(str(x.get('category', 'Other')) for x in services)))
+        cat_idx = all_cats.index(str(s.get('category', 'Other')))
     except: cat_idx = 0
+    
     markup.add(types.InlineKeyboardButton("🔙 Back to Category", callback_data=f"CAT|{cat_idx}|0"))
     
     if call.message.text and ("YOUR ORDERS" in call.message.text or "Found:" in call.message.text or "Top Results:" in call.message.text): 
@@ -314,7 +331,7 @@ def fetch_orders_page(chat_id, page=0, filter_type="all"):
         qty = o.get('qty', 0)
         p_bar, delivered = generate_progress_bar(remains, qty)
         
-        txt += f"🆔 `{o['oid']}` | 💰 `{fmt_curr(o['cost'], curr)}`\n"
+        txt += f"🆔 `{o.get('oid', 'N/A')}` | 💰 `{fmt_curr(o.get('cost', 0), curr)}`\n"
         if o.get("is_sub"):
             txt += f"👤 Target: {escape_md(str(o.get('username', 'N/A')))}\n"
             txt += f"📸 Posts: {o.get('posts', 0)} | Qty/Post: {qty}\n"
@@ -329,7 +346,7 @@ def fetch_orders_page(chat_id, page=0, filter_type="all"):
         
         row_btns = [types.InlineKeyboardButton(f"🔁 Reorder", callback_data=f"REORDER|{o.get('sid', 0)}")]
         if st in ['completed', 'partial'] and not o.get("is_shadow") and not o.get("is_sub"):
-            row_btns.append(types.InlineKeyboardButton(f"🔄 Refill", callback_data=f"INSTANT_REFILL|{o['oid']}"))
+            row_btns.append(types.InlineKeyboardButton(f"🔄 Refill", callback_data=f"INSTANT_REFILL|{o.get('oid', 0)}"))
         markup.row(*row_btns)
             
     nav = []
@@ -487,10 +504,10 @@ def universal_buttons(message):
         services = get_cached_services()
         markup = types.InlineKeyboardMarkup(row_width=1)
         for sid in favs:
-            s = next((x for x in services if str(x['service']) == str(sid)), None)
+            s = next((x for x in services if str(x.get('service', '0')) == str(sid)), None)
             if s: 
-                safe_name = escape_md(clean_service_name(s['name'])[:25])
-                markup.add(types.InlineKeyboardButton(f"⭐ ID:{s['service']} | {safe_name}", callback_data=f"INFO|{s['service']}"))
+                safe_name = escape_md(clean_service_name(s.get('name'))[:25])
+                markup.add(types.InlineKeyboardButton(f"⭐ ID:{s.get('service', '0')} | {safe_name}", callback_data=f"INFO|{s.get('service', '0')}"))
         bot.send_message(uid, "⭐ **YOUR SAVED SERVICES:**", reply_markup=markup, parse_mode="Markdown")
 
     elif message.text == "🤝 Affiliate":
@@ -565,90 +582,15 @@ def universal_router(message):
         if platform:
             services = get_cached_services()
             hidden = get_settings().get("hidden_services", [])
-            cats = sorted(list(set(s['category'] for s in services if identify_platform(s['category']) == platform and str(s['service']) not in hidden)))
+            cats = sorted(list(set(str(s.get('category', 'Other')) for s in services if identify_platform(str(s.get('category', 'Other'))) == platform and str(s.get('service', '0')) not in hidden)))
             if cats:
                 update_user_session(uid, {"temp_link": text})
                 markup = types.InlineKeyboardMarkup(row_width=1)
+                all_cats_sorted = sorted(list(set(str(s.get('category', 'Other')) for s in services)))
                 for cat in cats[:15]:
-                    idx = sorted(list(set(s['category'] for s in services))).index(cat)
+                    idx = all_cats_sorted.index(cat)
                     markup.add(types.InlineKeyboardButton(f"📁 {cat[:35]}", callback_data=f"CAT|{idx}|0"))
                 return bot.send_message(uid, f"✨ **Magic Link Detected!**\n📍 Platform: **{escape_md(platform)}**\n📂 Choose Category for your link:", reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
-
-    # --- ADMIN STATES ---
-    if str(uid) == str(ADMIN_ID):
-        if step == "awaiting_ghost_uid":
-            try: target = int(text)
-            except: return bot.send_message(uid, "❌ ID must be numbers.")
-            tu = get_cached_user(target)
-            if not tu: return bot.send_message(uid, "❌ User not found.")
-            clear_user_session(uid)
-            return bot.send_message(uid, f"👻 **GHOST VIEW - UID: {target}**\nName: {escape_md(tu.get('name'))}\nBal: ${tu.get('balance', 0):.3f}\nSpent: ${tu.get('spent', 0):.3f}\nPoints: {tu.get('points', 0)}")
-            
-        elif step == "awaiting_alert_uid":
-            try:
-                target = int(text)
-                update_user_session(uid, {"step": "awaiting_alert_msg", "temp_uid": target})
-                return bot.send_message(uid, f"✍️ Enter alert msg for `{target}`:", parse_mode="Markdown")
-            except: return bot.send_message(uid, "❌ Invalid ID.")
-            
-        elif step == "awaiting_alert_msg":
-            target = session_data.get("temp_uid")
-            clear_user_session(uid)
-            try:
-                bot.send_message(target, f"⚠️ **SYSTEM ALERT**\n━━━━━━━━━━━━━━━━━━━━\n{escape_md(text)}", parse_mode="Markdown")
-                return bot.send_message(uid, "✅ Alert Sent!")
-            except: return bot.send_message(uid, "❌ Failed to send.")
-            
-        elif step == "awaiting_wbonus":
-            try:
-                amt = float(text)
-                status = amt > 0
-                config_col.update_one({"_id": "settings"}, {"$set": {"welcome_bonus": amt, "welcome_bonus_active": status}})
-                clear_user_session(uid)
-                return bot.send_message(uid, f"✅ Welcome Bonus set to ${amt}. Status: {'ON' if status else 'OFF'}")
-            except: return bot.send_message(uid, "❌ Invalid number.")
-            
-        elif step == "awaiting_fsale":
-            try:
-                disc = float(text)
-                status = disc > 0
-                config_col.update_one({"_id": "settings"}, {"$set": {"flash_sale_discount": disc, "flash_sale_active": status}})
-                clear_user_session(uid)
-                return bot.send_message(uid, f"✅ Flash Sale set to {disc}%. Status: {'ON' if status else 'OFF'}")
-            except: return bot.send_message(uid, "❌ Invalid number.")
-            
-        elif step == "awaiting_best":
-            try:
-                sids = [int(x.strip()) for x in text.split(",") if x.strip().isdigit()]
-                config_col.update_one({"_id": "settings"}, {"$set": {"best_choice_sids": sids}})
-                clear_user_session(uid)
-                return bot.send_message(uid, f"✅ Best Choice SIDs updated: {sids}")
-            except: return bot.send_message(uid, "❌ Format error.")
-            
-        elif step == "awaiting_profit":
-            try:
-                v = float(text)
-                config_col.update_one({"_id": "settings"}, {"$set": {"profit_margin": v}})
-                clear_user_session(uid)
-                return bot.send_message(uid, f"✅ Profit Margin: {v}%")
-            except: return bot.send_message(uid, "❌ Invalid number.")
-            
-        elif step == "awaiting_bc":
-            clear_user_session(uid)
-            c = 0
-            safe_text = escape_md(text)
-            for usr in users_col.find({"is_fake": {"$ne": True}}):
-                try: bot.send_message(usr["_id"], f"📢 **MESSAGE FROM ADMIN**\n━━━━━━━━━━━━━━━━━━━━\n{safe_text}", parse_mode="Markdown"); c+=1
-                except: pass
-            return bot.send_message(uid, f"✅ Broadcast sent to `{c}` users!")
-
-        elif step == "awaiting_points_cfg":
-            try:
-                p_usd, p_rate = text.split(",")
-                config_col.update_one({"_id": "settings"}, {"$set": {"points_per_usd": int(p_usd.strip()), "points_to_usd_rate": int(p_rate.strip())}})
-                clear_user_session(uid)
-                return bot.send_message(uid, "✅ Points System Updated!")
-            except: return bot.send_message(uid, "❌ Format error. Use comma (e.g. 100, 1000)")
 
     # --- AUTO PAYMENT CLAIM LOGIC ---
     if step == "awaiting_trx":
@@ -750,7 +692,10 @@ def universal_router(message):
             o_type = session_data.get("order_type", "normal")
             
             services = get_cached_services()
-            s = next((x for x in services if str(x['service']) == str(sid)), None)
+            s = next((x for x in services if str(x.get('service', '0')) == str(sid)), None)
+            
+            if not s:
+                return bot.send_message(uid, "❌ **Service Not Found!** Try another service.")
             
             try: min_q = int(s.get('min', 0))
             except: min_q = 0
@@ -765,7 +710,7 @@ def universal_router(message):
                 update_user_session(uid, {"step": "awaiting_drip_runs", "temp_qty": qty})
                 return bot.send_message(uid, "🔢 **Drip-Feed Runs:**\nHow many times should this quantity be sent? (e.g. 5)", parse_mode="Markdown")
             
-            rate = calculate_price(s['rate'], u.get('spent', 0), u.get('custom_discount', 0))
+            rate = calculate_price(s.get('rate', 0.0), u.get('spent', 0), u.get('custom_discount', 0))
             cost = (rate / 1000) * qty
             curr = u.get("currency", "BDT")
             
@@ -793,8 +738,8 @@ def universal_router(message):
             runs = session_data.get("temp_runs")
             
             services = get_cached_services()
-            s = next((x for x in services if str(x['service']) == str(sid)), None)
-            rate = calculate_price(s['rate'], u.get('spent', 0), u.get('custom_discount', 0))
+            s = next((x for x in services if str(x.get('service', '0')) == str(sid)), None)
+            rate = calculate_price(s.get('rate', 0.0), u.get('spent', 0), u.get('custom_discount', 0))
             
             total_qty = qty * runs
             cost = (rate / 1000) * total_qty
@@ -831,8 +776,8 @@ def universal_router(message):
             username = session_data.get("temp_user")
             
             services = get_cached_services()
-            s = next((x for x in services if str(x['service']) == str(sid)), None)
-            rate = calculate_price(s['rate'], u.get('spent', 0), u.get('custom_discount', 0))
+            s = next((x for x in services if str(x.get('service', '0')) == str(sid)), None)
+            rate = calculate_price(s.get('rate', 0.0), u.get('spent', 0), u.get('custom_discount', 0))
             
             total_qty = posts * qty
             cost = (rate / 1000) * total_qty
@@ -861,10 +806,10 @@ def universal_router(message):
             
             if not qty.isdigit(): return bot.send_message(uid, f"❌ Error on line {idx+1}: Qty must be numbers.")
             qty = int(qty)
-            s = next((x for x in services if str(x['service']) == str(sid)), None)
+            s = next((x for x in services if str(x.get('service', '0')) == str(sid)), None)
             if not s: return bot.send_message(uid, f"❌ Error on line {idx+1}: Service ID {sid} not found.")
             
-            rate = calculate_price(s['rate'], u.get('spent', 0), u.get('custom_discount', 0))
+            rate = calculate_price(s.get('rate', 0.0), u.get('spent', 0), u.get('custom_discount', 0))
             cost = (rate / 1000) * qty
             total_cost += cost
             bulk_draft.append({"sid": sid, "link": link, "qty": qty, "cost": cost})
@@ -911,17 +856,17 @@ def universal_router(message):
         services = get_cached_services()
         hidden = get_settings().get("hidden_services", [])
         if query.isdigit():
-            s = next((x for x in services if str(x['service']) == query and query not in hidden), None)
+            s = next((x for x in services if str(x.get('service', '0')) == query and query not in hidden), None)
             if s: 
                 markup = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("ℹ️ Order Now", callback_data=f"INFO|{query}"))
-                safe_name = escape_md(clean_service_name(s['name']))
+                safe_name = escape_md(clean_service_name(s.get('name')))
                 return bot.send_message(uid, f"✅ **Found:** {safe_name}", reply_markup=markup, parse_mode="Markdown")
-        results = [s for s in services if str(s['service']) not in hidden and (query in s['name'].lower() or query in s['category'].lower())][:10]
+        results = [s for s in services if str(s.get('service', '0')) not in hidden and (query in str(s.get('name', '')).lower() or query in str(s.get('category', '')).lower())][:10]
         if not results: return bot.send_message(uid, "❌ No related services found.")
         markup = types.InlineKeyboardMarkup(row_width=1)
         for s in results: 
-            safe_name = escape_md(clean_service_name(s['name'])[:25])
-            markup.add(types.InlineKeyboardButton(f"⚡ ID:{s['service']} | {safe_name}", callback_data=f"INFO|{s['service']}"))
+            safe_name = escape_md(clean_service_name(s.get('name'))[:25])
+            markup.add(types.InlineKeyboardButton(f"⚡ ID:{s.get('service', '0')} | {safe_name}", callback_data=f"INFO|{s.get('service', '0')}"))
         return bot.send_message(uid, f"🔍 **Top Results:**", reply_markup=markup, parse_mode="Markdown")
 
 # 🔥 MULTI-THREADING WITH EXCEPTION HANDLING
@@ -967,7 +912,6 @@ def process_bulk_background(uid, u, drafts, message_id):
         logging.error(f"Bulk Process Background Error: {e}")
 
 def process_order_background(uid, u, draft, message_id):
-    """এটি ব্যাকগ্রাউন্ডে কাজ করবে। ফলে অন্য ইউজাররা ল্যাগ ফিল করবে না।"""
     try:
         s = get_settings()
         points_earned = int(float(draft['cost']) * float(s.get("points_per_usd", 100)))
@@ -994,7 +938,6 @@ def process_order_background(uid, u, draft, message_id):
                 except: pass
             return
 
-        # Call API dynamically based on order type
         if o_type == "drip":
             res = api.place_order(draft['sid'], link=draft['link'], quantity=draft['qty'], runs=draft['runs'], interval=draft['interval'])
         elif o_type == "sub":
