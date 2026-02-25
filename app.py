@@ -170,7 +170,6 @@ def get_dashboard_stats():
     sales = sum(u.get('spent', 0) for u in users_col.find())
     profit = sales * (s.get('profit_margin', 20.0) / 100)
     
-    # 🔥 Fetch Redis Live Stats
     try:
         redis_info = redis_client.info()
         r_keys = redis_client.dbsize()
@@ -220,7 +219,7 @@ def logout():
     return redirect(url_for('login'))
 
 # ==========================================
-# 🔥 NEW: REDIS ACTION ROUTES
+# 🔥 REDIS ACTION ROUTES
 # ==========================================
 @app.route('/redis_action/<action>')
 def redis_action(action):
@@ -228,25 +227,21 @@ def redis_action(action):
     
     try:
         if action == "clear_cache":
-            # Deletes API cache and user profile caches
             redis_client.delete("services_cache", "currency_rates", "settings_cache")
             for key in redis_client.scan_iter("user_cache_*"):
                 redis_client.delete(key)
                 
         elif action == "release_locks":
-            # Releases dead-locks from background workers
             for key in redis_client.scan_iter("lock_*"):
                 redis_client.delete(key)
                 
         elif action == "reset_spam":
-            # Clears anti-spam blocks for all users
             for key in redis_client.scan_iter("blocked_*"):
                 redis_client.delete(key)
             for key in redis_client.scan_iter("spam_*"):
                 redis_client.delete(key)
                 
         elif action == "clear_sessions":
-            # Clears current bot menu sessions for all users
             for key in redis_client.scan_iter("session_*"):
                 redis_client.delete(key)
                 
@@ -288,9 +283,13 @@ def save_best_choice():
     utils.update_settings_cache("best_choice_sids", sids)
     return redirect(url_for('index'))
 
-@app.route('/settings', methods=['POST'])
+# 🔥 ERROR 405 FIX: Added GET method handler
+@app.route('/settings', methods=['GET', 'POST'])
 def save_settings():
     if 'admin' not in session: return redirect(url_for('login'))
+    
+    if request.method == 'GET':
+        return redirect(url_for('index'))
     
     s = {
         "profit_margin": float(request.form.get('profit_margin', 20.0)),
