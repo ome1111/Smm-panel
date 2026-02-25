@@ -7,6 +7,8 @@ import json
 import hashlib
 import base64
 import hmac
+import math
+import traceback
 import logging
 from io import StringIO
 from datetime import datetime
@@ -16,7 +18,7 @@ from bson.objectid import ObjectId
 import re
 
 # Import from loader and config
-from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, redis_client
+from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, redis_client, logs_col
 from config import BOT_TOKEN, ADMIN_ID, ADMIN_PASSWORD
 
 # Import modular handlers
@@ -27,22 +29,20 @@ import main_router
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'super_secret_nexus_titan_key_1010')
 
-# 🔥 ADMIN PANEL SECURITY
+# 🔥 ADMIN PANEL SECURITY (Cookie Theft Protection)
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+# app.config['SESSION_COOKIE_SECURE'] = True  # (Render-এ HTTPS থাকলে এটি Enable করতে পারেন)
 
 # ==========================================
-# 1. WEBHOOK FAST ENGINE
+# 1. WEBHOOK FAST ENGINE (10x Speed & Memory Leak Fixed)
 # ==========================================
 @app.route(f"/{BOT_TOKEN}", methods=['POST'])
 def webhook():
     if request.headers.get('content-type') == 'application/json':
-        try:
-            json_string = request.get_data().decode('utf-8')
-            update = telebot.types.Update.de_json(json_string)
-            bot.process_new_updates([update])
-        except Exception as e:
-            logging.error(f"Webhook Error: {e}")
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
         return 'OK', 200
     return 'Forbidden', 403
 
@@ -50,7 +50,7 @@ def webhook():
 def manual_set_webhook():
     bot.remove_webhook()
     time.sleep(1)
-    RENDER_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://your-app.onrender.com')
+    RENDER_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://smm-panel-g8ab.onrender.com')
     success = bot.set_webhook(url=f"{RENDER_URL.rstrip('/')}/{BOT_TOKEN}")
     if success:
         return "<h1>✅ Webhook Connected Successfully!</h1><p>Your Bot is now LIVE and running fast with Redis Cache & Async Workers!</p>"
@@ -77,6 +77,7 @@ def auto_fake_proof_cron():
             if not proof_channel:
                 continue
 
+            # 🔥 Redis Lock: মাল্টিপল Gunicorn Worker থাকলেও শুধু একজন পোস্ট করবে
             if not redis_client.set("fake_proof_lock", "locked", nx=True, ex=40):
                 continue
 
@@ -111,7 +112,7 @@ def auto_fake_proof_cron():
                 cached_services = utils.get_cached_services()
                 if cached_services:
                     srv = random.choice(cached_services)
-                    srv_name = utils.clean_service_name(srv.get('name', 'Service'))
+                    srv_name = utils.clean_service_name(srv['name'])
                     base_rate = float(srv.get('rate', 0.5))
                     cost_usd = (base_rate / 1000) * qty * 1.2
                 else:
@@ -135,7 +136,7 @@ def auto_fake_proof_cron():
                 
                 fake_oid = random.randint(350000, 999999)
                 
-                platform = utils.identify_platform(srv.get('category', 'Other'))
+                platform = utils.identify_platform(srv.get('category', ''))
                 if "Instagram" in platform: base_link = "https://instagram.com/p/"
                 elif "Facebook" in platform: base_link = "https://facebook.com/"
                 elif "YouTube" in platform: base_link = "https://youtube.com/watch?v="
@@ -146,16 +147,17 @@ def auto_fake_proof_cron():
                 random_hash = ''.join(random.choices("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=8))
                 masked_link = f"{base_link}{random_hash[:4]}..."
                 
-                msg = f"```text\n╔════ 🟢 𝗡𝗘𝗪 𝗢𝗥𝗗𝗘𝗥 ════╗\n║ 🆔 𝗢𝗿𝗱𝗲𝗿: #{fake_oid}\n║ 👤 𝗨𝘀𝗲𝗿: {masked_id}\n║ 🚀 𝗦𝗲𝗿𝘃𝗶𝗰𝗲: {utils.escape_md(short_srv)}\n║ 🔗 𝗟𝗶𝗻𝗸: {utils.escape_md(masked_link)}\n║ 📦 𝗤𝘁𝘆: {qty}\n║ 💵 𝗖𝗼𝘀𝘁: {display_cost}\n╚════════════════════╝\n```"
+                msg = f"```text\n╔════ 🟢 𝗡𝗘𝗪 𝗢𝗥𝗗𝗘𝗥 ════╗\n║ 🆔 𝗢𝗿𝗱𝗲𝗿: #{fake_oid}\n║ 👤 𝗨𝘀𝗲𝗿: {masked_id}\n║ 🚀 𝗦𝗲𝗿𝘃𝗶𝗰𝗲: {short_srv}\n║ 🔗 𝗟𝗶𝗻𝗸: {masked_link}\n║ 📦 𝗤𝘁𝘆: {qty}\n║ 💵 𝗖𝗼𝘀𝘁: {display_cost}\n╚════════════════════╝\n```"
                 bot.send_message(proof_channel, msg, parse_mode="Markdown")
 
         except Exception as e:
-            logging.error(f"Auto Fake Proof Error: {e}")
+            logging.error(f"Fake Proof Error: {e}")
+            pass
 
 threading.Thread(target=auto_fake_proof_cron, daemon=True).start()
 
 # ==========================================
-# 3. ADMIN WEB PANEL ROUTES & REDIS STATS
+# 3. ADMIN WEB PANEL ROUTES (GOD MODE)
 # ==========================================
 def get_dashboard_stats():
     cached = redis_client.get("settings_cache")
@@ -169,33 +171,30 @@ def get_dashboard_stats():
     bal = sum(u.get('balance', 0) for u in users_col.find())
     sales = sum(u.get('spent', 0) for u in users_col.find())
     profit = sales * (s.get('profit_margin', 20.0) / 100)
-    
-    try:
-        redis_info = redis_client.info()
-        r_keys = redis_client.dbsize()
-        r_mem = redis_info.get('used_memory_human', 'N/A')
-    except Exception as e:
-        r_keys = 0
-        r_mem = "Error"
-
-    return {
-        "u_count": u_count, "bal": f"${bal:.2f}", "sales": f"${sales:.2f}", 
-        "profit": f"${profit:.2f}", "s": s, "r_keys": r_keys, "r_mem": r_mem
-    }
+    return {"u_count": u_count, "bal": f"${bal:.2f}", "sales": f"${sales:.2f}", "profit": f"${profit:.2f}", "s": s}
 
 @app.route('/')
 def index():
     if 'admin' not in session: return redirect(url_for('login'))
-    stats = get_dashboard_stats()
     
-    # 🔥 MEMORY CRASH FIX: Added .limit() to prevent massive RAM usage on loading
-    users = list(users_col.find().sort("spent", -1).limit(200))
-    orders = list(orders_col.find().sort("_id", -1).limit(150))
-    tickets = list(tickets_col.find().sort("_id", -1).limit(50))
-    vouchers = list(vouchers_col.find().sort("_id", -1).limit(50))
+    # 🔥 Pagination Fix for 10,000+ Users
+    try: page = int(request.args.get('page', 1))
+    except: page = 1
+    per_page = 50
+    total_users = users_col.count_documents({})
+    total_pages = math.ceil(total_users / per_page)
+    users = list(users_col.find().sort("spent", -1).skip((page - 1) * per_page).limit(per_page))
+    
+    stats = get_dashboard_stats()
+    orders = list(orders_col.find().sort("_id", -1).limit(100))
+    tickets = list(tickets_col.find().sort("_id", -1))
+    vouchers = list(vouchers_col.find().sort("_id", -1))
+    
+    # 🔥 Fetch System Logs for Admin View
+    system_logs = list(logs_col.find().sort("date", -1).limit(50))
     
     services = utils.get_cached_services()
-    unique_categories = sorted(list(set(str(s.get('category', 'Other')) for s in services if s.get('category')))) if services else []
+    unique_categories = sorted(list(set(str(s.get('category', 'Uncategorized')) for s in services))) if services else []
     
     saved_orders_doc = config_col.find_one({"_id": "service_orders"}) or {}
     saved_service_orders = saved_orders_doc.get("orders", {})
@@ -204,7 +203,8 @@ def index():
     saved_service_orders_json = json.dumps(saved_service_orders)
 
     return render_template('admin.html', **stats, users=users, orders=orders, tickets=tickets, vouchers=vouchers, 
-                           unique_categories=unique_categories, services_json=services_json, saved_service_orders=saved_service_orders_json)
+                           unique_categories=unique_categories, services_json=services_json, saved_service_orders=saved_service_orders_json,
+                           page=page, total_pages=total_pages, system_logs=system_logs)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -219,38 +219,6 @@ def login():
 def logout():
     session.pop('admin', None)
     return redirect(url_for('login'))
-
-# ==========================================
-# 🔥 REDIS ACTION ROUTES
-# ==========================================
-@app.route('/redis_action/<action>')
-def redis_action(action):
-    if 'admin' not in session: return redirect(url_for('login'))
-    
-    try:
-        if action == "clear_cache":
-            redis_client.delete("services_cache", "currency_rates", "settings_cache")
-            for key in redis_client.scan_iter("user_cache_*"):
-                redis_client.delete(key)
-                
-        elif action == "release_locks":
-            for key in redis_client.scan_iter("lock_*"):
-                redis_client.delete(key)
-                
-        elif action == "reset_spam":
-            for key in redis_client.scan_iter("blocked_*"):
-                redis_client.delete(key)
-            for key in redis_client.scan_iter("spam_*"):
-                redis_client.delete(key)
-                
-        elif action == "clear_sessions":
-            for key in redis_client.scan_iter("session_*"):
-                redis_client.delete(key)
-                
-    except Exception as e:
-        logging.error(f"Redis Action Error: {e}")
-        
-    return redirect(url_for('index'))
 
 @app.route('/export_csv')
 def export_csv():
@@ -285,17 +253,24 @@ def save_best_choice():
     utils.update_settings_cache("best_choice_sids", sids)
     return redirect(url_for('index'))
 
-# 🔥 ERROR 405 FIX: Handling GET safely
-@app.route('/settings', methods=['GET', 'POST'])
+@app.route('/save_service_order', methods=['POST'])
+def save_service_order():
+    if 'admin' not in session: return jsonify({"status": "error", "msg": "Unauthorized"})
+    data = request.json
+    cat = data.get('category')
+    order = data.get('order')
+    if cat and order:
+        config_col.update_one({"_id": "service_orders"}, {"$set": {f"orders.{cat}": order}}, upsert=True)
+    return jsonify({"status": "success"})
+
+@app.route('/settings', methods=['POST'])
 def save_settings():
     if 'admin' not in session: return redirect(url_for('login'))
-    
-    if request.method == 'GET':
-        return redirect(url_for('index'))
     
     s = {
         "profit_margin": float(request.form.get('profit_margin', 20.0)),
         "channels": [c.strip() for c in request.form.get('channels', '').split(',') if c.strip()],
+        "log_channel": request.form.get('log_channel', ''),
         "maintenance": 'maintenance' in request.form,
         "maintenance_msg": request.form.get('maintenance_msg', 'Bot is upgrading.'),
         "proof_channel": request.form.get('proof_channel', ''),
@@ -309,9 +284,15 @@ def save_settings():
         "night_mode": 'night_mode' in request.form,
         "flash_sale_active": 'flash_sale_active' in request.form,
         "flash_sale_discount": float(request.form.get('flash_sale_discount', 0.0)),
+        "welcome_bonus_active": 'welcome_bonus_active' in request.form,
+        "welcome_bonus": float(request.form.get('welcome_bonus', 0.0)),
         "ref_bonus": float(request.form.get('ref_bonus', 0.05)),
         "dep_commission": float(request.form.get('dep_commission', 5.0)),
+        "reward_top1": float(request.form.get('reward_top1', 10.0)),
+        "reward_top2": float(request.form.get('reward_top2', 5.0)),
+        "reward_top3": float(request.form.get('reward_top3', 2.0)),
         
+        # 🔥 Crypto APIs Data & Toggles
         "cryptomus_merchant": request.form.get('cryptomus_merchant', '').strip(),
         "cryptomus_api": request.form.get('cryptomus_api', '').strip(),
         "cryptomus_active": 'cryptomus_active' in request.form,
@@ -319,37 +300,33 @@ def save_settings():
         "coinpayments_pub": request.form.get('coinpayments_pub', '').strip(),
         "coinpayments_priv": request.form.get('coinpayments_priv', '').strip(),
         "coinpayments_active": 'coinpayments_active' in request.form,
+        
+        "best_choice_sids": config_col.find_one({"_id": "settings"}).get('best_choice_sids', []) if config_col.find_one({"_id": "settings"}) else []
     }
-    
-    db_settings = config_col.find_one({"_id": "settings"}) or {}
-    s["best_choice_sids"] = db_settings.get('best_choice_sids', [])
-    s["profit_tiers"] = db_settings.get('profit_tiers', [])
     
     payments = []
     pay_names = request.form.getlist('pay_name[]')
     pay_rates = request.form.getlist('pay_rate[]')
     pay_addrs = request.form.getlist('pay_address[]')
+    
     for i in range(len(pay_names)):
         if pay_names[i].strip():
             payments.append({"name": pay_names[i].strip(), "rate": float(pay_rates[i]), "address": pay_addrs[i].strip()})
     s["payments"] = payments
 
-    external_apis = []
-    ext_urls = request.form.getlist('ext_api_url[]')
-    ext_keys = request.form.getlist('ext_api_key[]')
-    ext_services = request.form.getlist('ext_api_services[]')
-    for i in range(len(ext_urls)):
-        url = ext_urls[i].strip()
-        key = ext_keys[i].strip()
-        srvs = ext_services[i].strip()
-        if url and key and srvs:
-            srv_list = [str(x).strip() for x in srvs.split(',') if str(x).strip()]
-            external_apis.append({
-                "url": url,
-                "key": key,
-                "services": srv_list
+    profit_tiers = []
+    tier_mins = request.form.getlist('tier_min[]')
+    tier_maxs = request.form.getlist('tier_max[]')
+    tier_margins = request.form.getlist('tier_margin[]')
+    
+    for i in range(len(tier_mins)):
+        if tier_mins[i].strip() and tier_maxs[i].strip() and tier_margins[i].strip():
+            profit_tiers.append({
+                "min": float(tier_mins[i]),
+                "max": float(tier_maxs[i]),
+                "margin": float(tier_margins[i])
             })
-    s["external_apis"] = external_apis
+    s["profit_tiers"] = profit_tiers
 
     config_col.update_one({"_id": "settings"}, {"$set": s}, upsert=True)
     redis_client.setex("settings_cache", 30, json.dumps(s))
@@ -378,7 +355,7 @@ def edit_user():
     elif bal_action == "sub":
         users_col.update_one({"_id": uid}, {"$set": update_query, "$inc": {"balance": -bal_val}})
         
-    utils.clear_cached_user(uid) 
+    utils.clear_cached_user(uid) # 🔥 User Cache Clear
     return redirect(url_for('index'))
 
 @app.route('/add_fake_user', methods=['POST'])
@@ -493,13 +470,13 @@ def approve_dep(uid, amt, tid):
             utils.clear_cached_user(u["ref_by"])
             try: bot.send_message(u["ref_by"], f"💸 **COMMISSION EARNED!**\nYour referral made a deposit. You earned `${comm:.3f}`!", parse_mode="Markdown")
             except: pass
-    try: bot.send_message(uid, f"✅ **DEPOSIT APPROVED!**\nAmount: `${float(amt):.2f}` added to your wallet.\nTrxID: `{utils.escape_md(tid)}`", parse_mode="Markdown")
+    try: bot.send_message(uid, f"✅ **DEPOSIT APPROVED!**\nAmount: `${float(amt):.2f}` added to your wallet.\nTrxID: `{tid}`", parse_mode="Markdown")
     except: pass
     return "✅ Deposit Approved and user notified. You can close this window."
 
 @app.route('/reject_dep/<int:uid>/<tid>')
 def reject_dep(uid, tid):
-    try: bot.send_message(uid, f"❌ **DEPOSIT REJECTED!**\nYour TrxID `{utils.escape_md(tid)}` was invalid. Contact Admin.", parse_mode="Markdown")
+    try: bot.send_message(uid, f"❌ **DEPOSIT REJECTED!**\nYour TrxID `{tid}` was invalid. Contact Admin.", parse_mode="Markdown")
     except: pass
     return "❌ Deposit Rejected. User notified."
 
@@ -511,9 +488,8 @@ def send_bc():
     return redirect(url_for('index'))
     
 def bc_task(msg):
-    safe_msg = utils.escape_md(msg)
     for u in users_col.find({"is_fake": {"$ne": True}}):
-        try: bot.send_message(u["_id"], f"📢 **BROADCAST**\n━━━━━━━━━━━━\n{safe_msg}", parse_mode="Markdown")
+        try: bot.send_message(u["_id"], f"📢 **BROADCAST**\n━━━━━━━━━━━━\n{msg}", parse_mode="Markdown")
         except: pass
 
 @app.route('/smart_cast', methods=['POST'])
@@ -524,9 +500,8 @@ def smart_cast():
     return redirect(url_for('index'))
 
 def smart_bc_task(msg):
-    safe_msg = utils.escape_md(msg)
     for u in users_col.find({"spent": {"$gt": 0}, "is_fake": {"$ne": True}}):
-        try: bot.send_message(u["_id"], f"🎁 **EXCLUSIVE VIP OFFER**\n━━━━━━━━━━━━\n{safe_msg}", parse_mode="Markdown")
+        try: bot.send_message(u["_id"], f"🎁 **EXCLUSIVE VIP OFFER**\n━━━━━━━━━━━━\n{msg}", parse_mode="Markdown")
         except: pass
 
 @app.route('/create_voucher', methods=['POST'])
@@ -545,7 +520,7 @@ def reply_ticket():
     uid = int(request.form.get('uid'))
     msg = request.form.get('reply_msg')
     tickets_col.update_one({"_id": ObjectId(tid)}, {"$set": {"status": "closed", "reply": msg}})
-    try: bot.send_message(uid, f"🎧 **TICKET UPDATE**\nAdmin Replied: {utils.escape_md(msg)}", parse_mode="Markdown")
+    try: bot.send_message(uid, f"🎧 **TICKET UPDATE**\nAdmin Replied: {msg}", parse_mode="Markdown")
     except: pass
     return redirect(url_for('index'))
 
@@ -581,8 +556,14 @@ def refund_order(oid):
         except: pass
     return redirect(url_for('index'))
 
+@app.route('/clear_logs')
+def clear_logs():
+    if 'admin' not in session: return redirect(url_for('login'))
+    logs_col.delete_many({})
+    return redirect(url_for('index'))
+
 # ==========================================
-# 8. LOCAL AUTO PAYMENT WEBHOOK API
+# 8. LOCAL AUTO PAYMENT WEBHOOK API (For MacroDroid)
 # ==========================================
 @app.route('/api/add_transaction', methods=['POST', 'GET'])
 def add_transaction():
@@ -614,13 +595,62 @@ def add_transaction():
             return jsonify({"status": "ignored", "msg": "TrxID or Amount not found in SMS"}), 200
             
     except Exception as e:
+        logging.error(f"Local Auto Pay Error: {e}")
+        logs_col.insert_one({"error": str(traceback.format_exc()), "source": "Local Auto Pay", "date": datetime.now()})
         return jsonify({"status": "error", "msg": str(e)})
 
+
 # ==========================================
-# 9. NEW: GLOBAL CRYPTO PAYMENT WEBHOOKS
+# 🔥 9. NEW: SMM PANEL WEBHOOK (Instant Status Sync)
+# ==========================================
+@app.route('/smm_webhook', methods=['POST', 'GET'])
+def smm_webhook():
+    try:
+        data = request.json if request.is_json else request.form
+        if not data: return "No Data", 400
+        
+        order_id = data.get('order') or data.get('id')
+        status = data.get('status')
+        
+        if order_id and status:
+            new_status = str(status).lower()
+            o = orders_col.find_one({"oid": int(order_id)})
+            if o and o.get('status') != new_status and not o.get('is_shadow'):
+                orders_col.update_one({"_id": o["_id"]}, {"$set": {"status": new_status}})
+                
+                st_emoji = "⏳"
+                if new_status == "completed": st_emoji = "✅"
+                elif new_status in ["canceled", "refunded", "fail"]: st_emoji = "❌"
+                elif new_status in ["in progress", "processing"]: st_emoji = "🔄"
+                elif new_status == "partial": st_emoji = "⚠️"
+                
+                try:
+                    msg = f"🔔 **ORDER UPDATE!**\n━━━━━━━━━━━━━━━━━━━━\n🆔 Order ID: `{o['oid']}`\n🔗 Link: {str(o.get('link', 'N/A'))[:25]}...\n📦 Status: {st_emoji} **{new_status.upper()}**"
+                    bot.send_message(o['uid'], msg, parse_mode="Markdown")
+                except: pass
+                
+                if new_status in ['canceled', 'refunded', 'fail']:
+                    u = utils.get_cached_user(o['uid'])
+                    curr = u.get("currency", "BDT") if u else "BDT"
+                    cost_str = utils.fmt_curr(o['cost'], curr)
+                    users_col.update_one({"_id": o['uid']}, {"$inc": {"balance": o['cost'], "spent": -o['cost']}})
+                    utils.clear_cached_user(o['uid'])
+                    try: bot.send_message(o['uid'], f"💰 **ORDER REFUNDED!**\nOrder `{o['oid']}` failed or canceled by server. `{cost_str}` has been added back to your balance.", parse_mode="Markdown")
+                    except: pass
+                    
+        return "OK", 200
+    except Exception as e:
+        logging.error(f"SMM Webhook Error: {e}")
+        logs_col.insert_one({"error": str(traceback.format_exc()), "source": "SMM Webhook", "date": datetime.now()})
+        return "Error", 500
+
+
+# ==========================================
+# 10. GLOBAL CRYPTO PAYMENT WEBHOOKS
 # ==========================================
 @app.route('/cryptomus_webhook', methods=['POST'])
 def cryptomus_webhook():
+    """Cryptomus Auto-Payment IPN Listener"""
     try:
         data = request.json
         if not data: return "No data", 400
@@ -633,6 +663,7 @@ def cryptomus_webhook():
         dict_data = data.copy()
         dict_data.pop('sign', None)
         
+        # Cryptomus Hash Validation
         encoded_data = base64.b64encode(json.dumps(dict_data, separators=(',', ':')).encode('utf-8')).decode('utf-8')
         expected_sign = hashlib.md5((encoded_data + api_key).encode('utf-8')).hexdigest()
         
@@ -656,10 +687,12 @@ def cryptomus_webhook():
         return "OK", 200
     except Exception as e:
         logging.error(f"Cryptomus Webhook Error: {e}")
+        logs_col.insert_one({"error": str(traceback.format_exc()), "source": "Cryptomus", "date": datetime.now()})
         return str(e), 500
 
 @app.route('/coinpayments_ipn', methods=['POST'])
 def coinpayments_ipn():
+    """CoinPayments Auto-Payment IPN Listener"""
     try:
         s = config_col.find_one({"_id": "settings"}) or {}
         ipn_secret = s.get('coinpayments_priv', '')
@@ -674,7 +707,7 @@ def coinpayments_ipn():
         if hmac_header != calculated_hmac: return "Invalid HMAC", 400
         
         status = int(request.form.get('status', -1))
-        if status >= 100 or status == 2:
+        if status >= 100 or status == 2: 
             uid = int(request.form.get('custom', 0)) 
             amt = float(request.form.get('amount1', 0)) 
             trx = request.form.get('txn_id')
@@ -691,8 +724,10 @@ def coinpayments_ipn():
             
         return "OK", 200
     except Exception as e:
-        logging.error(f"CoinPayments IPN Error: {e}")
+        logging.error(f"CoinPayments Webhook Error: {e}")
+        logs_col.insert_one({"error": str(traceback.format_exc()), "source": "CoinPayments", "date": datetime.now()})
         return str(e), 500
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
