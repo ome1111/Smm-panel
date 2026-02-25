@@ -155,7 +155,7 @@ def auto_fake_proof_cron():
 threading.Thread(target=auto_fake_proof_cron, daemon=True).start()
 
 # ==========================================
-# 3. ADMIN WEB PANEL ROUTES
+# 3. ADMIN WEB PANEL ROUTES & REDIS STATS
 # ==========================================
 def get_dashboard_stats():
     cached = redis_client.get("settings_cache")
@@ -169,7 +169,20 @@ def get_dashboard_stats():
     bal = sum(u.get('balance', 0) for u in users_col.find())
     sales = sum(u.get('spent', 0) for u in users_col.find())
     profit = sales * (s.get('profit_margin', 20.0) / 100)
-    return {"u_count": u_count, "bal": f"${bal:.2f}", "sales": f"${sales:.2f}", "profit": f"${profit:.2f}", "s": s}
+    
+    # 🔥 Fetch Redis Live Stats
+    try:
+        redis_info = redis_client.info()
+        r_keys = redis_client.dbsize()
+        r_mem = redis_info.get('used_memory_human', 'N/A')
+    except Exception as e:
+        r_keys = 0
+        r_mem = "Error"
+
+    return {
+        "u_count": u_count, "bal": f"${bal:.2f}", "sales": f"${sales:.2f}", 
+        "profit": f"${profit:.2f}", "s": s, "r_keys": r_keys, "r_mem": r_mem
+    }
 
 @app.route('/')
 def index():
@@ -181,8 +194,6 @@ def index():
     vouchers = list(vouchers_col.find().sort("_id", -1))
     
     services = utils.get_cached_services()
-    
-    # Handle NoneType categories safely
     unique_categories = sorted(list(set(str(s.get('category', 'Other')) for s in services if s.get('category')))) if services else []
     
     saved_orders_doc = config_col.find_one({"_id": "service_orders"}) or {}
@@ -207,6 +218,42 @@ def login():
 def logout():
     session.pop('admin', None)
     return redirect(url_for('login'))
+
+# ==========================================
+# 🔥 NEW: REDIS ACTION ROUTES
+# ==========================================
+@app.route('/redis_action/<action>')
+def redis_action(action):
+    if 'admin' not in session: return redirect(url_for('login'))
+    
+    try:
+        if action == "clear_cache":
+            # Deletes API cache and user profile caches
+            redis_client.delete("services_cache", "currency_rates", "settings_cache")
+            for key in redis_client.scan_iter("user_cache_*"):
+                redis_client.delete(key)
+                
+        elif action == "release_locks":
+            # Releases dead-locks from background workers
+            for key in redis_client.scan_iter("lock_*"):
+                redis_client.delete(key)
+                
+        elif action == "reset_spam":
+            # Clears anti-spam blocks for all users
+            for key in redis_client.scan_iter("blocked_*"):
+                redis_client.delete(key)
+            for key in redis_client.scan_iter("spam_*"):
+                redis_client.delete(key)
+                
+        elif action == "clear_sessions":
+            # Clears current bot menu sessions for all users
+            for key in redis_client.scan_iter("session_*"):
+                redis_client.delete(key)
+                
+    except Exception as e:
+        logging.error(f"Redis Action Error: {e}")
+        
+    return redirect(url_for('index'))
 
 @app.route('/export_csv')
 def export_csv():
@@ -273,12 +320,10 @@ def save_settings():
         "coinpayments_active": 'coinpayments_active' in request.form,
     }
     
-    # Existing Arrays
     db_settings = config_col.find_one({"_id": "settings"}) or {}
     s["best_choice_sids"] = db_settings.get('best_choice_sids', [])
     s["profit_tiers"] = db_settings.get('profit_tiers', [])
     
-    # Save Local Payments
     payments = []
     pay_names = request.form.getlist('pay_name[]')
     pay_rates = request.form.getlist('pay_rate[]')
@@ -288,7 +333,6 @@ def save_settings():
             payments.append({"name": pay_names[i].strip(), "rate": float(pay_rates[i]), "address": pay_addrs[i].strip()})
     s["payments"] = payments
 
-    # 🔥 Save External Multi-APIs
     external_apis = []
     ext_urls = request.form.getlist('ext_api_url[]')
     ext_keys = request.form.getlist('ext_api_key[]')
