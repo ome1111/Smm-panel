@@ -32,8 +32,18 @@ def safe_edit_message(text, chat_id, message_id, reply_markup=None, parse_mode="
             logging.error(f"Edit Message Error: {e}")
 
 # ==========================================
-# 🔥 REDIS SESSION MANAGER
+# 🔥 REDIS SESSION & LOCK MANAGER
 # ==========================================
+def is_button_locked(uid, call_id):
+    """ডাবল-ক্লিক বা স্প্যাম ক্লিক ঠেকানোর জন্য Atomic Lock"""
+    lock_key = f"lock_btn_{uid}"
+    if redis_client.get(lock_key):
+        try: bot.answer_callback_query(call_id, "⏳ Please wait... processing.")
+        except: pass
+        return True
+    redis_client.setex(lock_key, 2, "locked") # ২ সেকেন্ডের জন্য লক
+    return False
+
 def get_user_session(uid):
     try:
         data = redis_client.get(f"session_{uid}")
@@ -129,10 +139,12 @@ Let's boost your digital presence today! 👇"""
 
 @bot.callback_query_handler(func=lambda c: c.data == "CHECK_SUB")
 def sub_callback(call):
+    if is_button_locked(call.from_user.id, call.id): return
     bot.answer_callback_query(call.id)
     uid = call.message.chat.id
     if check_sub(uid):
-        bot.delete_message(uid, call.message.message_id)
+        try: bot.delete_message(uid, call.message.message_id)
+        except: pass
         bot.send_message(uid, "✅ **Access Granted! Welcome to the panel.**", reply_markup=main_menu())
         process_new_user_bonuses(uid)
     else: bot.send_message(uid, "❌ You haven't joined all channels.")
@@ -159,6 +171,7 @@ def new_order_start(message):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("SHOW_BEST_CHOICE"))
 def show_best_choices(call):
+    if is_button_locked(call.from_user.id, call.id): return
     bot.answer_callback_query(call.id)
     parts = call.data.split("|")
     page = int(parts[1]) if len(parts) > 1 else 0
@@ -187,13 +200,16 @@ def show_best_choices(call):
 
 @bot.callback_query_handler(func=lambda c: c.data == "NEW_ORDER_BACK")
 def back_to_main(call):
+    if is_button_locked(call.from_user.id, call.id): return
     bot.answer_callback_query(call.id)
-    bot.delete_message(call.message.chat.id, call.message.message_id)
+    try: bot.delete_message(call.message.chat.id, call.message.message_id)
+    except: pass
     new_order_start(call.message)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("PLAT|"))
 def show_cats(call):
-    bot.answer_callback_query(call.id) # 🔥 UX FIX
+    if is_button_locked(call.from_user.id, call.id): return
+    bot.answer_callback_query(call.id) 
     _, platform, page = call.data.split("|")
     page = int(page)
     services = get_cached_services()
@@ -219,7 +235,8 @@ def show_cats(call):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("CAT|"))
 def list_servs(call):
-    bot.answer_callback_query(call.id) # 🔥 UX FIX
+    if is_button_locked(call.from_user.id, call.id): return
+    bot.answer_callback_query(call.id) 
     _, cat_idx, page = call.data.split("|")
     services = get_cached_services()
     all_cats = sorted(list(set(str(s.get('category', 'Other')) for s in services)))
@@ -250,7 +267,8 @@ def list_servs(call):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("INFO|"))
 def info_card(call):
-    bot.answer_callback_query(call.id) # 🔥 UX FIX
+    if is_button_locked(call.from_user.id, call.id): return
+    bot.answer_callback_query(call.id) 
     parts = call.data.split("|")
     # Handling tags like ext_0_10 correctly
     sid = "|".join(parts[1:]) 
@@ -293,7 +311,8 @@ def info_card(call):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("TYPE|"))
 def order_type_router(call):
-    bot.answer_callback_query(call.id) # 🔥 UX FIX
+    if is_button_locked(call.from_user.id, call.id): return
+    bot.answer_callback_query(call.id) 
     parts = call.data.split("|")
     # Handling tags correctly if sid is ext_0_10 -> parts length > 3
     sid = "|".join(parts[1:-1]) 
@@ -320,6 +339,7 @@ def order_type_router(call):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("ORD|"))
 def start_ord(call):
+    if is_button_locked(call.from_user.id, call.id): return
     bot.answer_callback_query(call.id)
     sid = "|".join(call.data.split("|")[1:])
     update_user_session(call.message.chat.id, {"step": "awaiting_link", "temp_sid": sid, "order_type": "normal"})
@@ -327,6 +347,7 @@ def start_ord(call):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("REORDER|"))
 def reorder_callback(call):
+    if is_button_locked(call.from_user.id, call.id): return
     bot.answer_callback_query(call.id)
     sid = "|".join(call.data.split("|")[1:])
     update_user_session(call.message.chat.id, {"step": "awaiting_link", "temp_sid": sid, "order_type": "normal"})
@@ -393,6 +414,7 @@ def fetch_orders_page(chat_id, page=0, filter_type="all"):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("INSTANT_REFILL|"))
 def process_instant_refill(call):
+    if is_button_locked(call.from_user.id, call.id): return
     oid = call.data.split("|")[1]
     res = api.send_refill(oid)
     if res and 'refill' in res: bot.answer_callback_query(call.id, f"✅ Auto-Refill Triggered! Task ID: {res['refill']}", show_alert=True)
@@ -400,6 +422,7 @@ def process_instant_refill(call):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("MYORD|"))
 def my_orders_pagination(call):
+    if is_button_locked(call.from_user.id, call.id): return
     bot.answer_callback_query(call.id)
     parts = call.data.split("|")
     page = int(parts[1])
@@ -409,6 +432,7 @@ def my_orders_pagination(call):
 
 @bot.callback_query_handler(func=lambda c: c.data == "REDEEM_POINTS")
 def redeem_points(call):
+    if is_button_locked(call.from_user.id, call.id): return
     u = get_cached_user(call.message.chat.id)
     pts = u.get("points", 0)
     s = get_settings()
@@ -423,6 +447,7 @@ def redeem_points(call):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("FAV_ADD|"))
 def add_to_favorites(call):
+    if is_button_locked(call.from_user.id, call.id): return
     bot.answer_callback_query(call.id, "⭐ Added to Favorites!", show_alert=True)
     sid = "|".join(call.data.split("|")[1:])
     users_col.update_one({"_id": call.message.chat.id}, {"$addToSet": {"favorites": sid}})
@@ -430,6 +455,7 @@ def add_to_favorites(call):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("SET_CURR|"))
 def set_currency_callback(call):
+    if is_button_locked(call.from_user.id, call.id): return
     curr = call.data.split("|")[1]
     users_col.update_one({"_id": call.message.chat.id}, {"$set": {"currency": curr}})
     clear_cached_user(call.message.chat.id)
@@ -441,6 +467,7 @@ def set_currency_callback(call):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("PAY|"))
 def pay_details(call):
+    if is_button_locked(call.from_user.id, call.id): return
     bot.answer_callback_query(call.id)
     _, amt_usd, method = call.data.split("|")
     amt_usd = float(amt_usd)
@@ -473,6 +500,7 @@ def pay_details(call):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("PAY_CRYPTO|"))
 def pay_crypto_details(call):
+    if is_button_locked(call.from_user.id, call.id): return
     bot.answer_callback_query(call.id, "Generating secure payment link... Please wait.", show_alert=False)
     _, amt_usd, method = call.data.split("|")
     amt_usd = float(amt_usd)
@@ -918,7 +946,9 @@ def universal_router(message):
 
 @bot.callback_query_handler(func=lambda c: c.data in ["PLACE_ORD", "PLACE_BULK"])
 def final_ord(call):
-    bot.answer_callback_query(call.id) # 🔥 UX FIX
+    if is_button_locked(call.from_user.id, call.id): return
+    bot.answer_callback_query(call.id)
+    
     uid = call.message.chat.id
     u = get_cached_user(uid)
     session_data = get_user_session(uid)
@@ -1020,6 +1050,7 @@ def process_order_background(uid, u, draft, message_id):
 
 @bot.callback_query_handler(func=lambda c: c.data == "CANCEL_ORD")
 def cancel_ord(call):
+    if is_button_locked(call.from_user.id, call.id): return
     bot.answer_callback_query(call.id)
     clear_user_session(call.message.chat.id)
     safe_edit_message("🚫 **Order Cancelled.**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
