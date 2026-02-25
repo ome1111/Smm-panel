@@ -114,7 +114,7 @@ def sub_callback(call):
     else: bot.send_message(uid, "❌ You haven't joined all channels.")
 
 # ==========================================
-# 4. ORDERING ENGINE (🔥 NoneType Fixed)
+# 4. ORDERING ENGINE
 # ==========================================
 @bot.message_handler(func=lambda m: m.text == "🚀 New Order")
 def new_order_start(message):
@@ -125,8 +125,6 @@ def new_order_start(message):
     if not services: return bot.send_message(uid, "⏳ **API Syncing...** Try again in a few seconds.")
     
     hidden = get_settings().get("hidden_services", [])
-    
-    # 🔥 FIX: Safely extract category and service ID without crashing
     platforms = sorted(list(set(identify_platform(str(s.get('category', 'Other'))) for s in services if str(s.get('service', '0')) not in hidden)))
     
     markup = types.InlineKeyboardMarkup(row_width=2)
@@ -176,7 +174,6 @@ def show_cats(call):
     services = get_cached_services()
     hidden = get_settings().get("hidden_services", [])
     
-    # 🔥 FIX: Extract categories safely
     cats = sorted(list(set(str(s.get('category', 'Other')) for s in services if identify_platform(str(s.get('category', 'Other'))) == platform and str(s.get('service', '0')) not in hidden)))
     
     start_idx, end_idx = page * 15, page * 15 + 15
@@ -401,25 +398,38 @@ def set_currency_callback(call):
     call.message.text = "👤 Profile"
     universal_buttons(call.message)
 
+# 🔥 FIX: Show Exact Amount without Decimal for Local Gateways
 @bot.callback_query_handler(func=lambda c: c.data.startswith("PAY|"))
 def pay_details(call):
     bot.answer_callback_query(call.id)
     _, amt_usd, method = call.data.split("|")
     amt_usd = float(amt_usd)
+    
+    uid = call.message.chat.id
+    u = get_cached_user(uid)
+    curr = u.get("currency", "BDT") if u else "BDT"
+    
     s = get_settings()
     pay_data = next((p for p in s.get('payments', []) if p['name'] == method), None)
     address = pay_data.get('address', 'Contact Admin') if pay_data else 'Contact Admin'
     rate = pay_data.get('rate', 120) if pay_data else 120
+    
     is_crypto = any(x in method.lower() for x in ['usdt', 'binance', 'crypto', 'btc', 'pm', 'perfect', 'payeer'])
-    display_amt = f"${amt_usd:.2f}" if is_crypto else f"{round(amt_usd * float(rate), 2)} Local Currency"
+    local_amt = amt_usd * float(rate)
+    
+    if is_crypto:
+        display_amt = f"${amt_usd:.2f}"
+    else:
+        formatted_amt = int(local_amt) if local_amt.is_integer() else round(local_amt, 2)
+        display_amt = f"{formatted_amt} TK" if curr == "BDT" else f"{formatted_amt} {curr}"
     
     safe_method = escape_md(method)
     safe_address = escape_md(address)
     
     txt = f"🏦 **{safe_method} Payment Details**\n━━━━━━━━━━━━━━━━━━━━\n💵 **Amount to Send:** `{display_amt}`\n📍 **Account / Address:** `{safe_address}`\n━━━━━━━━━━━━━━━━━━━━\n⚠️ Send the exact amount to the address above, then reply to this message with your **TrxID / Transaction ID**:"
     
-    update_user_session(call.message.chat.id, {"step": "awaiting_trx", "temp_dep_amt": amt_usd, "temp_dep_method": method})
-    bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+    update_user_session(uid, {"step": "awaiting_trx", "temp_dep_amt": amt_usd, "temp_dep_method": method})
+    bot.edit_message_text(txt, uid, call.message.message_id, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("PAY_CRYPTO|"))
 def pay_crypto_details(call):
@@ -648,7 +658,7 @@ def universal_router(message):
             except: pass
             return
 
-    # --- USER STATES WITH SMART ERROR HANDLING ---
+    # 🔥 FIX: Show Exact Amount without Decimal for Local Gateways (In selection menu)
     if step == "awaiting_deposit_amt":
         try:
             amt = float(text)
@@ -662,13 +672,15 @@ def universal_router(message):
             
             for p in payments: 
                 is_crypto = any(x in p['name'].lower() for x in ['usdt', 'binance', 'crypto', 'btc', 'pm', 'perfect', 'payeer'])
-                display_amt = f"${amt_usd:.2f}" if is_crypto else f"{round(amt_usd * float(p['rate']), 2)} {curr_code}"
+                local_amt = amt_usd * float(p['rate'])
+                
+                if is_crypto:
+                    display_amt = f"${amt_usd:.2f}"
+                else:
+                    formatted_amt = int(local_amt) if local_amt.is_integer() else round(local_amt, 2)
+                    display_amt = f"{formatted_amt} TK" if curr_code == "BDT" else f"{formatted_amt} {curr_code}"
+                    
                 markup.add(types.InlineKeyboardButton(f"🏦 {p['name']} (Pay {display_amt})", callback_data=f"PAY|{amt_usd}|{p['name']}"))
-            
-            if s.get("cryptomus_active") and s.get("cryptomus_merchant") and s.get("cryptomus_api"):
-                markup.add(types.InlineKeyboardButton(f"🤖 Cryptomus (Pay ${amt_usd:.2f})", callback_data=f"PAY_CRYPTO|{amt_usd}|Cryptomus"))
-            if s.get("coinpayments_active") and s.get("coinpayments_pub") and s.get("coinpayments_priv"):
-                markup.add(types.InlineKeyboardButton(f"🪙 CoinPayments (Pay ${amt_usd:.2f})", callback_data=f"PAY_CRYPTO|{amt_usd}|CoinPayments"))
 
             clear_user_session(uid)
             return bot.send_message(uid, "💳 **Select Gateway:**", reply_markup=markup, parse_mode="Markdown")
