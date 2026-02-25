@@ -17,7 +17,7 @@ import telebot
 from bson.objectid import ObjectId
 import re
 
-# Import from loader and config
+# [span_0](start_span)Import from loader and config[span_0](end_span)
 from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, redis_client, logs_col
 from config import BOT_TOKEN, ADMIN_ID, ADMIN_PASSWORD
 
@@ -26,7 +26,7 @@ import utils
 import admin
 import main_router
 
-app = Flask(__name__)
+[span_1](start_span)app = Flask(__name__)[span_1](end_span)
 app.secret_key = os.environ.get('SECRET_KEY', 'super_secret_nexus_titan_key_1010')
 
 # 🔥 ADMIN PANEL SECURITY (Cookie Theft Protection)
@@ -177,7 +177,6 @@ def get_dashboard_stats():
 def index():
     if 'admin' not in session: return redirect(url_for('login'))
     
-    # 🔥 Pagination Fix for 10,000+ Users
     try: page = int(request.args.get('page', 1))
     except: page = 1
     per_page = 50
@@ -190,7 +189,6 @@ def index():
     tickets = list(tickets_col.find().sort("_id", -1))
     vouchers = list(vouchers_col.find().sort("_id", -1))
     
-    # 🔥 Fetch System Logs for Admin View
     system_logs = list(logs_col.find().sort("date", -1).limit(50))
     
     services = utils.get_cached_services()
@@ -301,6 +299,17 @@ def save_settings():
         "coinpayments_priv": request.form.get('coinpayments_priv', '').strip(),
         "coinpayments_active": 'coinpayments_active' in request.form,
         
+        "nowpayments_api": request.form.get('nowpayments_api', '').strip(),
+        "nowpayments_ipn": request.form.get('nowpayments_ipn', '').strip(),
+        "nowpayments_active": 'nowpayments_active' in request.form,
+        
+        "payeer_merchant": request.form.get('payeer_merchant', '').strip(),
+        "payeer_secret": request.form.get('payeer_secret', '').strip(),
+        "payeer_active": 'payeer_active' in request.form,
+        
+        "stars_rate": int(request.form.get('stars_rate', 50)),
+        "stars_active": 'stars_active' in request.form,
+        
         "best_choice_sids": config_col.find_one({"_id": "settings"}).get('best_choice_sids', []) if config_col.find_one({"_id": "settings"}) else []
     }
     
@@ -355,7 +364,7 @@ def edit_user():
     elif bal_action == "sub":
         users_col.update_one({"_id": uid}, {"$set": update_query, "$inc": {"balance": -bal_val}})
         
-    utils.clear_cached_user(uid) # 🔥 User Cache Clear
+    utils.clear_cached_user(uid)
     return redirect(url_for('index'))
 
 @app.route('/add_fake_user', methods=['POST'])
@@ -726,6 +735,91 @@ def coinpayments_ipn():
     except Exception as e:
         logging.error(f"CoinPayments Webhook Error: {e}")
         logs_col.insert_one({"error": str(traceback.format_exc()), "source": "CoinPayments", "date": datetime.now()})
+        return str(e), 500
+
+@app.route('/nowpayments_ipn', methods=['POST'])
+def nowpayments_ipn():
+    """NowPayments Auto-Payment IPN Listener"""
+    try:
+        s = config_col.find_one({"_id": "settings"}) or {}
+        ipn_secret = s.get('nowpayments_ipn', '')
+        if not ipn_secret: return "NowPayments IPN not configured", 400
+        
+        sig = request.headers.get('x-nowpayments-sig')
+        if not sig: return "No signature", 400
+        
+        request_data = request.get_data()
+        hmac_obj = hmac.new(ipn_secret.encode('utf-8'), request_data, hashlib.sha512)
+        if hmac_obj.hexdigest() != sig: return "Invalid signature", 400
+        
+        data = request.json
+        if data.get('payment_status') == 'finished':
+            order_id = data.get('order_id')
+            uid = int(str(order_id).split('_')[0])
+            amt = float(data.get('price_amount'))
+            trx = str(data.get('payment_id'))
+            
+            if config_col.find_one({"_id": "transactions", "valid_list.trx": trx}):
+                return "Already processed", 200
+                
+            config_col.update_one({"_id": "transactions"}, {"$push": {"valid_list": {"trx": trx, "amt": amt, "status": "used", "user": uid}}}, upsert=True)
+            users_col.update_one({"_id": uid}, {"$inc": {"balance": amt}})
+            utils.clear_cached_user(uid)
+            
+            try: bot.send_message(uid, f"✅ **NOWPAYMENTS DEPOSIT SUCCESS!**\nAmount: `${amt}` added to your wallet.", parse_mode="Markdown")
+            except: pass
+            
+        return "OK", 200
+    except Exception as e:
+        logging.error(f"NowPayments Webhook Error: {e}")
+        logs_col.insert_one({"error": str(traceback.format_exc()), "source": "NowPayments", "date": datetime.now()})
+        return str(e), 500
+
+@app.route('/payeer_ipn', methods=['POST'])
+def payeer_ipn():
+    """Payeer Auto-Payment IPN Listener"""
+    try:
+        s = config_col.find_one({"_id": "settings"}) or {}
+        secret = s.get('payeer_secret', '')
+        if not secret: return "Payeer not configured", 400
+        
+        if request.form.get('m_operation_id') and request.form.get('m_sign'):
+            arHash = [
+                request.form.get('m_operation_id'),
+                request.form.get('m_operation_ps'),
+                request.form.get('m_operation_date'),
+                request.form.get('m_operation_pay_date'),
+                request.form.get('m_shop'),
+                request.form.get('m_orderid'),
+                request.form.get('m_amount'),
+                request.form.get('m_curr'),
+                request.form.get('m_desc'),
+                request.form.get('m_status'),
+                secret
+            ]
+            sign_hash = hashlib.sha256(':'.join(arHash).encode('utf-8')).hexdigest().upper()
+            
+            if request.form.get('m_sign') == sign_hash and request.form.get('m_status') == 'success':
+                order_id = request.form.get('m_orderid')
+                # Extract uid from order_id (removing the last 3 random digits created in utils)
+                uid = int(str(order_id)[:-3]) 
+                amt = float(request.form.get('m_amount'))
+                trx = request.form.get('m_operation_id')
+                
+                if config_col.find_one({"_id": "transactions", "valid_list.trx": trx}):
+                    return "Already processed", 200
+                    
+                config_col.update_one({"_id": "transactions"}, {"$push": {"valid_list": {"trx": trx, "amt": amt, "status": "used", "user": uid}}}, upsert=True)
+                users_col.update_one({"_id": uid}, {"$inc": {"balance": amt}})
+                utils.clear_cached_user(uid)
+                
+                try: bot.send_message(uid, f"✅ **PAYEER DEPOSIT SUCCESS!**\nAmount: `${amt}` added to your wallet.", parse_mode="Markdown")
+                except: pass
+                return "success", 200
+        return "error", 400
+    except Exception as e:
+        logging.error(f"Payeer Webhook Error: {e}")
+        logs_col.insert_one({"error": str(traceback.format_exc()), "source": "Payeer", "date": datetime.now()})
         return str(e), 500
 
 
