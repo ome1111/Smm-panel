@@ -13,16 +13,18 @@ import base64
 import requests
 import hmac
 import logging
+import traceback
 from datetime import datetime, timedelta
-from bson import json_util
+from bson import json_util # 🔥 MongoDB Date/Object serialize করার জন্য
 
-# ASCII Encoding Fix for Server Logs
+# ASCII Encoding Fix
 if sys.stdout.encoding != 'utf-8':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 from telebot import types
-from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, redis_client
+# 🔥 loader থেকে redis_client এবং logs_col ইম্পোর্ট করা হলো
+from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, redis_client, logs_col
 from config import *
 import api
 
@@ -30,40 +32,21 @@ def update_spy(uid, action_text):
     pass
 
 # ==========================================
-# 0. SECURITY: MARKDOWN ESCAPE ENGINE
-# ==========================================
-def escape_md(text):
-    """টেলিগ্রামের Markdown পার্স এরর ঠেকানোর জন্য স্পেশাল ক্যারেক্টার এস্কেপ করা"""
-    if not text: return ""
-    text = str(text)
-    for char in ['_', '*', '`', '[']:
-        text = text.replace(char, f"\\{char}")
-    return text
-
-# ==========================================
 # 1. CURRENCY ENGINE & FAST SETTINGS CACHE
 # ==========================================
 BASE_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://smm-panel-g8ab.onrender.com')
 
-def get_currency_rates():
-    cached = redis_client.get("currency_rates")
-    if cached:
-        return json.loads(cached)
-    return {"BDT": 120, "INR": 83, "USD": 1}
+CURRENCY_RATES = {"BDT": 120, "INR": 83, "USD": 1}
+CURRENCY_SYMBOLS = {"BDT": "৳", "INR": "₹", "USD": "$"}
 
 def fmt_curr(usd_amount, curr_code="BDT"):
-    rates = get_currency_rates()
-    rate = rates.get(curr_code, 120)
-    sym = {"BDT": "৳", "INR": "₹", "USD": "$"}.get(curr_code, "৳")
+    rate = CURRENCY_RATES.get(curr_code, 120)
+    sym = CURRENCY_SYMBOLS.get(curr_code, "৳")
     val = float(usd_amount) * rate
-    
-    if curr_code == "USD":
-        return f"{sym}{val:.3f}"
-    else:
-        # 🔥 FIX: No decimal if it's a whole number for local currencies
-        formatted_val = int(val) if val.is_integer() else round(val, 2)
-        return f"{sym}{formatted_val}"
+    decimals = 3 if curr_code == "USD" else 2
+    return f"{sym}{val:.{decimals}f}"
 
+# 🔥 Redis Based Settings Cache (Super Fast)
 def get_settings():
     cached = redis_client.get("settings_cache")
     if cached:
@@ -79,13 +62,13 @@ def get_settings():
             "flash_sale_active": False, "flash_sale_discount": 0.0, 
             "reward_top1": 10.0, "reward_top2": 5.0, "reward_top3": 2.0, 
             "best_choice_sids": [], "points_per_usd": 100, "points_to_usd_rate": 1000,
-            "proof_channel": "", "profit_tiers": [], "external_apis": [],
+            "proof_channel": "", "profit_tiers": [],
             "cryptomus_merchant": "", "cryptomus_api": "", "coinpayments_pub": "", "coinpayments_priv": "",
             "cryptomus_active": False, "coinpayments_active": False
         }
         config_col.insert_one(s)
         
-    redis_client.setex("settings_cache", 30, json.dumps(s)) 
+    redis_client.setex("settings_cache", 30, json.dumps(s)) # 30 সেকেন্ডের জন্য ক্যাশে থাকবে
     return s
 
 def update_settings_cache(key, value):
@@ -93,127 +76,111 @@ def update_settings_cache(key, value):
     s[key] = value
     redis_client.setex("settings_cache", 30, json.dumps(s))
 
+# 🔥 Super Fast User Caching Engine (New)
 def get_cached_user(uid):
+    """MongoDB এর বদলে Redis থেকে ইউজারের ডেটা আনবে"""
     cached = redis_client.get(f"user_cache_{uid}")
     if cached:
         return json.loads(cached, object_hook=json_util.object_hook)
     
     user = users_col.find_one({"_id": uid})
     if user:
-        redis_client.setex(f"user_cache_{uid}", 300, json.dumps(user, default=json_util.default)) 
+        redis_client.setex(f"user_cache_{uid}", 300, json.dumps(user, default=json_util.default)) # ৫ মিনিট ক্যাশ
     return user
 
 def clear_cached_user(uid):
+    """ইউজারের ব্যালেন্স বা ডেটা আপডেট হলে ক্যাশ ক্লিয়ার করবে"""
     redis_client.delete(f"user_cache_{uid}")
 
+# 🔥 Redis Based Anti-Spam (100% Accurate & Distributed)
 def check_spam(uid):
     if str(uid) == str(ADMIN_ID): return False 
-    if redis_client.get(f"blocked_{uid}"): return True
+    
+    if redis_client.get(f"blocked_{uid}"): 
+        return True
+        
     key = f"spam_{uid}"
     reqs = redis_client.incr(key)
-    if reqs == 1: redis_client.expire(key, 3) 
+    
+    if reqs == 1: 
+        redis_client.expire(key, 3) # ৩ সেকেন্ডের উইন্ডো
+        
     if reqs > 5:
-        redis_client.setex(f"blocked_{uid}", 300, "1") 
+        redis_client.setex(f"blocked_{uid}", 300, "1") # ৫ মিনিটের জন্য ব্লক
         try: bot.send_message(uid, "🛡 **ANTI-SPAM ACTIVATED!**\nYou are clicking too fast. Please wait 5 minutes.", parse_mode="Markdown")
         except: pass
         return True
+        
     return False
 
 def check_maintenance(chat_id):
     s = get_settings()
     if s.get('maintenance', False) and str(chat_id) != str(ADMIN_ID):
-        msg = escape_md(s.get('maintenance_msg', "Bot is currently upgrading."))
+        msg = s.get('maintenance_msg', "Bot is currently upgrading.")
         bot.send_message(chat_id, f"🚧 **SYSTEM MAINTENANCE**\n━━━━━━━━━━━━━━━━━━━━\n{msg}", parse_mode="Markdown")
         return True
     return False
 
 # ==========================================
-# 2. PRO-LEVEL CACHE, SYNC & HYBRID WORKERS
+# 2. PRO-LEVEL CACHE, SYNC & DRIP CAMPAIGNS
 # ==========================================
+
+# 🔥 1xpanel API Auto-Sync 
 def auto_sync_services_cron():
-    """Hybrid Sync: 1xpanel + Custom External APIs"""
     while True:
-        if not redis_client.set("lock_sync_services_running", "locked", nx=True, ex=300):
+        # 🔥 Redis Distributed Lock to prevent duplicate Gunicorn workers
+        if not redis_client.set("lock_sync_services", "locked", nx=True, ex=43000):
             time.sleep(60)
             continue
             
         try:
-            logging.info("🔄 Syncing services from Main API...")
-            main_res = api.get_services()
-            
-            if main_res and isinstance(main_res, list) and len(main_res) > 0: 
-                combined_res = main_res.copy()
-                s = get_settings()
-                ext_apis = s.get("external_apis", [])
-                
-                # 🔥 Muti-API Hybrid Injection Engine
-                for i, ext in enumerate(ext_apis):
-                    ext_url = ext.get('url')
-                    ext_key = ext.get('key')
-                    target_sids = [str(sid).strip() for sid in ext.get('services', []) if str(sid).strip()]
-                    
-                    if ext_url and ext_key and target_sids:
-                        logging.info(f"🔄 Syncing external API {i}...")
-                        ext_data = api.get_external_services(ext_url, ext_key)
-                        
-                        if ext_data and isinstance(ext_data, list):
-                            for srv in ext_data:
-                                original_id = str(srv.get('service'))
-                                if original_id in target_sids:
-                                    new_srv = srv.copy()
-                                    new_id = f"ext_{i}_{original_id}"
-                                    new_srv['service'] = new_id
-                                    new_srv['name'] = f"{new_srv.get('name', 'Unknown')} 🌟"
-                                    combined_res.append(new_srv)
-
-                redis_client.setex("services_cache", 43200, json.dumps(combined_res))
-                config_col.update_one({"_id": "api_cache"}, {"$set": {"data": combined_res, "time": time.time()}}, upsert=True)
-                logging.info(f"✅ Successfully synced {len(combined_res)} services (Hybrid Mode).")
-                
-                redis_client.delete("lock_sync_services_running")
-                time.sleep(43200)
-                continue
-            else:
-                logging.warning("⚠️ Main API returned empty data. Retrying in 5 minutes...")
-        except Exception as e: 
-            logging.error(f"❌ Service Sync Failed: {e}")
-            
-        redis_client.delete("lock_sync_services_running")
-        time.sleep(300)
+            res = api.get_services()
+            if res and isinstance(res, list): 
+                # Redis এ ১২ ঘণ্টার জন্য সেভ রাখা (43200 সেকেন্ড)
+                redis_client.setex("services_cache", 43200, json.dumps(res))
+                # ডাটাবেসে ব্যাকআপ হিসেবে রাখা
+                config_col.update_one({"_id": "api_cache"}, {"$set": {"data": res, "time": time.time()}}, upsert=True)
+        except Exception as e:
+            logging.error(f"Service Sync Error: {e}")
+            try: logs_col.insert_one({"error": str(traceback.format_exc()), "source": "Service Sync", "date": datetime.now()})
+            except: pass
+        time.sleep(43200) # ১২ ঘণ্টা ঘুমাবে 
 
 threading.Thread(target=auto_sync_services_cron, daemon=True).start()
 
 def exchange_rate_sync_cron():
     while True:
-        if not redis_client.set("lock_exchange_running", "locked", nx=True, ex=300):
+        # 🔥 Redis Lock
+        if not redis_client.set("lock_exchange_rate", "locked", nx=True, ex=43000):
             time.sleep(60)
             continue
+            
         try:
             rates = api.get_live_exchange_rates()
             if rates:
-                redis_client.set("currency_rates", json.dumps(rates))
-                logging.info(f"✅ Live Exchange Rates Synced: {rates}")
-                redis_client.delete("lock_exchange_running")
-                time.sleep(43200)
-                continue
-        except Exception as e: 
-            logging.error(f"❌ Exchange Rate Sync Failed: {e}")
-            
-        redis_client.delete("lock_exchange_running")
-        time.sleep(300)
+                global CURRENCY_RATES
+                CURRENCY_RATES["BDT"] = rates.get("BDT", 120)
+                CURRENCY_RATES["INR"] = rates.get("INR", 83)
+        except Exception as e:
+            logging.error(f"Exchange Rate Sync Error: {e}")
+            try: logs_col.insert_one({"error": str(traceback.format_exc()), "source": "Exchange Rate Sync", "date": datetime.now()})
+            except: pass
+        time.sleep(43200)
 
 threading.Thread(target=exchange_rate_sync_cron, daemon=True).start()
 
 def drip_campaign_cron():
     while True:
+        # 🔥 Redis Lock
         if not redis_client.set("lock_drip", "locked", nx=True, ex=43000):
             time.sleep(60)
             continue
+            
         now = datetime.now()
         try:
             users = list(users_col.find({"is_fake": {"$ne": True}}))
             for u in users:
-                try: 
+                try: # 🔥 Moved INSIDE the loop so one user error doesn't crash everything
                     time.sleep(0.05) 
                     joined = u.get("joined")
                     if not joined: continue
@@ -235,38 +202,39 @@ def drip_campaign_cron():
                         except: pass
                         users_col.update_one({"_id": uid}, {"$set": {"drip_15": True}})
                         clear_cached_user(uid)
-                except: pass 
-        except Exception as e: 
-            logging.error(f"Drip Campaign Error: {e}")
+                except Exception as e: 
+                    logging.error(f"Drip Campaign Inner Error: {e}")
+        except Exception as e:
+            logging.error(f"Drip Campaign Outer Error: {e}")
+            try: logs_col.insert_one({"error": str(traceback.format_exc()), "source": "Drip Campaign", "date": datetime.now()})
+            except: pass
         time.sleep(43200)
 
 threading.Thread(target=drip_campaign_cron, daemon=True).start()
 
 def auto_sync_orders_cron():
     while True:
+        # 🔥 Redis Lock 
         if not redis_client.set("lock_orders_sync", "locked", nx=True, ex=110):
             time.sleep(10)
             continue
             
         try:
+            # 🔥 Processes all active orders safely
             active_orders = orders_col.find({"status": {"$nin": ["completed", "canceled", "refunded", "fail", "partial"]}})
             for o in active_orders:
                 try:
                     time.sleep(0.1) 
                     if o.get("is_shadow"): continue
-                    
                     try: res = api.check_order_status(o['oid'])
                     except: continue
                     
                     if res and 'status' in res:
                         new_status = res['status'].lower()
                         old_status = str(o.get('status', '')).lower()
-                        remains = res.get('remains', 0)
-                        
-                        update_data = {"status": new_status, "remains": remains}
-                        orders_col.update_one({"_id": o["_id"]}, {"$set": update_data})
-                        
                         if new_status != old_status and new_status != 'error':
+                            orders_col.update_one({"_id": o["_id"]}, {"$set": {"status": new_status}})
+                            
                             st_emoji = "⏳"
                             if new_status == "completed": st_emoji = "✅"
                             elif new_status in ["canceled", "refunded", "fail"]: st_emoji = "❌"
@@ -274,8 +242,7 @@ def auto_sync_orders_cron():
                             elif new_status == "partial": st_emoji = "⚠️"
 
                             try:
-                                safe_link = escape_md(str(o.get('link', 'N/A'))[:25])
-                                msg = f"🔔 **ORDER UPDATE!**\n━━━━━━━━━━━━━━━━━━━━\n🆔 Order ID: `{o['oid']}`\n🔗 Link: {safe_link}...\n📦 Status: {st_emoji} **{new_status.upper()}**"
+                                msg = f"🔔 **ORDER UPDATE!**\n━━━━━━━━━━━━━━━━━━━━\n🆔 Order ID: `{o['oid']}`\n🔗 Link: {str(o.get('link', 'N/A'))[:25]}...\n📦 Status: {st_emoji} **{new_status.upper()}**"
                                 bot.send_message(o['uid'], msg, parse_mode="Markdown")
                             except: pass
                             
@@ -287,17 +254,22 @@ def auto_sync_orders_cron():
                                 clear_cached_user(o['uid'])
                                 try: bot.send_message(o['uid'], f"💰 **ORDER REFUNDED!**\nOrder `{o['oid']}` failed or canceled by server. `{cost_str}` has been added back to your balance.", parse_mode="Markdown")
                                 except: pass
-                except: pass
+                except Exception as e: 
+                    logging.error(f"Auto Sync Inner Error: {e}")
         except Exception as e: 
-            logging.error(f"Orders Sync Error: {e}")
+            logging.error(f"Auto Sync Outer Error: {e}")
+            try: logs_col.insert_one({"error": str(traceback.format_exc()), "source": "Order Sync", "date": datetime.now()})
+            except: pass
         time.sleep(120)
 
 threading.Thread(target=auto_sync_orders_cron, daemon=True).start()
 
+# 🔥 Get Services strictly from Redis Cache
 def get_cached_services():
     cached = redis_client.get("services_cache")
     if cached: 
         return json.loads(cached)
+        
     cache = config_col.find_one({"_id": "api_cache"})
     data = cache.get('data', []) if cache else []
     if data:
@@ -307,9 +279,10 @@ def get_cached_services():
 def calculate_price(base_rate, user_spent, user_custom_discount=0.0):
     s = get_settings()
     base = float(base_rate)
-    profit = float(s.get('profit_margin', 20.0))
-    profit_tiers = s.get('profit_tiers', [])
     
+    profit = float(s.get('profit_margin', 20.0))
+    
+    profit_tiers = s.get('profit_tiers', [])
     if profit_tiers:
         for tier in profit_tiers:
             try:
@@ -319,21 +292,17 @@ def calculate_price(base_rate, user_spent, user_custom_discount=0.0):
                 if t_min <= base <= t_max:
                     profit = t_margin
                     break
-            except: pass
+            except:
+                pass
 
     fs = float(s.get('flash_sale_discount', 0.0)) if s.get('flash_sale_active', False) else 0.0
     _, tier_discount = get_user_tier(user_spent)
     total_disc = float(tier_discount) + fs + float(user_custom_discount)
     
     rate_w_profit = base * (1 + (profit / 100))
-    final_rate = rate_w_profit * (1 - (total_disc / 100))
-    
-    # 🔥 ANTI-FREE ORDER BUG FIX: 
-    # Ensures the price never drops to 0 due to excessive discounts
-    return max(final_rate, 0.001)
+    return rate_w_profit * (1 - (total_disc / 100))
 
 def clean_service_name(raw_name):
-    if not raw_name: return "Premium Service ⚡"
     try:
         n = str(raw_name)
         emojis = ""
@@ -343,17 +312,33 @@ def clean_service_name(raw_name):
         elif "refill" in n_lower: emojis += "♻️"
         if "stable" in n_lower: emojis += "🛡️"
         if "real" in n_lower: emojis += "👤"
+        
         n = re.sub(r'(?i)speed\s*[:\-]?\s*', '', n)
         n = re.sub(r'📍?\s*\d+(-\d+)?[KkMm]?/[Dd]\s*', '', n)
-        words = ["Telegram", "TG", "Instagram", "IG", "Facebook", "FB", "YouTube", "YT", "TikTok", "Twitter", "1xpanel", "Instant", "fast", "NoRefill", "No refill", "Refill", "Stable", "price", "Non drop", "real"]
-        for w in words: n = re.sub(r'(?i)\b' + re.escape(w) + r'\b', '', n)
+        
+        # Long names to Short Form convert
+        n = re.sub(r'(?i)\bTelegram\b', 'TG', n)
+        n = re.sub(r'(?i)\bInstagram\b|\bInsta\b', 'IG', n)
+        n = re.sub(r'(?i)\bFacebook\b', 'FB', n)
+        n = re.sub(r'(?i)\bYouTube\b', 'YT', n)
+        n = re.sub(r'(?i)\bTwitter\b', 'X', n)
+        
+        # Remove brackets from shortforms like [TG] -> TG
+        n = re.sub(r'\[(TG|IG|FB|YT|X|TikTok)\]', r'\1', n, flags=re.IGNORECASE)
+        n = re.sub(r'\((TG|IG|FB|YT|X|TikTok)\)', r'\1', n, flags=re.IGNORECASE)
+        
+        # Remove unnecessary words
+        words = ["1xpanel", "Instant", "fast", "NoRefill", "No refill", "Refill", "Stable", "price", "Non drop", "real"]
+        
+        for w in words: 
+            n = re.sub(r'(?i)\b' + re.escape(w) + r'\b', '', n)
+        
         n = re.sub(r'[-|:._/]+', ' ', n)
         n = " ".join(n.split()).strip()
         return f"{n[:45]} {emojis}".strip() if n else f"Premium Service {emojis}"
     except: return str(raw_name)[:50]
 
 def identify_platform(cat_name):
-    if not cat_name: return "🌐 Other Services"
     cat = str(cat_name).lower()
     if 'instagram' in cat or 'ig' in cat: return "📸 Instagram"
     if 'facebook' in cat or 'fb' in cat: return "📘 Facebook"
@@ -362,34 +347,6 @@ def identify_platform(cat_name):
     if 'tiktok' in cat: return "🎵 TikTok"
     if 'twitter' in cat or ' x ' in cat: return "🐦 Twitter"
     return "🌐 Other Services"
-
-def detect_platform_from_link(link):
-    if not link: return None
-    link = str(link).lower()
-    if 'instagram.com' in link or 'ig.me' in link: return "📸 Instagram"
-    if 'facebook.com' in link or 'fb.com' in link or 'fb.watch' in link: return "📘 Facebook"
-    if 'youtube.com' in link or 'youtu.be' in link: return "▶️ YouTube"
-    if 't.me' in link or 'telegram.me' in link or 'telegram.dog' in link: return "✈️ Telegram"
-    if 'tiktok.com' in link: return "🎵 TikTok"
-    if 'twitter.com' in link or 'x.com' in link: return "🐦 Twitter"
-    return None
-
-def generate_progress_bar(remains, quantity):
-    try:
-        if remains is None or remains == "": remains = quantity
-        remains = int(remains)
-        quantity = int(quantity)
-        
-        if remains <= 0: return "[██████████] 100%", quantity
-        if remains >= quantity: return "[░░░░░░░░░░] 0%", 0
-        
-        delivered = quantity - remains
-        percent = int((delivered / quantity) * 100)
-        filled = int(percent / 10)
-        bar = "█" * filled + "░" * (10 - filled)
-        return f"[{bar}] {percent}%", delivered
-    except:
-        return "[░░░░░░░░░░] 0%", 0
 
 def get_user_tier(spent):
     if spent >= 50: return "🥇 Gold VIP", 5 
@@ -400,10 +357,9 @@ def main_menu():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.add("🚀 New Order", "⭐ Favorites")
     markup.add("🔍 Smart Search", "📦 Orders")
-    markup.add("💰 Deposit", "📝 Bulk Order") 
-    markup.add("👤 Profile", "🤝 Affiliate")
-    markup.add("🎟️ Voucher", "💬 Live Chat")
-    markup.add("🏆 Leaderboard")
+    markup.add("💰 Deposit", "🤝 Affiliate")
+    markup.add("👤 Profile", "🎟️ Voucher")
+    markup.add("🏆 Leaderboard", "💬 Live Chat")
     return markup
 
 def check_sub(chat_id):
@@ -417,7 +373,7 @@ def check_sub(chat_id):
     return True
 
 # ==========================================
-# 3. AUTO CRYPTO PAYMENT GATEWAYS
+# 3. AUTO CRYPTO PAYMENT GATEWAYS (NEW)
 # ==========================================
 def create_cryptomus_payment(amount, order_id, merchant, api_key):
     url = "https://api.cryptomus.com/v1/payment"
@@ -447,8 +403,8 @@ def create_coinpayments_payment(amount, custom_uid, pub_key, priv_key):
         "cmd": "create_transaction",
         "amount": amount, 
         "currency1": "USD", 
-        "currency2": "USDT.TRC20",
-        "buyer_email": "user@nexusbot.com",
+        "currency2": "USDT.TRC20", # Default Crypto
+        "buyer_email": "user@nexusbot.com", # API Requirement
         "custom": str(custom_uid),
         "key": pub_key, 
         "format": "json"
