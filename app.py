@@ -27,13 +27,12 @@ import main_router
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'super_secret_nexus_titan_key_1010')
 
-# 🔥 ADMIN PANEL SECURITY (Cookie Theft Protection)
+# 🔥 ADMIN PANEL SECURITY
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-# app.config['SESSION_COOKIE_SECURE'] = True  # Render-এ HTTPS থাকলে এটি Enable করা ভালো
 
 # ==========================================
-# 1. WEBHOOK FAST ENGINE (Memory Leak Fixed)
+# 1. WEBHOOK FAST ENGINE
 # ==========================================
 @app.route(f"/{BOT_TOKEN}", methods=['POST'])
 def webhook():
@@ -78,7 +77,6 @@ def auto_fake_proof_cron():
             if not proof_channel:
                 continue
 
-            # 🔥 Redis Lock: মাল্টিপল Gunicorn Worker থাকলেও শুধু একজন পোস্ট করবে
             if not redis_client.set("fake_proof_lock", "locked", nx=True, ex=40):
                 continue
 
@@ -113,7 +111,7 @@ def auto_fake_proof_cron():
                 cached_services = utils.get_cached_services()
                 if cached_services:
                     srv = random.choice(cached_services)
-                    srv_name = utils.clean_service_name(srv['name'])
+                    srv_name = utils.clean_service_name(srv.get('name', 'Service'))
                     base_rate = float(srv.get('rate', 0.5))
                     cost_usd = (base_rate / 1000) * qty * 1.2
                 else:
@@ -137,7 +135,7 @@ def auto_fake_proof_cron():
                 
                 fake_oid = random.randint(350000, 999999)
                 
-                platform = utils.identify_platform(srv.get('category', ''))
+                platform = utils.identify_platform(srv.get('category', 'Other'))
                 if "Instagram" in platform: base_link = "https://instagram.com/p/"
                 elif "Facebook" in platform: base_link = "https://facebook.com/"
                 elif "YouTube" in platform: base_link = "https://youtube.com/watch?v="
@@ -157,7 +155,7 @@ def auto_fake_proof_cron():
 threading.Thread(target=auto_fake_proof_cron, daemon=True).start()
 
 # ==========================================
-# 3. ADMIN WEB PANEL ROUTES (GOD MODE)
+# 3. ADMIN WEB PANEL ROUTES
 # ==========================================
 def get_dashboard_stats():
     cached = redis_client.get("settings_cache")
@@ -184,7 +182,7 @@ def index():
     
     services = utils.get_cached_services()
     
-    # 🔥 FIX: Handle NoneType categories from API
+    # Handle NoneType categories safely
     unique_categories = sorted(list(set(str(s.get('category', 'Other')) for s in services if s.get('category')))) if services else []
     
     saved_orders_doc = config_col.find_one({"_id": "service_orders"}) or {}
@@ -199,7 +197,6 @@ def index():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        # ADMIN_PASSWORD environment variable থেকে নেওয়া হয়েছে
         if request.form.get('password') == ADMIN_PASSWORD:
             session['admin'] = True
             return redirect(url_for('index'))
@@ -244,16 +241,6 @@ def save_best_choice():
     utils.update_settings_cache("best_choice_sids", sids)
     return redirect(url_for('index'))
 
-@app.route('/save_service_order', methods=['POST'])
-def save_service_order():
-    if 'admin' not in session: return jsonify({"status": "error", "msg": "Unauthorized"})
-    data = request.json
-    cat = data.get('category')
-    order = data.get('order')
-    if cat and order:
-        config_col.update_one({"_id": "service_orders"}, {"$set": {f"orders.{cat}": order}}, upsert=True)
-    return jsonify({"status": "success"})
-
 @app.route('/settings', methods=['POST'])
 def save_settings():
     if 'admin' not in session: return redirect(url_for('login'))
@@ -261,7 +248,6 @@ def save_settings():
     s = {
         "profit_margin": float(request.form.get('profit_margin', 20.0)),
         "channels": [c.strip() for c in request.form.get('channels', '').split(',') if c.strip()],
-        "log_channel": request.form.get('log_channel', ''),
         "maintenance": 'maintenance' in request.form,
         "maintenance_msg": request.form.get('maintenance_msg', 'Bot is upgrading.'),
         "proof_channel": request.form.get('proof_channel', ''),
@@ -275,13 +261,8 @@ def save_settings():
         "night_mode": 'night_mode' in request.form,
         "flash_sale_active": 'flash_sale_active' in request.form,
         "flash_sale_discount": float(request.form.get('flash_sale_discount', 0.0)),
-        "welcome_bonus_active": 'welcome_bonus_active' in request.form,
-        "welcome_bonus": float(request.form.get('welcome_bonus', 0.0)),
         "ref_bonus": float(request.form.get('ref_bonus', 0.05)),
         "dep_commission": float(request.form.get('dep_commission', 5.0)),
-        "reward_top1": float(request.form.get('reward_top1', 10.0)),
-        "reward_top2": float(request.form.get('reward_top2', 5.0)),
-        "reward_top3": float(request.form.get('reward_top3', 2.0)),
         
         "cryptomus_merchant": request.form.get('cryptomus_merchant', '').strip(),
         "cryptomus_api": request.form.get('cryptomus_api', '').strip(),
@@ -290,33 +271,40 @@ def save_settings():
         "coinpayments_pub": request.form.get('coinpayments_pub', '').strip(),
         "coinpayments_priv": request.form.get('coinpayments_priv', '').strip(),
         "coinpayments_active": 'coinpayments_active' in request.form,
-        
-        "best_choice_sids": config_col.find_one({"_id": "settings"}).get('best_choice_sids', []) if config_col.find_one({"_id": "settings"}) else []
     }
     
+    # Existing Arrays
+    db_settings = config_col.find_one({"_id": "settings"}) or {}
+    s["best_choice_sids"] = db_settings.get('best_choice_sids', [])
+    s["profit_tiers"] = db_settings.get('profit_tiers', [])
+    
+    # Save Local Payments
     payments = []
     pay_names = request.form.getlist('pay_name[]')
     pay_rates = request.form.getlist('pay_rate[]')
     pay_addrs = request.form.getlist('pay_address[]')
-    
     for i in range(len(pay_names)):
         if pay_names[i].strip():
             payments.append({"name": pay_names[i].strip(), "rate": float(pay_rates[i]), "address": pay_addrs[i].strip()})
     s["payments"] = payments
 
-    profit_tiers = []
-    tier_mins = request.form.getlist('tier_min[]')
-    tier_maxs = request.form.getlist('tier_max[]')
-    tier_margins = request.form.getlist('tier_margin[]')
-    
-    for i in range(len(tier_mins)):
-        if tier_mins[i].strip() and tier_maxs[i].strip() and tier_margins[i].strip():
-            profit_tiers.append({
-                "min": float(tier_mins[i]),
-                "max": float(tier_maxs[i]),
-                "margin": float(tier_margins[i])
+    # 🔥 Save External Multi-APIs
+    external_apis = []
+    ext_urls = request.form.getlist('ext_api_url[]')
+    ext_keys = request.form.getlist('ext_api_key[]')
+    ext_services = request.form.getlist('ext_api_services[]')
+    for i in range(len(ext_urls)):
+        url = ext_urls[i].strip()
+        key = ext_keys[i].strip()
+        srvs = ext_services[i].strip()
+        if url and key and srvs:
+            srv_list = [str(x).strip() for x in srvs.split(',') if str(x).strip()]
+            external_apis.append({
+                "url": url,
+                "key": key,
+                "services": srv_list
             })
-    s["profit_tiers"] = profit_tiers
+    s["external_apis"] = external_apis
 
     config_col.update_one({"_id": "settings"}, {"$set": s}, upsert=True)
     redis_client.setex("settings_cache", 30, json.dumps(s))
@@ -588,7 +576,6 @@ def add_transaction():
 # ==========================================
 @app.route('/cryptomus_webhook', methods=['POST'])
 def cryptomus_webhook():
-    """Cryptomus Auto-Payment IPN Listener"""
     try:
         data = request.json
         if not data: return "No data", 400
@@ -628,7 +615,6 @@ def cryptomus_webhook():
 
 @app.route('/coinpayments_ipn', methods=['POST'])
 def coinpayments_ipn():
-    """CoinPayments Auto-Payment IPN Listener"""
     try:
         s = config_col.find_one({"_id": "settings"}) or {}
         ipn_secret = s.get('coinpayments_priv', '')
@@ -663,6 +649,5 @@ def coinpayments_ipn():
         logging.error(f"CoinPayments IPN Error: {e}")
         return str(e), 500
 
-# Gunicorn-এর ক্ষেত্রে app.run() ফায়ার হবে না, এটি শুধু লোকাল টেস্টিংয়ের জন্য
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
