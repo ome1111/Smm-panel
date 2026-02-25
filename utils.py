@@ -16,7 +16,7 @@ import logging
 from datetime import datetime, timedelta
 from bson import json_util
 
-# ASCII Encoding Fix
+# ASCII Encoding Fix for Server Logs
 if sys.stdout.encoding != 'utf-8':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
@@ -130,7 +130,6 @@ def check_maintenance(chat_id):
 # ==========================================
 # 2. PRO-LEVEL CACHE, SYNC & HYBRID WORKERS
 # ==========================================
-
 def auto_sync_services_cron():
     """Hybrid Sync: 1xpanel + Custom External APIs"""
     while True:
@@ -164,7 +163,6 @@ def auto_sync_services_cron():
                                     new_srv = srv.copy()
                                     new_id = f"ext_{i}_{original_id}"
                                     new_srv['service'] = new_id
-                                    # Optional: Add a hidden tag to name for admin identification
                                     new_srv['name'] = f"{new_srv.get('name', 'Unknown')} 🌟"
                                     combined_res.append(new_srv)
 
@@ -257,7 +255,6 @@ def auto_sync_orders_cron():
                     time.sleep(0.1) 
                     if o.get("is_shadow"): continue
                     
-                    # 🔥 api.py will automatically handle "ext_" orders
                     try: res = api.check_order_status(o['oid'])
                     except: continue
                     
@@ -312,6 +309,7 @@ def calculate_price(base_rate, user_spent, user_custom_discount=0.0):
     base = float(base_rate)
     profit = float(s.get('profit_margin', 20.0))
     profit_tiers = s.get('profit_tiers', [])
+    
     if profit_tiers:
         for tier in profit_tiers:
             try:
@@ -326,8 +324,13 @@ def calculate_price(base_rate, user_spent, user_custom_discount=0.0):
     fs = float(s.get('flash_sale_discount', 0.0)) if s.get('flash_sale_active', False) else 0.0
     _, tier_discount = get_user_tier(user_spent)
     total_disc = float(tier_discount) + fs + float(user_custom_discount)
+    
     rate_w_profit = base * (1 + (profit / 100))
-    return rate_w_profit * (1 - (total_disc / 100))
+    final_rate = rate_w_profit * (1 - (total_disc / 100))
+    
+    # 🔥 ANTI-FREE ORDER BUG FIX: 
+    # Ensures the price never drops to 0 due to excessive discounts
+    return max(final_rate, 0.001)
 
 def clean_service_name(raw_name):
     if not raw_name: return "Premium Service ⚡"
