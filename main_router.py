@@ -14,22 +14,46 @@ import api
 from utils import *
 
 # ==========================================
-# 🔥 REDIS SESSION MANAGER (Super Fast)
+# 🔥 ANTI-CRASH EDIT ENGINE
+# ==========================================
+def safe_edit_message(text, chat_id, message_id, reply_markup=None, parse_mode="Markdown", disable_web_page_preview=True):
+    """একই মেসেজ এডিট করার Error 400 ঠেকাতে সেফ ফাংশন"""
+    try:
+        bot.edit_message_text(
+            text=text, 
+            chat_id=chat_id, 
+            message_id=message_id, 
+            reply_markup=reply_markup, 
+            parse_mode=parse_mode, 
+            disable_web_page_preview=disable_web_page_preview
+        )
+    except Exception as e:
+        if "message is not modified" not in str(e).lower():
+            logging.error(f"Edit Message Error: {e}")
+
+# ==========================================
+# 🔥 REDIS SESSION MANAGER
 # ==========================================
 def get_user_session(uid):
-    """ইউজারের বর্তমান সেশন ডেটা Redis থেকে আনা"""
-    data = redis_client.get(f"session_{uid}")
-    return json.loads(data) if data else {}
+    try:
+        data = redis_client.get(f"session_{uid}")
+        return json.loads(data) if data else {}
+    except:
+        return {}
 
 def update_user_session(uid, updates):
-    """ইউজারের সেশন আপডেট করা (১ ঘণ্টার জন্য)"""
-    session = get_user_session(uid)
-    session.update(updates)
-    redis_client.setex(f"session_{uid}", 3600, json.dumps(session)) # 1 Hour expiry
+    try:
+        session = get_user_session(uid)
+        session.update(updates)
+        redis_client.setex(f"session_{uid}", 3600, json.dumps(session))
+    except Exception as e:
+        logging.error(f"Redis Session Error: {e}")
 
 def clear_user_session(uid):
-    """কাজ শেষ হলে সেশন মুছে ফেলা"""
-    redis_client.delete(f"session_{uid}")
+    try:
+        redis_client.delete(f"session_{uid}")
+    except:
+        pass
 
 # ==========================================
 # 3. FORCE SUB, REFERRAL & START LOGIC
@@ -159,7 +183,7 @@ def show_best_choices(call):
     if nav: markup.row(*nav)
     
     markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="NEW_ORDER_BACK"))
-    bot.edit_message_text("🌟 **ADMIN BEST CHOICE** 🌟\nHandpicked premium services for you:", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+    safe_edit_message("🌟 **ADMIN BEST CHOICE** 🌟\nHandpicked premium services for you:", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data == "NEW_ORDER_BACK")
 def back_to_main(call):
@@ -169,6 +193,7 @@ def back_to_main(call):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("PLAT|"))
 def show_cats(call):
+    bot.answer_callback_query(call.id) # 🔥 UX FIX
     _, platform, page = call.data.split("|")
     page = int(page)
     services = get_cached_services()
@@ -190,15 +215,16 @@ def show_cats(call):
     if nav: markup.row(*nav)
     
     safe_plat = escape_md(platform)
-    bot.edit_message_text(f"📍 **{safe_plat}**\n━━━━━━━━━━━━━━━━━━━━\n📂 **Choose Category:**", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+    safe_edit_message(f"📍 **{safe_plat}**\n━━━━━━━━━━━━━━━━━━━━\n📂 **Choose Category:**", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("CAT|"))
 def list_servs(call):
+    bot.answer_callback_query(call.id) # 🔥 UX FIX
     _, cat_idx, page = call.data.split("|")
     services = get_cached_services()
     all_cats = sorted(list(set(str(s.get('category', 'Other')) for s in services)))
     
-    if int(cat_idx) >= len(all_cats): return bot.answer_callback_query(call.id, "❌ Error loading category.")
+    if int(cat_idx) >= len(all_cats): return bot.send_message(call.message.chat.id, "❌ Error loading category.")
     cat_name = all_cats[int(cat_idx)]
     
     hidden = get_settings().get("hidden_services", [])
@@ -220,15 +246,19 @@ def list_servs(call):
     
     safe_cat = escape_md(cat_name[:30])
     msg_text = f"📦 **{safe_cat}**\n━━━━━━━━━━━━━━━━━━━━\nSelect Service:"
-    try: bot.edit_message_text(msg_text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
-    except: bot.send_message(call.message.chat.id, msg_text, reply_markup=markup, parse_mode="Markdown")
+    safe_edit_message(msg_text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("INFO|"))
 def info_card(call):
-    sid = call.data.split("|")[1]
+    bot.answer_callback_query(call.id) # 🔥 UX FIX
+    parts = call.data.split("|")
+    # Handling tags like ext_0_10 correctly
+    sid = "|".join(parts[1:]) 
+    
     services = get_cached_services()
     s = next((x for x in services if str(x.get('service', '0')) == str(sid)), None)
-    if not s: return bot.send_message(call.message.chat.id, "❌ Service unavailable.")
+    if not s: 
+        return bot.send_message(call.message.chat.id, "❌ Service unavailable at the moment. Try again.")
     
     user = get_cached_user(call.message.chat.id)
     curr = user.get("currency", "BDT")
@@ -251,18 +281,24 @@ def info_card(call):
     try: 
         all_cats = sorted(list(set(str(x.get('category', 'Other')) for x in services)))
         cat_idx = all_cats.index(str(s.get('category', 'Other')))
-    except: cat_idx = 0
-    
-    markup.add(types.InlineKeyboardButton("🔙 Back to Category", callback_data=f"CAT|{cat_idx}|0"))
+        markup.add(types.InlineKeyboardButton("🔙 Back to Category", callback_data=f"CAT|{cat_idx}|0"))
+    except: 
+        pass
     
     if call.message.text and ("YOUR ORDERS" in call.message.text or "Found:" in call.message.text or "Top Results:" in call.message.text): 
-        bot.send_message(call.message.chat.id, txt, reply_markup=markup, parse_mode="Markdown")
+        try: bot.send_message(call.message.chat.id, txt, reply_markup=markup, parse_mode="Markdown")
+        except: pass
     else: 
-        bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+        safe_edit_message(txt, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("TYPE|"))
 def order_type_router(call):
-    _, sid, o_type = call.data.split("|")
+    bot.answer_callback_query(call.id) # 🔥 UX FIX
+    parts = call.data.split("|")
+    # Handling tags correctly if sid is ext_0_10 -> parts length > 3
+    sid = "|".join(parts[1:-1]) 
+    o_type = parts[-1]
+    
     session = get_user_session(call.message.chat.id)
     magic_link = session.get("temp_link", "")
     
@@ -284,13 +320,15 @@ def order_type_router(call):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("ORD|"))
 def start_ord(call):
-    sid = call.data.split("|")[1]
+    bot.answer_callback_query(call.id)
+    sid = "|".join(call.data.split("|")[1:])
     update_user_session(call.message.chat.id, {"step": "awaiting_link", "temp_sid": sid, "order_type": "normal"})
     bot.send_message(call.message.chat.id, "🔗 **Paste the Target Link:**\n_(Example: https://t.me/yourchannel)_", parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("REORDER|"))
 def reorder_callback(call):
-    sid = call.data.split("|")[1]
+    bot.answer_callback_query(call.id)
+    sid = "|".join(call.data.split("|")[1:])
     update_user_session(call.message.chat.id, {"step": "awaiting_link", "temp_sid": sid, "order_type": "normal"})
     bot.send_message(call.message.chat.id, "🔗 **Paste the Target Link for Reorder:**\n_(Example: https://t.me/yourchannel)_", parse_mode="Markdown")
 
@@ -362,11 +400,12 @@ def process_instant_refill(call):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("MYORD|"))
 def my_orders_pagination(call):
+    bot.answer_callback_query(call.id)
     parts = call.data.split("|")
     page = int(parts[1])
     filter_type = parts[2] if len(parts) > 2 else "all"
     txt, markup = fetch_orders_page(call.message.chat.id, page, filter_type)
-    bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
+    safe_edit_message(txt, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
 
 @bot.callback_query_handler(func=lambda c: c.data == "REDEEM_POINTS")
 def redeem_points(call):
@@ -379,12 +418,13 @@ def redeem_points(call):
     users_col.update_one({"_id": call.message.chat.id}, {"$inc": {"balance": reward}, "$set": {"points": 0}})
     clear_cached_user(call.message.chat.id)
     bot.answer_callback_query(call.id, f"✅ Redeemed {pts} Points for ${reward:.2f}!", show_alert=True)
-    bot.delete_message(call.message.chat.id, call.message.message_id)
+    try: bot.delete_message(call.message.chat.id, call.message.message_id)
+    except: pass
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("FAV_ADD|"))
 def add_to_favorites(call):
     bot.answer_callback_query(call.id, "⭐ Added to Favorites!", show_alert=True)
-    sid = call.data.split("|")[1]
+    sid = "|".join(call.data.split("|")[1:])
     users_col.update_one({"_id": call.message.chat.id}, {"$addToSet": {"favorites": sid}})
     clear_cached_user(call.message.chat.id)
 
@@ -394,11 +434,11 @@ def set_currency_callback(call):
     users_col.update_one({"_id": call.message.chat.id}, {"$set": {"currency": curr}})
     clear_cached_user(call.message.chat.id)
     bot.answer_callback_query(call.id, f"✅ Currency updated to {curr}")
-    bot.delete_message(call.message.chat.id, call.message.message_id)
+    try: bot.delete_message(call.message.chat.id, call.message.message_id)
+    except: pass
     call.message.text = "👤 Profile"
     universal_buttons(call.message)
 
-# 🔥 FIX: Show Exact Amount without Decimal for Local Gateways
 @bot.callback_query_handler(func=lambda c: c.data.startswith("PAY|"))
 def pay_details(call):
     bot.answer_callback_query(call.id)
@@ -429,7 +469,7 @@ def pay_details(call):
     txt = f"🏦 **{safe_method} Payment Details**\n━━━━━━━━━━━━━━━━━━━━\n💵 **Amount to Send:** `{display_amt}`\n📍 **Account / Address:** `{safe_address}`\n━━━━━━━━━━━━━━━━━━━━\n⚠️ Send the exact amount to the address above, then reply to this message with your **TrxID / Transaction ID**:"
     
     update_user_session(uid, {"step": "awaiting_trx", "temp_dep_amt": amt_usd, "temp_dep_method": method})
-    bot.edit_message_text(txt, uid, call.message.message_id, parse_mode="Markdown")
+    safe_edit_message(txt, uid, call.message.message_id, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("PAY_CRYPTO|"))
 def pay_crypto_details(call):
@@ -451,9 +491,9 @@ def pay_crypto_details(call):
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton(f"💳 PAY ${amt_usd:.2f} NOW", url=pay_url))
         txt = f"🔗 **{escape_md(method)} Secure Checkout**\n━━━━━━━━━━━━━━━━━━━━\n💵 **Amount to Send:** `${amt_usd:.2f}`\n\nClick the button below to complete your transaction on the secure gateway. Your balance will be added automatically once confirmed by the network!"
-        bot.edit_message_text(txt, uid, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+        safe_edit_message(txt, uid, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
     else:
-        bot.edit_message_text(f"❌ Failed to generate {method} invoice. Please check API keys or contact Admin.", uid, call.message.message_id)
+        safe_edit_message(f"❌ Failed to generate {method} invoice. Please check API keys or contact Admin.", uid, call.message.message_id)
 
 def universal_buttons(message):
     uid = message.chat.id
@@ -586,7 +626,6 @@ def universal_router(message):
     session_data = get_user_session(uid)
     step = session_data.get("step", "")
 
-    # 🔥 SMART AUTO-ROUTING (MAGIC LINK)
     if step == "" and re.match(r'^(https?://|t\.me/|@|www\.)[^\s]+$', text, re.IGNORECASE):
         platform = detect_platform_from_link(text)
         if platform:
@@ -602,7 +641,6 @@ def universal_router(message):
                     markup.add(types.InlineKeyboardButton(f"📁 {cat[:35]}", callback_data=f"CAT|{idx}|0"))
                 return bot.send_message(uid, f"✨ **Magic Link Detected!**\n📍 Platform: **{escape_md(platform)}**\n📂 Choose Category for your link:", reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
 
-    # --- AUTO PAYMENT CLAIM LOGIC ---
     if step == "awaiting_trx":
         method_name = str(session_data.get("temp_dep_method", "Manual")).lower()
         is_local_auto = any(x in method_name for x in ['bkash', 'nagad', 'rocket', 'upay', 'bdt'])
@@ -658,7 +696,6 @@ def universal_router(message):
             except: pass
             return
 
-    # 🔥 FIX: Show Exact Amount without Decimal for Local Gateways (In selection menu)
     if step == "awaiting_deposit_amt":
         try:
             amt = float(text)
@@ -766,7 +803,6 @@ def universal_router(message):
             bot.send_message(uid, f"💧 **DRIP-FEED PREVIEW**\n━━━━━━━━━━━━━━━━━━━━\n🆔 Service: `{sid}`\n🔗 Link: {safe_link}\n📦 Total Qty: {total_qty} ({qty} x {runs} runs)\n⏱️ Interval: {interval} mins\n💰 Total Cost: `{fmt_curr(cost, curr)}`\n━━━━━━━━━━━━━━━━━━━━\nConfirm?", reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
         except ValueError: bot.send_message(uid, "⚠️ Enter numbers only.")
 
-    # --- SUBSCRIPTION FLOW ---
     elif step == "awaiting_sub_user":
         update_user_session(uid, {"step": "awaiting_sub_posts", "temp_user": text})
         bot.send_message(uid, "📸 **How many future posts?** (e.g. 10):", parse_mode="Markdown")
@@ -804,7 +840,6 @@ def universal_router(message):
             bot.send_message(uid, f"🔄 **SUBSCRIPTION PREVIEW**\n━━━━━━━━━━━━━━━━━━━━\n🆔 Service: `{sid}`\n👤 Target: {safe_user}\n📸 Posts: {posts}\n📦 Qty/Post: {qty}\n⏱️ Delay: {delay} mins\n💰 Estimated Total: `{fmt_curr(cost, curr)}`\n━━━━━━━━━━━━━━━━━━━━\nConfirm?", reply_markup=markup, parse_mode="Markdown")
         except ValueError: bot.send_message(uid, "⚠️ Enter numbers only.")
 
-    # 🔥 BULK ORDER FLOW
     elif step == "awaiting_bulk_order":
         lines = text.strip().split('\n')
         bulk_draft = []
@@ -881,22 +916,22 @@ def universal_router(message):
             markup.add(types.InlineKeyboardButton(f"⚡ ID:{s.get('service', '0')} | {safe_name}", callback_data=f"INFO|{s.get('service', '0')}"))
         return bot.send_message(uid, f"🔍 **Top Results:**", reply_markup=markup, parse_mode="Markdown")
 
-# 🔥 MULTI-THREADING WITH EXCEPTION HANDLING
 @bot.callback_query_handler(func=lambda c: c.data in ["PLACE_ORD", "PLACE_BULK"])
 def final_ord(call):
+    bot.answer_callback_query(call.id) # 🔥 UX FIX
     uid = call.message.chat.id
     u = get_cached_user(uid)
     session_data = get_user_session(uid)
     
     if call.data == "PLACE_BULK":
         drafts = session_data.get('draft_bulk')
-        if not drafts: return bot.answer_callback_query(call.id, "❌ Session expired.")
-        bot.edit_message_text("⏳ **Processing Bulk Orders in the background... Please wait.**", uid, call.message.message_id, parse_mode="Markdown")
+        if not drafts: return bot.send_message(uid, "❌ Session expired. Please try again.")
+        safe_edit_message("⏳ **Processing Bulk Orders in the background... Please wait.**", uid, call.message.message_id, parse_mode="Markdown")
         threading.Thread(target=process_bulk_background, args=(uid, u, drafts, call.message.message_id)).start()
     else:
         draft = session_data.get('draft')
-        if not draft: return bot.answer_callback_query(call.id, "❌ Session expired.")
-        bot.edit_message_text("⏳ **Processing your order securely in the background... Please wait.**", uid, call.message.message_id, parse_mode="Markdown")
+        if not draft: return bot.send_message(uid, "❌ Session expired. Please try again.")
+        safe_edit_message("⏳ **Processing your order securely in the background... Please wait.**", uid, call.message.message_id, parse_mode="Markdown")
         threading.Thread(target=process_order_background, args=(uid, u, draft, call.message.message_id)).start()
 
 def process_bulk_background(uid, u, drafts, message_id):
@@ -919,9 +954,9 @@ def process_bulk_background(uid, u, drafts, message_id):
         users_col.update_one({"_id": uid}, {"$inc": {"balance": -total_cost_deducted, "spent": total_cost_deducted, "points": points_earned}})
         clear_cached_user(uid)
         clear_user_session(uid)
-        bot.edit_message_text(f"✅ **BULK PROCESS COMPLETE!**\n━━━━━━━━━━━━━━━━━━━━\n📦 Successful: {success_count} / {len(drafts)}\n💰 Cost Deducted: `${total_cost_deducted:.3f}`\n🎁 Points Earned: `+{points_earned}`", uid, message_id, parse_mode="Markdown")
+        safe_edit_message(f"✅ **BULK PROCESS COMPLETE!**\n━━━━━━━━━━━━━━━━━━━━\n📦 Successful: {success_count} / {len(drafts)}\n💰 Cost Deducted: `${total_cost_deducted:.3f}`\n🎁 Points Earned: `+{points_earned}`", uid, message_id, parse_mode="Markdown")
     except Exception as e:
-        logging.error(f"Bulk Process Background Error: {e}")
+        logging.error(f"Bulk Process Error: {e}")
 
 def process_order_background(uid, u, draft, message_id):
     try:
@@ -940,7 +975,7 @@ def process_order_background(uid, u, draft, message_id):
             else: insert_data.update({"link": draft.get('link'), "qty": draft.get('total_qty', draft.get('qty'))})
             
             orders_col.insert_one(insert_data)
-            bot.edit_message_text(f"✅ **Order Placed Successfully!**\n🆔 Order ID: `{fake_oid}`\n🎁 Points Earned: `+{points_earned}`", uid, message_id, parse_mode="Markdown")
+            safe_edit_message(f"✅ **Order Placed Successfully!**\n🆔 Order ID: `{fake_oid}`\n🎁 Points Earned: `+{points_earned}`", uid, message_id, parse_mode="Markdown")
             
             proof_ch = s.get('proof_channel', '')
             if proof_ch:
@@ -967,7 +1002,7 @@ def process_order_background(uid, u, draft, message_id):
             else: insert_data.update({"link": draft['link'], "qty": draft.get('total_qty', draft['qty'])})
             
             orders_col.insert_one(insert_data)
-            bot.edit_message_text(f"✅ **Order Placed Successfully!**\n🆔 Order ID: `{res['order']}`\n🎁 Points Earned: `+{points_earned}`", uid, message_id, parse_mode="Markdown")
+            safe_edit_message(f"✅ **Order Placed Successfully!**\n🆔 Order ID: `{res['order']}`\n🎁 Points Earned: `+{points_earned}`", uid, message_id, parse_mode="Markdown")
             
             proof_ch = s.get('proof_channel', '')
             if proof_ch:
@@ -977,14 +1012,14 @@ def process_order_background(uid, u, draft, message_id):
                 except: pass
         else:
             err_msg = escape_md(res.get('error', 'API Timeout') if res else 'API Timeout')
-            bot.edit_message_text(f"❌ **API REJECTED THE ORDER!**\n\n**Reason:** `{err_msg}`\n\nPlease check your link or try another service.", uid, message_id, parse_mode="Markdown")
+            safe_edit_message(f"❌ **API REJECTED THE ORDER!**\n\n**Reason:** `{err_msg}`\n\nPlease check your link or try another service.", uid, message_id, parse_mode="Markdown")
             clear_user_session(uid)
     except Exception as e:
-        logging.error(f"Process Order Background Error: {e}")
-        try: bot.edit_message_text("❌ **Internal Server Error!** Could not process order. Try again later.", uid, message_id, parse_mode="Markdown")
-        except: pass
+        logging.error(f"Order Background Error: {e}")
+        safe_edit_message("❌ **Internal Server Error!** Could not process order. Try again later.", uid, message_id, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data == "CANCEL_ORD")
 def cancel_ord(call):
+    bot.answer_callback_query(call.id)
     clear_user_session(call.message.chat.id)
-    bot.edit_message_text("🚫 **Order Cancelled.**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+    safe_edit_message("🚫 **Order Cancelled.**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
