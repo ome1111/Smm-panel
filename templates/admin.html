@@ -91,6 +91,22 @@
                 </div>
             </div>
 
+            <div class="glass-card p-6 border-l-4 border-l-orange-500 mb-8 bg-slate-900/40 relative overflow-hidden">
+                <div class="absolute -right-10 -top-10 text-9xl text-orange-500/5"><i class="fas fa-database"></i></div>
+                <h3 class="text-lg font-bold text-white mb-3 relative z-10"><i class="fas fa-database text-orange-400 mr-2"></i> Redis Cache Health</h3>
+                <div class="flex flex-wrap gap-8 relative z-10">
+                    <div>
+                        <span class="text-slate-400 text-xs uppercase tracking-wider font-bold block mb-1">Active Keys</span>
+                        <span class="text-3xl font-bold text-white data-font">{{ r_keys }}</span>
+                    </div>
+                    <div>
+                        <span class="text-slate-400 text-xs uppercase tracking-wider font-bold block mb-1">Memory Used</span>
+                        <span class="text-3xl font-bold text-orange-400 data-font">{{ r_mem }}</span>
+                    </div>
+                </div>
+                <p class="text-xs text-slate-500 mt-4 relative z-10"><i class="fas fa-info-circle"></i> Upstash Free Tier limit: 10,000 Commands/day, 256MB Storage. Clear cache if keys exceed 5,000.</p>
+            </div>
+
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 <div class="glass-card p-6 border-l-4 border-l-sky-500">
                     <p class="text-slate-400 text-sm font-bold uppercase">Total Users</p>
@@ -280,10 +296,29 @@
             </div>
         </section>
 
-        <section id="tab-tools" class="tab-content hidden">
+        <section id="tab-tools" class="tab-content hidden pb-10">
             <h2 class="text-2xl font-bold text-white mb-6">Pro Tools & Automation</h2>
             
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                
+                <div class="glass-card p-6 lg:col-span-2 border border-orange-500/20">
+                    <h3 class="text-xl font-bold text-white mb-4"><i class="fas fa-server text-orange-400"></i> Redis Database Control Center</h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                        <a href="/redis_action/clear_cache" onclick="return confirm('Are you sure you want to Clear Cache? The bot will have to fetch all API data again.')" class="bg-slate-800 border border-orange-500/30 text-orange-400 hover:bg-orange-500 hover:text-white px-4 py-4 rounded-lg text-center font-bold transition shadow-lg flex flex-col items-center justify-center">
+                            <i class="fas fa-broom mb-2 text-2xl"></i> Clear Cache
+                        </a>
+                        <a href="/redis_action/release_locks" onclick="return confirm('Release all background dead-locks?')" class="bg-slate-800 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500 hover:text-white px-4 py-4 rounded-lg text-center font-bold transition shadow-lg flex flex-col items-center justify-center">
+                            <i class="fas fa-unlock mb-2 text-2xl"></i> Release Locks
+                        </a>
+                        <a href="/redis_action/reset_spam" onclick="return confirm('Remove anti-spam blocks from all users?')" class="bg-slate-800 border border-sky-500/30 text-sky-400 hover:bg-sky-500 hover:text-white px-4 py-4 rounded-lg text-center font-bold transition shadow-lg flex flex-col items-center justify-center">
+                            <i class="fas fa-shield-alt mb-2 text-2xl"></i> Reset Spam
+                        </a>
+                        <a href="/redis_action/clear_sessions" onclick="return confirm('Clear ALL active user sessions? Users making orders will be sent back to main menu.')" class="bg-slate-800 border border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white px-4 py-4 rounded-lg text-center font-bold transition shadow-lg flex flex-col items-center justify-center">
+                            <i class="fas fa-sign-out-alt mb-2 text-2xl"></i> Clear Sessions
+                        </a>
+                    </div>
+                </div>
+
                 <div class="glass-card p-6">
                     <h3 class="text-xl font-bold text-white mb-4"><i class="fas fa-bullhorn text-amber-400"></i> Global Broadcast</h3>
                     <form action="/send_broadcast" method="POST">
@@ -524,7 +559,7 @@
                 <div class="fixed bottom-0 left-0 md:left-64 right-0 bg-[#020617]/90 backdrop-blur-md p-4 border-t border-slate-800/80 z-40 text-right shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
                     <div class="max-w-7xl mx-auto flex justify-end">
                         <button type="submit" class="bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold px-8 py-3 rounded-lg shadow-[0_0_15px_rgba(56,189,248,0.4)] transition transform hover:scale-105 text-lg w-full sm:w-auto">
-                            <i class="fas fa-save mr-2"></i> SAVE CONFIGURATIONS
+                            <i class="fas fa-save mr-2"></i> SAVE ALL CONFIGURATIONS
                         </button>
                     </div>
                 </div>
@@ -607,7 +642,6 @@
     </div>
 
     <script>
-        // Tab Switcher with Mobile auto-close
         function switchTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(t => t.classList.add('hidden'));
             document.getElementById('tab-' + tabId).classList.remove('hidden');
@@ -623,7 +657,6 @@
             }
         }
 
-        // Mobile Sidebar Toggle Logic
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
             const backdrop = document.getElementById('sidebarBackdrop');
@@ -631,7 +664,6 @@
             backdrop.classList.toggle('hidden');
         }
 
-        // Modal Logic
         function openModal(id) { document.getElementById(id).classList.add('active'); }
         function closeModal(id) { document.getElementById(id).classList.remove('active'); }
 
@@ -660,7 +692,6 @@
             container.appendChild(row);
         }
 
-        // 🔥 NEW: Dynamic External API Row Adder
         function addExtApiRow() {
             const container = document.getElementById('ext-api-methods');
             const rowCount = container.children.length;
