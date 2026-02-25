@@ -151,7 +151,7 @@ def sub_callback(call):
     else: bot.send_message(uid, "❌ You haven't joined all channels.")
 
 # ==========================================
-# 4. ORDERING ENGINE
+# 4. ORDERING ENGINE & FILTERS
 # ==========================================
 @bot.message_handler(func=lambda m: m.text == "🚀 New Order")
 def new_order_start(message):
@@ -224,7 +224,8 @@ def show_cats(call):
     all_cats_sorted = sorted(list(set(str(s.get('category', 'Other')) for s in services)))
     for cat in cats[start_idx:end_idx]:
         idx = all_cats_sorted.index(cat)
-        markup.add(types.InlineKeyboardButton(f"📁 {cat[:35]}", callback_data=f"CAT|{idx}|0"))
+        # Added filter_type 'all' as default
+        markup.add(types.InlineKeyboardButton(f"📁 {cat[:35]}", callback_data=f"CAT|{idx}|0|all"))
         
     nav = []
     if page > 0: nav.append(types.InlineKeyboardButton("⬅️ Prev", callback_data=f"PLAT|{platform}|{page-1}"))
@@ -238,32 +239,62 @@ def show_cats(call):
 def list_servs(call):
     if is_button_locked(call.from_user.id, call.id): return
     bot.answer_callback_query(call.id) 
-    _, cat_idx, page = call.data.split("|")
+    
+    parts = call.data.split("|")
+    cat_idx = int(parts[1])
+    page = int(parts[2])
+    filter_type = parts[3] if len(parts) > 3 else "all"
+    
     services = get_cached_services()
     all_cats = sorted(list(set(str(s.get('category', 'Other')) for s in services)))
     
-    if int(cat_idx) >= len(all_cats): return bot.send_message(call.message.chat.id, "❌ Error loading category.")
-    cat_name = all_cats[int(cat_idx)]
+    if cat_idx >= len(all_cats): return bot.send_message(call.message.chat.id, "❌ Error loading category.")
+    cat_name = all_cats[cat_idx]
     
     hidden = get_settings().get("hidden_services", [])
-    filtered = [s for s in services if str(s.get('category', 'Other')) == cat_name and str(s.get('service', '0')) not in hidden]
-    start_idx, end_idx = int(page) * 10, int(page) * 10 + 10
-    
     user = get_cached_user(call.message.chat.id)
     curr = user.get("currency", "BDT")
+    
+    # Base Filter by Category
+    filtered = [s for s in services if str(s.get('category', 'Other')) == cat_name and str(s.get('service', '0')) not in hidden]
+    
+    # 🔥 ADVANCED FILTERING & SORTING LOGIC
+    if filter_type == "price_asc":
+        filtered.sort(key=lambda x: calculate_price(x.get('rate', 0.0), user.get('spent',0), user.get('custom_discount', 0)))
+    elif filter_type == "fast":
+        filtered = [x for x in filtered if any(kw in str(x.get('name', '')).lower() for kw in ['instant', 'fast', '⚡'])]
+    elif filter_type == "guarantee":
+        filtered = [x for x in filtered if any(kw in str(x.get('name', '')).lower() for kw in ['refill', 'non drop', '💎', '♻️', 'guarantee'])]
+
+    start_idx, end_idx = page * 10, page * 10 + 10
     markup = types.InlineKeyboardMarkup(row_width=1)
-    for s in filtered[start_idx:end_idx]:
-        rate = calculate_price(s.get('rate', 0.0), user.get('spent',0), user.get('custom_discount', 0))
-        markup.add(types.InlineKeyboardButton(f"ID:{s.get('service', '0')} | {fmt_curr(rate, curr)} | {clean_service_name(s.get('name'))}", callback_data=f"INFO|{s.get('service', '0')}"))
+    
+    # Filter Buttons Row
+    markup.row(
+        types.InlineKeyboardButton("🔽 Price", callback_data=f"CAT|{cat_idx}|0|price_asc"),
+        types.InlineKeyboardButton("⚡ Fast", callback_data=f"CAT|{cat_idx}|0|fast"),
+        types.InlineKeyboardButton("🛡️ Guar", callback_data=f"CAT|{cat_idx}|0|guarantee"),
+        types.InlineKeyboardButton("🔄 All", callback_data=f"CAT|{cat_idx}|0|all")
+    )
+    
+    if not filtered:
+        markup.add(types.InlineKeyboardButton("❌ No services found for this filter.", callback_data="dummy"))
+    else:
+        for s in filtered[start_idx:end_idx]:
+            rate = calculate_price(s.get('rate', 0.0), user.get('spent',0), user.get('custom_discount', 0))
+            markup.add(types.InlineKeyboardButton(f"ID:{s.get('service', '0')} | {fmt_curr(rate, curr)} | {clean_service_name(s.get('name'))}", callback_data=f"INFO|{s.get('service', '0')}"))
     
     nav = []
-    if int(page) > 0: nav.append(types.InlineKeyboardButton("⬅️ Prev", callback_data=f"CAT|{cat_idx}|{int(page)-1}"))
-    if end_idx < len(filtered): nav.append(types.InlineKeyboardButton("Next ➡️", callback_data=f"CAT|{cat_idx}|{int(page)+1}"))
+    if page > 0: nav.append(types.InlineKeyboardButton("⬅️ Prev", callback_data=f"CAT|{cat_idx}|{page-1}|{filter_type}"))
+    if end_idx < len(filtered): nav.append(types.InlineKeyboardButton("Next ➡️", callback_data=f"CAT|{cat_idx}|{page+1}|{filter_type}"))
     if nav: markup.row(*nav)
-    markup.add(types.InlineKeyboardButton("🔙 Back", callback_data=f"PLAT|{identify_platform(cat_name)}|0"))
+    
+    markup.add(types.InlineKeyboardButton("🔙 Back to Platforms", callback_data=f"PLAT|{identify_platform(cat_name)}|0"))
     
     safe_cat = escape_md(cat_name[:30])
-    msg_text = f"📦 **{safe_cat}**\n━━━━━━━━━━━━━━━━━━━━\nSelect Service:"
+    filter_label = {"all": "All Services", "price_asc": "Low to High", "fast": "Fastest Services", "guarantee": "Guaranteed/Refill"}.get(filter_type, "All")
+    msg_text = f"📦 **{safe_cat}**\n━━━━━━━━━━━━━━━━━━━━\n🔍 Filter: **{filter_label}**\nSelect Service:"
+    
     safe_edit_message(msg_text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("INFO|"))
@@ -271,7 +302,6 @@ def info_card(call):
     if is_button_locked(call.from_user.id, call.id): return
     bot.answer_callback_query(call.id) 
     parts = call.data.split("|")
-    # Handling tags like ext_0_10 correctly
     sid = "|".join(parts[1:]) 
     
     services = get_cached_services()
@@ -300,7 +330,7 @@ def info_card(call):
     try: 
         all_cats = sorted(list(set(str(x.get('category', 'Other')) for x in services)))
         cat_idx = all_cats.index(str(s.get('category', 'Other')))
-        markup.add(types.InlineKeyboardButton("🔙 Back to Category", callback_data=f"CAT|{cat_idx}|0"))
+        markup.add(types.InlineKeyboardButton("🔙 Back to Category", callback_data=f"CAT|{cat_idx}|0|all"))
     except: 
         pass
     
@@ -315,7 +345,6 @@ def order_type_router(call):
     if is_button_locked(call.from_user.id, call.id): return
     bot.answer_callback_query(call.id) 
     parts = call.data.split("|")
-    # Handling tags correctly if sid is ext_0_10 -> parts length > 3
     sid = "|".join(parts[1:-1]) 
     o_type = parts[-1]
     
@@ -527,6 +556,7 @@ def start_new_ticket(call):
     update_user_session(call.message.chat.id, {"step": "awaiting_ticket"})
     safe_edit_message("💬 **NEW LIVE SUPPORT TICKET**\nSend your message here. You can also send Screenshots or Photos! Our Admins will reply directly.", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
 
+# 🔥 CRYPTO & API PAYMENTS HANDLER
 @bot.callback_query_handler(func=lambda c: c.data.startswith("PAY_CRYPTO|"))
 def pay_crypto_details(call):
     if is_button_locked(call.from_user.id, call.id): return
@@ -544,6 +574,16 @@ def pay_crypto_details(call):
     elif method == "CoinPayments":
         pay_url = create_coinpayments_payment(amt_usd, uid, s.get('coinpayments_pub'), s.get('coinpayments_priv'))
         
+    elif method == "NowPayments":
+        order_id = f"{uid}_{random.randint(100000, 999999)}"
+        ipn_url = f"{BASE_URL.rstrip('/')}/nowpayments_ipn"
+        pay_url = create_nowpayments_payment(amt_usd, order_id, s.get('nowpayments_api'), ipn_url)
+        
+    elif method == "Payeer":
+        # Payeer usually prefers shorter order IDs
+        order_id = f"{uid}{random.randint(100, 999)}"
+        pay_url = create_payeer_payment(amt_usd, order_id, s.get('payeer_merchant'), s.get('payeer_secret'))
+        
     if pay_url:
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton(f"💳 PAY ${amt_usd:.2f} NOW", url=pay_url))
@@ -551,6 +591,49 @@ def pay_crypto_details(call):
         safe_edit_message(txt, uid, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
     else:
         safe_edit_message(f"❌ Failed to generate {method} invoice. Please check API keys or contact Admin.", uid, call.message.message_id)
+
+# 🔥 TELEGRAM STARS PAYMENT HANDLER
+@bot.callback_query_handler(func=lambda c: c.data.startswith("PAY_STARS|"))
+def pay_stars_details(call):
+    if is_button_locked(call.from_user.id, call.id): return
+    bot.answer_callback_query(call.id)
+    
+    parts = call.data.split("|")
+    amt_usd = float(parts[1])
+    stars_amt = int(parts[2])
+    uid = call.message.chat.id
+    
+    try:
+        bot.send_invoice(
+            uid,
+            title="Wallet Deposit",
+            description=f"Deposit ${amt_usd:.2f} to your NEXUS SMM wallet using Telegram Stars.",
+            invoice_payload=f"dep_{amt_usd}",
+            provider_token="", # Empty for Telegram Stars
+            currency="XTR",
+            prices=[types.LabeledPrice(label=f"Deposit ${amt_usd:.2f}", amount=stars_amt)]
+        )
+    except Exception as e:
+        logging.error(f"Telegram Stars Error: {e}")
+        bot.send_message(uid, "❌ Failed to generate Telegram Stars invoice.")
+
+@bot.pre_checkout_query_handler(func=lambda query: True)
+def checkout(pre_checkout_query):
+    bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
+
+@bot.message_handler(content_types=['successful_payment'])
+def got_payment(message):
+    payload = message.successful_payment.invoice_payload
+    if payload.startswith("dep_"):
+        amt_usd = float(payload.split("_")[1])
+        uid = message.chat.id
+        
+        # Add balance to user
+        users_col.update_one({"_id": uid}, {"$inc": {"balance": amt_usd}})
+        clear_cached_user(uid)
+        
+        try: bot.send_message(uid, f"✅ **STARS DEPOSIT SUCCESS!**\nAmount: `${amt_usd:.2f}` has been securely added to your wallet.", parse_mode="Markdown")
+        except: pass
 
 def universal_buttons(message):
     uid = message.chat.id
@@ -706,7 +789,7 @@ def universal_router(message):
                 all_cats_sorted = sorted(list(set(str(s.get('category', 'Other')) for s in services)))
                 for cat in cats[:15]:
                     idx = all_cats_sorted.index(cat)
-                    markup.add(types.InlineKeyboardButton(f"📁 {cat[:35]}", callback_data=f"CAT|{idx}|0"))
+                    markup.add(types.InlineKeyboardButton(f"📁 {cat[:35]}", callback_data=f"CAT|{idx}|0|all"))
                 return bot.send_message(uid, f"✨ **Magic Link Detected!**\n📍 Platform: **{escape_md(platform)}**\n📂 Choose Category for your link:", reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
 
     if step == "awaiting_trx":
@@ -775,6 +858,7 @@ def universal_router(message):
             payments = s.get("payments", [])
             markup = types.InlineKeyboardMarkup(row_width=1)
             
+            # Local / Manual Gateways
             for p in payments: 
                 is_crypto = any(x in p['name'].lower() for x in ['usdt', 'binance', 'crypto', 'btc', 'pm', 'perfect', 'payeer'])
                 
@@ -786,10 +870,22 @@ def universal_router(message):
                     
                 markup.add(types.InlineKeyboardButton(f"🏦 {p['name']} (Pay {display_amt})", callback_data=f"PAY|{amt_usd:.4f}|{amt}|{p['name']}"))
             
+            # Auto APIs
             if s.get("cryptomus_active") and s.get("cryptomus_merchant") and s.get("cryptomus_api"):
                 markup.add(types.InlineKeyboardButton(f"🤖 Cryptomus (Pay ${amt_usd:.2f})", callback_data=f"PAY_CRYPTO|{amt_usd:.4f}|Cryptomus"))
             if s.get("coinpayments_active") and s.get("coinpayments_pub") and s.get("coinpayments_priv"):
                 markup.add(types.InlineKeyboardButton(f"🪙 CoinPayments (Pay ${amt_usd:.2f})", callback_data=f"PAY_CRYPTO|{amt_usd:.4f}|CoinPayments"))
+            if s.get("nowpayments_active") and s.get("nowpayments_api"):
+                markup.add(types.InlineKeyboardButton(f"🚀 NowPayments (Pay ${amt_usd:.2f})", callback_data=f"PAY_CRYPTO|{amt_usd:.4f}|NowPayments"))
+            if s.get("payeer_active") and s.get("payeer_merchant") and s.get("payeer_secret"):
+                markup.add(types.InlineKeyboardButton(f"🅿️ Payeer (Pay ${amt_usd:.2f})", callback_data=f"PAY_CRYPTO|{amt_usd:.4f}|Payeer"))
+                
+            # Telegram Stars
+            if s.get("stars_active"):
+                stars_rate = s.get("stars_rate", 50)
+                stars_amount = int(amt_usd * stars_rate)
+                if stars_amount > 0:
+                    markup.add(types.InlineKeyboardButton(f"⭐️ Telegram Stars ({stars_amount} ⭐️)", callback_data=f"PAY_STARS|{amt_usd:.4f}|{stars_amount}"))
 
             clear_user_session(uid)
             return bot.send_message(uid, "💳 **Select Gateway:**", reply_markup=markup, parse_mode="Markdown")
@@ -1100,4 +1196,3 @@ def cancel_ord(call):
     bot.answer_callback_query(call.id)
     clear_user_session(call.message.chat.id)
     safe_edit_message("🚫 **Order Cancelled.**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
-
