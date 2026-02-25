@@ -187,10 +187,12 @@ def get_dashboard_stats():
 def index():
     if 'admin' not in session: return redirect(url_for('login'))
     stats = get_dashboard_stats()
-    users = list(users_col.find().sort("spent", -1))
-    orders = list(orders_col.find().sort("_id", -1).limit(100))
-    tickets = list(tickets_col.find().sort("_id", -1))
-    vouchers = list(vouchers_col.find().sort("_id", -1))
+    
+    # 🔥 MEMORY CRASH FIX: Added .limit() to prevent massive RAM usage on loading
+    users = list(users_col.find().sort("spent", -1).limit(200))
+    orders = list(orders_col.find().sort("_id", -1).limit(150))
+    tickets = list(tickets_col.find().sort("_id", -1).limit(50))
+    vouchers = list(vouchers_col.find().sort("_id", -1).limit(50))
     
     services = utils.get_cached_services()
     unique_categories = sorted(list(set(str(s.get('category', 'Other')) for s in services if s.get('category')))) if services else []
@@ -283,7 +285,7 @@ def save_best_choice():
     utils.update_settings_cache("best_choice_sids", sids)
     return redirect(url_for('index'))
 
-# 🔥 ERROR 405 FIX: Added GET method handler
+# 🔥 ERROR 405 FIX: Handling GET safely
 @app.route('/settings', methods=['GET', 'POST'])
 def save_settings():
     if 'admin' not in session: return redirect(url_for('login'))
