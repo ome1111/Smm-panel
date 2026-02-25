@@ -23,6 +23,12 @@
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: #0f172a; }
         ::-webkit-scrollbar-thumb { background: #38bdf8; border-radius: 10px; }
+
+        /* iOS Style Toggle Switch Custom CSS */
+        .toggle-checkbox:checked { right: 0; border-color: #38bdf8; }
+        .toggle-checkbox:checked + .toggle-label { background-color: #38bdf8; }
+        .toggle-checkbox { right: 4px; z-index: 1; border-color: #cbd5e1; transition: all 0.3s ease; }
+        .toggle-label { width: 3rem; height: 1.5rem; background-color: #475569; border-radius: 9999px; transition: all 0.3s ease; }
     </style>
 </head>
 <body class="flex flex-col md:flex-row h-screen overflow-hidden bg-[url('https://www.transparenttextures.com/patterns/stardust.png')]">
@@ -480,23 +486,67 @@
                     <h3 class="text-xl font-bold text-white border-b border-slate-700/50 pb-3 mb-4"><i class="fas fa-wallet text-emerald-400"></i> Payment Gateways</h3>
                     
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                        
                         <div class="bg-slate-900/50 p-5 border border-slate-700/50 rounded-xl">
-                            <label class="flex items-center gap-2 mb-4 cursor-pointer">
-                                <input type="checkbox" name="cryptomus_active" {% if s.get('cryptomus_active') %}checked{% endif %} class="w-5 h-5 accent-emerald-500">
-                                <span class="font-bold text-white text-lg">Cryptomus Auto-Pay</span>
-                            </label>
+                            <div class="flex justify-between items-center mb-4">
+                                <span class="font-bold text-white text-lg">Cryptomus</span>
+                                <div class="relative inline-block w-12 align-middle select-none transition duration-200 ease-in">
+                                    <input type="checkbox" name="cryptomus_active" id="crypto_toggle" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer" {% if s.get('cryptomus_active') %}checked{% endif %}/>
+                                    <label for="crypto_toggle" class="toggle-label block overflow-hidden h-6 rounded-full bg-slate-600 cursor-pointer"></label>
+                                </div>
+                            </div>
                             <input type="text" name="cryptomus_merchant" value="{{ s.get('cryptomus_merchant', '') }}" placeholder="Merchant ID" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-3 text-white text-sm mb-3 outline-none focus:border-emerald-500 transition">
                             <input type="password" name="cryptomus_api" value="{{ s.get('cryptomus_api', '') }}" placeholder="API Payment Key" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-3 text-white text-sm outline-none focus:border-emerald-500 transition">
                         </div>
 
                         <div class="bg-slate-900/50 p-5 border border-slate-700/50 rounded-xl">
-                            <label class="flex items-center gap-2 mb-4 cursor-pointer">
-                                <input type="checkbox" name="coinpayments_active" {% if s.get('coinpayments_active') %}checked{% endif %} class="w-5 h-5 accent-emerald-500">
-                                <span class="font-bold text-white text-lg">CoinPayments Auto-Pay</span>
-                            </label>
+                            <div class="flex justify-between items-center mb-4">
+                                <span class="font-bold text-white text-lg">CoinPayments</span>
+                                <div class="relative inline-block w-12 align-middle select-none transition duration-200 ease-in">
+                                    <input type="checkbox" name="coinpayments_active" id="coin_toggle" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer" {% if s.get('coinpayments_active') %}checked{% endif %}/>
+                                    <label for="coin_toggle" class="toggle-label block overflow-hidden h-6 rounded-full bg-slate-600 cursor-pointer"></label>
+                                </div>
+                            </div>
                             <input type="text" name="coinpayments_pub" value="{{ s.get('coinpayments_pub', '') }}" placeholder="Public Key" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-3 text-white text-sm mb-3 outline-none focus:border-emerald-500 transition">
                             <input type="password" name="coinpayments_priv" value="{{ s.get('coinpayments_priv', '') }}" placeholder="Private / IPN Secret" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-3 text-white text-sm outline-none focus:border-emerald-500 transition">
                         </div>
+
+                        <div class="bg-slate-900/50 p-5 border border-slate-700/50 rounded-xl">
+                            <div class="flex justify-between items-center mb-4">
+                                <span class="font-bold text-white text-lg">NowPayments</span>
+                                <div class="relative inline-block w-12 align-middle select-none transition duration-200 ease-in">
+                                    <input type="checkbox" name="nowpayments_active" id="np_toggle" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer" {% if s.get('nowpayments_active') %}checked{% endif %}/>
+                                    <label for="np_toggle" class="toggle-label block overflow-hidden h-6 rounded-full bg-slate-600 cursor-pointer"></label>
+                                </div>
+                            </div>
+                            <input type="password" name="nowpayments_api" value="{{ s.get('nowpayments_api', '') }}" placeholder="API Key" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-3 text-white text-sm mb-3 outline-none focus:border-emerald-500 transition">
+                            <input type="password" name="nowpayments_ipn" value="{{ s.get('nowpayments_ipn', '') }}" placeholder="IPN Secret Key" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-3 text-white text-sm outline-none focus:border-emerald-500 transition">
+                        </div>
+
+                        <div class="bg-slate-900/50 p-5 border border-slate-700/50 rounded-xl">
+                            <div class="flex justify-between items-center mb-4">
+                                <span class="font-bold text-white text-lg">Payeer</span>
+                                <div class="relative inline-block w-12 align-middle select-none transition duration-200 ease-in">
+                                    <input type="checkbox" name="payeer_active" id="py_toggle" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer" {% if s.get('payeer_active') %}checked{% endif %}/>
+                                    <label for="py_toggle" class="toggle-label block overflow-hidden h-6 rounded-full bg-slate-600 cursor-pointer"></label>
+                                </div>
+                            </div>
+                            <input type="text" name="payeer_merchant" value="{{ s.get('payeer_merchant', '') }}" placeholder="Merchant ID" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-3 text-white text-sm mb-3 outline-none focus:border-emerald-500 transition">
+                            <input type="password" name="payeer_secret" value="{{ s.get('payeer_secret', '') }}" placeholder="Secret Key" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-3 text-white text-sm outline-none focus:border-emerald-500 transition">
+                        </div>
+
+                        <div class="bg-slate-900/50 p-5 border border-slate-700/50 rounded-xl">
+                            <div class="flex justify-between items-center mb-4">
+                                <span class="font-bold text-white text-lg"><i class="fas fa-star text-yellow-400"></i> Telegram Stars</span>
+                                <div class="relative inline-block w-12 align-middle select-none transition duration-200 ease-in">
+                                    <input type="checkbox" name="stars_active" id="stars_toggle" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer" {% if s.get('stars_active') %}checked{% endif %}/>
+                                    <label for="stars_toggle" class="toggle-label block overflow-hidden h-6 rounded-full bg-slate-600 cursor-pointer"></label>
+                                </div>
+                            </div>
+                            <label class="text-xs text-slate-400 mb-1 block">Stars required per $1 USD:</label>
+                            <input type="number" name="stars_rate" value="{{ s.get('stars_rate', 50) }}" placeholder="e.g. 50" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-3 text-white text-sm outline-none focus:border-emerald-500 transition">
+                        </div>
+
                     </div>
 
                     <div class="flex items-center justify-between mb-4">
@@ -737,7 +787,7 @@
                 <div class="absolute top-0 right-0 bg-amber-500/20 text-amber-400 px-2 py-1 rounded-bl-lg rounded-tr-lg text-xs font-bold border-b border-l border-amber-500/30">Index: ${rowCount}</div>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3 pt-3">
                     <input type="url" name="ext_api_url[]" placeholder="API URL (e.g. https://abcpanel.com/api/v2)" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white outline-none focus:border-sky-500" required>
-                    <input type="text" name="ext_api_key[]" placeholder="API Key" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white outline-none focus:border-sky-500" required>
+                    <input type="password" name="ext_api_key[]" placeholder="API Key" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white outline-none focus:border-sky-500" required>
                 </div>
                 <input type="text" name="ext_api_services[]" placeholder="Target Service IDs (comma separated, e.g. 10, 205, 30)" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white outline-none focus:border-sky-500" required>
                 <p class="text-xs text-slate-500 mt-2">Example: ID \`10\` here will become \`ext_${rowCount}_10\` in Bot.</p>
