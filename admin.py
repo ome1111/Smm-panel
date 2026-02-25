@@ -1,6 +1,7 @@
 import json
 import time
 import logging
+import io
 from telebot import types
 
 # 🔥 redis_client ও অন্যান্য ডেটাবেস কালেকশন ইম্পোর্ট
@@ -35,8 +36,11 @@ def admin_panel(message):
         types.InlineKeyboardButton("⚙️ Settings", callback_data="ADM_SETTINGS"),
         types.InlineKeyboardButton("💎 Points Setup", callback_data="ADM_POINTS")
     )
-    # 🔥 NEW: Instant API Sync Button
-    markup.add(types.InlineKeyboardButton("🔄 Instant API Sync", callback_data="ADM_SYNC"))
+    # 🔥 Instant Sync & Deposit History
+    markup.add(
+        types.InlineKeyboardButton("🔄 Instant API Sync", callback_data="ADM_SYNC"),
+        types.InlineKeyboardButton("💳 Deposit History (TXT)", callback_data="ADM_DEP_HIST")
+    )
     
     bot.send_message(message.chat.id, f"👑 **BOSS DASHBOARD**\nUsers: `{users_col.count_documents({})}` | Orders: `{orders_col.count_documents({})}`", reply_markup=markup, parse_mode="Markdown")
 
@@ -77,21 +81,83 @@ def admin_callbacks(call):
         bot.send_message(uid, "⚙️ **WEB PANEL SETTINGS**\nPlease log in to the Web Admin Panel (from your Render URL) to manage advanced settings, gateways, and profit margins securely.", parse_mode="Markdown")
         bot.answer_callback_query(call.id)
         
-    # 🔥 NEW: Instant API Sync Logic
     elif call.data == "ADM_SYNC":
         bot.answer_callback_query(call.id, "🔄 Fetching API data...", show_alert=False)
-        msg = bot.send_message(uid, "⏳ **Force syncing services from 1xpanel...**\n_Please wait a few seconds._", parse_mode="Markdown")
+        msg = bot.send_message(uid, "⏳ **Force syncing services from main & external APIs...**\n_Please wait a few seconds._", parse_mode="Markdown")
         
         try:
             res = api.get_services()
             if res and isinstance(res, list) and len(res) > 0:
-                # Update Redis and MongoDB instantly
-                redis_client.setex("services_cache", 43200, json.dumps(res))
-                config_col.update_one({"_id": "api_cache"}, {"$set": {"data": res, "time": time.time()}}, upsert=True)
+                combined_res = res.copy()
+                s = get_settings()
+                ext_apis = s.get("external_apis", [])
                 
-                bot.edit_message_text(f"✅ **API SYNC SUCCESSFUL!**\n━━━━━━━━━━━━━━━━━━━━\n📦 Total Services: `{len(res)}`\n⚡ Live Cache has been updated.\n\n_All users can now see the latest services in 'New Order'._", uid, msg.message_id, parse_mode="Markdown")
+                # Fetch external APIs
+                for i, ext in enumerate(ext_apis):
+                    ext_url = ext.get('url')
+                    ext_key = ext.get('key')
+                    target_sids = [str(sid).strip() for sid in ext.get('services', []) if str(sid).strip()]
+                    
+                    if ext_url and ext_key and target_sids:
+                        ext_data = api.get_external_services(ext_url, ext_key)
+                        if ext_data and isinstance(ext_data, list):
+                            for srv in ext_data:
+                                original_id = str(srv.get('service'))
+                                if original_id in target_sids:
+                                    new_srv = srv.copy()
+                                    new_id = f"ext_{i}_{original_id}"
+                                    new_srv['service'] = new_id
+                                    new_srv['name'] = f"{new_srv.get('name', 'Unknown')} 🌟"
+                                    combined_res.append(new_srv)
+
+                redis_client.setex("services_cache", 43200, json.dumps(combined_res))
+                config_col.update_one({"_id": "api_cache"}, {"$set": {"data": combined_res, "time": time.time()}}, upsert=True)
+                
+                bot.edit_message_text(f"✅ **API SYNC SUCCESSFUL!**\n━━━━━━━━━━━━━━━━━━━━\n📦 Total Services: `{len(combined_res)}`\n⚡ Live Cache has been updated.\n\n_All users can now see the latest services in 'New Order'._", uid, msg.message_id, parse_mode="Markdown")
             else:
                 bot.edit_message_text("❌ **API SYNC FAILED!**\nMain panel API is slow or returned an empty list. Please try again after 1 minute.", uid, msg.message_id, parse_mode="Markdown")
         except Exception as e:
             logging.error(f"Instant Sync Error: {e}")
             bot.edit_message_text(f"❌ **System Error during sync:**\n`{str(e)}`", uid, msg.message_id, parse_mode="Markdown")
+            
+    # 🔥 NEW & IMPROVED: Deposit History as TXT File
+    elif call.data == "ADM_DEP_HIST":
+        bot.answer_callback_query(call.id, "Generating File...")
+        
+        trx_data = config_col.find_one({"_id": "transactions"})
+        if not trx_data or "valid_list" not in trx_data:
+            return bot.send_message(uid, "📭 **No deposit history found.**", parse_mode="Markdown")
+            
+        valid_list = trx_data.get("valid_list", [])
+        
+        if not valid_list:
+            return bot.send_message(uid, "📭 **History is empty.**", parse_mode="Markdown")
+
+        # একটি টেক্সট স্ট্রিং তৈরি করা
+        report = "NEXUS SMM - FULL DEPOSIT HISTORY\n"
+        report += "="*75 + "\n\n"
+        report += f"{'Index':<6} | {'User ID':<15} | {'Amount':<10} | {'TrxID':<25} | {'Status'}\n"
+        report += "-"*75 + "\n"
+
+        for i, d in enumerate(reversed(valid_list), 1):
+            u_id = str(d.get('user', 'N/A'))
+            amt = str(d.get('amt', '0'))
+            trx = str(d.get('trx', 'N/A'))
+            status = str(d.get('status', 'used')).upper()
+            
+            report += f"{i:<6} | {u_id:<15} | {amt:<10} | {trx:<25} | {status}\n"
+
+        report += "\n" + "="*75 + "\n"
+        report += f"Total Records: {len(valid_list)}\n"
+        report += "Generated on: " + time.strftime('%Y-%m-%d %H:%M:%S')
+
+        # মেমোরিতে ফাইল তৈরি করা (ডিস্ক স্পেস বাঁচানোর জন্য)
+        output = io.BytesIO(report.encode('utf-8'))
+        output.name = "deposit_history.txt"
+        
+        bot.send_document(
+            uid, 
+            output, 
+            caption="📂 **Full Deposit History Report**\n\nএখানে আপনার ডাটাবেসের সব ডিপোজিট হিস্ট্রি দেওয়া হলো।",
+            parse_mode="Markdown"
+        )
