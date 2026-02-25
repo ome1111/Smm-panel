@@ -2,23 +2,32 @@ import re
 import math
 import random
 import json
-import threading
 import logging
-from datetime import datetime, timedelta
+import time
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from telebot import types
 from bson.objectid import ObjectId
 
-# 🔥 loader এবং utils থেকে প্রয়োজনীয় ফাংশন ইম্পোর্ট
-from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, redis_client, logs_col
+# 🔥 loader এবং নির্দিষ্ট utils ফাংশন ইম্পোর্ট (Memory Optimization)
+from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, redis_client
 from config import *
 import api
-from utils import *
+from utils import (escape_md, get_settings, get_currency_rates, fmt_curr,
+                   get_cached_user, clear_cached_user, check_spam, check_maintenance,
+                   get_cached_services, calculate_price, clean_service_name,
+                   identify_platform, detect_platform_from_link, generate_progress_bar,
+                   get_user_tier, main_menu, check_sub, create_cryptomus_payment,
+                   create_coinpayments_payment, create_nowpayments_payment, create_payeer_payment, BASE_URL)
+
+# Thread Pool for background tasks (Prevents Thread Exhaustion)
+order_executor = ThreadPoolExecutor(max_workers=20)
 
 # ==========================================
 # 🔥 ANTI-CRASH EDIT ENGINE
 # ==========================================
 def safe_edit_message(text, chat_id, message_id, reply_markup=None, parse_mode="Markdown", disable_web_page_preview=True):
-    """একই মেসেজ এডিট করার Error 400 ঠেকাতে সেফ ফাংশন"""
     try:
         bot.edit_message_text(
             text=text, 
@@ -36,13 +45,12 @@ def safe_edit_message(text, chat_id, message_id, reply_markup=None, parse_mode="
 # 🔥 REDIS SESSION & LOCK MANAGER
 # ==========================================
 def is_button_locked(uid, call_id):
-    """ডাবল-ক্লিক বা স্প্যাম ক্লিক ঠেকানোর জন্য Atomic Lock"""
     lock_key = f"lock_btn_{uid}"
     if redis_client.get(lock_key):
         try: bot.answer_callback_query(call_id, "⏳ Please wait... processing.")
         except: pass
         return True
-    redis_client.setex(lock_key, 2, "locked") # ২ সেকেন্ডের জন্য লক
+    redis_client.setex(lock_key, 2, "locked")
     return False
 
 def get_user_session(uid):
@@ -70,7 +78,7 @@ def clear_user_session(uid):
 # 3. FORCE SUB, REFERRAL & START LOGIC
 # ==========================================
 def process_new_user_bonuses(uid):
-    user = get_cached_user(uid)
+    user = get_cached_user(uid) or {}
     if not user: return
     s = get_settings()
     
@@ -105,7 +113,7 @@ def start(message):
 
     if not user:
         users_col.insert_one({"_id": uid, "name": message.from_user.first_name, "balance": 0.0, "spent": 0.0, "points": 0, "currency": "BDT", "ref_by": referrer, "ref_paid": False, "ref_earnings": 0.0, "joined": datetime.now(), "favorites": [], "custom_discount": 0.0, "shadow_banned": False, "tier_override": None, "welcome_paid": False})
-        user = users_col.find_one({"_id": uid})
+        user = users_col.find_one({"_id": uid}) or {}
         clear_cached_user(uid)
         
     users_col.update_one({"_id": uid}, {"$set": {"last_active": datetime.now()}})
@@ -179,7 +187,7 @@ def show_best_choices(call):
     
     services = get_cached_services()
     best_sids = get_settings().get("best_choice_sids", [])
-    user = get_cached_user(call.message.chat.id)
+    user = get_cached_user(call.message.chat.id) or {}
     curr = user.get("currency", "BDT")
     
     markup = types.InlineKeyboardMarkup(row_width=1)
@@ -224,7 +232,6 @@ def show_cats(call):
     all_cats_sorted = sorted(list(set(str(s.get('category', 'Other')) for s in services)))
     for cat in cats[start_idx:end_idx]:
         idx = all_cats_sorted.index(cat)
-        # Added filter_type 'all' as default
         markup.add(types.InlineKeyboardButton(f"📁 {cat[:35]}", callback_data=f"CAT|{idx}|0|all"))
         
     nav = []
@@ -252,13 +259,11 @@ def list_servs(call):
     cat_name = all_cats[cat_idx]
     
     hidden = get_settings().get("hidden_services", [])
-    user = get_cached_user(call.message.chat.id)
+    user = get_cached_user(call.message.chat.id) or {}
     curr = user.get("currency", "BDT")
     
-    # Base Filter by Category
     filtered = [s for s in services if str(s.get('category', 'Other')) == cat_name and str(s.get('service', '0')) not in hidden]
     
-    # 🔥 ADVANCED FILTERING & SORTING LOGIC
     if filter_type == "price_asc":
         filtered.sort(key=lambda x: calculate_price(x.get('rate', 0.0), user.get('spent',0), user.get('custom_discount', 0)))
     elif filter_type == "fast":
@@ -269,7 +274,6 @@ def list_servs(call):
     start_idx, end_idx = page * 10, page * 10 + 10
     markup = types.InlineKeyboardMarkup(row_width=1)
     
-    # Filter Buttons Row
     markup.row(
         types.InlineKeyboardButton("🔽 Price", callback_data=f"CAT|{cat_idx}|0|price_asc"),
         types.InlineKeyboardButton("⚡ Fast", callback_data=f"CAT|{cat_idx}|0|fast"),
@@ -309,7 +313,7 @@ def info_card(call):
     if not s: 
         return bot.send_message(call.message.chat.id, "❌ Service unavailable at the moment. Try again.")
     
-    user = get_cached_user(call.message.chat.id)
+    user = get_cached_user(call.message.chat.id) or {}
     curr = user.get("currency", "BDT")
     rate = calculate_price(s.get('rate', 0.0), user.get('spent',0), user.get('custom_discount', 0))
     avg_time = s.get('time', 'Instant - 24h') if s.get('time') else 'Instant - 24h'
@@ -387,8 +391,8 @@ def reorder_callback(call):
 # 5. UNIVERSAL BUTTONS & PROFILE
 # ==========================================
 def fetch_orders_page(chat_id, page=0, filter_type="all"):
-    user = get_cached_user(chat_id)
-    curr = user.get("currency", "BDT") if user else "BDT"
+    user = get_cached_user(chat_id) or {}
+    curr = user.get("currency", "BDT")
     
     query = {"uid": chat_id}
     if filter_type == "subs": query["is_sub"] = True
@@ -463,7 +467,7 @@ def my_orders_pagination(call):
 @bot.callback_query_handler(func=lambda c: c.data == "REDEEM_POINTS")
 def redeem_points(call):
     if is_button_locked(call.from_user.id, call.id): return
-    u = get_cached_user(call.message.chat.id)
+    u = get_cached_user(call.message.chat.id) or {}
     pts = u.get("points", 0)
     s = get_settings()
     rate = s.get("points_to_usd_rate", 1000)
@@ -511,8 +515,8 @@ def pay_details(call):
         exact_local_amt = None
         
     uid = call.message.chat.id
-    u = get_cached_user(uid)
-    curr = u.get("currency", "BDT") if u else "BDT"
+    u = get_cached_user(uid) or {}
+    curr = u.get("currency", "BDT")
     
     s = get_settings()
     pay_data = next((p for p in s.get('payments', []) if p['name'] == method), None)
@@ -539,7 +543,6 @@ def pay_details(call):
     update_user_session(uid, {"step": "awaiting_trx", "temp_dep_amt": amt_usd, "temp_dep_method": method})
     safe_edit_message(txt, uid, call.message.message_id, parse_mode="Markdown")
 
-# 🔥 CLOSE TICKET HANDLER
 @bot.callback_query_handler(func=lambda c: c.data.startswith("CLOSE_TICKET|"))
 def close_support_ticket(call):
     bot.answer_callback_query(call.id, "Ticket Closed Successfully!")
@@ -549,14 +552,12 @@ def close_support_ticket(call):
     except: pass
     bot.send_message(call.message.chat.id, "✅ **Support Ticket Closed.**\nIf you need further help, you can open a new ticket from Live Chat.", parse_mode="Markdown")
 
-# 🔥 CREATE NEW TICKET HANDLER
 @bot.callback_query_handler(func=lambda c: c.data == "NEW_TICKET")
 def start_new_ticket(call):
     bot.answer_callback_query(call.id)
     update_user_session(call.message.chat.id, {"step": "awaiting_ticket"})
     safe_edit_message("💬 **NEW LIVE SUPPORT TICKET**\nSend your message here. You can also send Screenshots or Photos! Our Admins will reply directly.", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
 
-# 🔥 CRYPTO & API PAYMENTS HANDLER
 @bot.callback_query_handler(func=lambda c: c.data.startswith("PAY_CRYPTO|"))
 def pay_crypto_details(call):
     if is_button_locked(call.from_user.id, call.id): return
@@ -580,8 +581,7 @@ def pay_crypto_details(call):
         pay_url = create_nowpayments_payment(amt_usd, order_id, s.get('nowpayments_api'), ipn_url)
         
     elif method == "Payeer":
-        # Payeer usually prefers shorter order IDs
-        order_id = f"{uid}{random.randint(100, 999)}"
+        order_id = f"{uid}_{random.randint(100000, 999999)}"
         pay_url = create_payeer_payment(amt_usd, order_id, s.get('payeer_merchant'), s.get('payeer_secret'))
         
     if pay_url:
@@ -592,7 +592,6 @@ def pay_crypto_details(call):
     else:
         safe_edit_message(f"❌ Failed to generate {method} invoice. Please check API keys or contact Admin.", uid, call.message.message_id)
 
-# 🔥 TELEGRAM STARS PAYMENT HANDLER
 @bot.callback_query_handler(func=lambda c: c.data.startswith("PAY_STARS|"))
 def pay_stars_details(call):
     if is_button_locked(call.from_user.id, call.id): return
@@ -608,8 +607,8 @@ def pay_stars_details(call):
             uid,
             title="Wallet Deposit",
             description=f"Deposit ${amt_usd:.2f} to your NEXUS SMM wallet using Telegram Stars.",
-            invoice_payload=f"dep_{amt_usd}",
-            provider_token="", # Empty for Telegram Stars
+            invoice_payload=f"dep_{amt_usd}_{random.randint(1000,9999)}",
+            provider_token="",
             currency="XTR",
             prices=[types.LabeledPrice(label=f"Deposit ${amt_usd:.2f}", amount=stars_amt)]
         )
@@ -628,7 +627,6 @@ def got_payment(message):
         amt_usd = float(payload.split("_")[1])
         uid = message.chat.id
         
-        # Add balance to user
         users_col.update_one({"_id": uid}, {"$inc": {"balance": amt_usd}})
         clear_cached_user(uid)
         
@@ -640,8 +638,8 @@ def universal_buttons(message):
     clear_user_session(uid)
     
     if check_spam(uid) or check_maintenance(uid) or not check_sub(uid): return
-    u = get_cached_user(uid)
-    curr = u.get("currency", "BDT") if u else "BDT"
+    u = get_cached_user(uid) or {}
+    curr = u.get("currency", "BDT")
 
     if message.text == "📦 Orders":
         txt, markup = fetch_orders_page(uid, 0, "all")
@@ -773,9 +771,66 @@ def universal_router(message):
     if text in ["🚀 New Order", "⭐ Favorites", "🔍 Smart Search", "📦 Orders", "💰 Deposit", "📝 Bulk Order", "🤝 Affiliate", "👤 Profile", "🎟️ Voucher", "🏆 Leaderboard", "💬 Live Chat"]:
         return universal_buttons(message)
 
-    u = get_cached_user(uid)
+    u = get_cached_user(uid) or {}
     session_data = get_user_session(uid)
     step = session_data.get("step", "")
+
+    # 🔥 ADMIN INPUT HANDLER
+    if str(uid) == str(ADMIN_ID):
+        if step == "awaiting_bc":
+            clear_user_session(uid)
+            bot.send_message(uid, "✅ Broadcast task queued and started!")
+            def execute_bc():
+                for tu in users_col.find({"is_fake": {"$ne": True}}):
+                    try: 
+                        bot.send_message(tu["_id"], f"📢 **BROADCAST**\n━━━━━━━━━━━━\n{text}", parse_mode="Markdown")
+                        time.sleep(0.05)
+                    except: pass
+            order_executor.submit(execute_bc)
+            return
+            
+        elif step == "awaiting_ghost_uid":
+            clear_user_session(uid)
+            try:
+                target = int(text)
+                tu = users_col.find_one({"_id": target}) or {}
+                if tu: bot.send_message(uid, f"👻 **GHOST INFO:**\nUID: `{target}`\nName: {escape_md(tu.get('name'))}\nBal: `${tu.get('balance', 0):.3f}`\nSpent: `${tu.get('spent', 0):.3f}`\nPoints: `{tu.get('points', 0)}`", parse_mode="Markdown")
+                else: bot.send_message(uid, "❌ User not found.")
+            except: bot.send_message(uid, "❌ Invalid UID format.")
+            return
+            
+        elif step == "awaiting_alert_uid":
+            try:
+                target = int(text)
+                update_user_session(uid, {"step": "awaiting_alert_msg", "target_uid": target})
+                bot.send_message(uid, f"📩 Enter custom alert message for `{target}`:", parse_mode="Markdown")
+            except:
+                clear_user_session(uid)
+                bot.send_message(uid, "❌ Invalid UID format.")
+            return
+            
+        elif step == "awaiting_alert_msg":
+            target = session_data.get("target_uid")
+            clear_user_session(uid)
+            try:
+                bot.send_message(target, f"🔔 **SYSTEM ALERT**\n━━━━━━━━━━━━\n{text}", parse_mode="Markdown")
+                bot.send_message(uid, "✅ Alert sent successfully!")
+            except:
+                bot.send_message(uid, "❌ Failed to send alert.")
+            return
+            
+        elif step == "awaiting_points_cfg":
+            clear_user_session(uid)
+            try:
+                pts_usd, to_usd = map(int, text.replace(' ', '').split(','))
+                config_col.update_one({"_id": "settings"}, {"$set": {"points_per_usd": pts_usd, "points_to_usd_rate": to_usd}}, upsert=True)
+                from utils import update_settings_cache
+                update_settings_cache("points_per_usd", pts_usd)
+                update_settings_cache("points_to_usd_rate", to_usd)
+                bot.send_message(uid, "✅ Points Config Updated Successfully!")
+            except:
+                bot.send_message(uid, "❌ Invalid format! Example: 50, 1000")
+            return
 
     if step == "" and re.match(r'^(https?://|t\.me/|@|www\.)[^\s]+$', text, re.IGNORECASE):
         platform = detect_platform_from_link(text)
@@ -858,19 +913,14 @@ def universal_router(message):
             payments = s.get("payments", [])
             markup = types.InlineKeyboardMarkup(row_width=1)
             
-            # Local / Manual Gateways
             for p in payments: 
                 is_crypto = any(x in p['name'].lower() for x in ['usdt', 'binance', 'crypto', 'btc', 'pm', 'perfect', 'payeer'])
-                
-                if is_crypto:
-                    display_amt = f"${amt_usd:.2f}"
+                if is_crypto: display_amt = f"${amt_usd:.2f}"
                 else:
                     formatted_amt = int(amt) if amt.is_integer() else round(amt, 2)
                     display_amt = f"{formatted_amt} TK" if curr_code == "BDT" else f"{formatted_amt} {curr_code}"
-                    
                 markup.add(types.InlineKeyboardButton(f"🏦 {p['name']} (Pay {display_amt})", callback_data=f"PAY|{amt_usd:.4f}|{amt}|{p['name']}"))
             
-            # Auto APIs
             if s.get("cryptomus_active") and s.get("cryptomus_merchant") and s.get("cryptomus_api"):
                 markup.add(types.InlineKeyboardButton(f"🤖 Cryptomus (Pay ${amt_usd:.2f})", callback_data=f"PAY_CRYPTO|{amt_usd:.4f}|Cryptomus"))
             if s.get("coinpayments_active") and s.get("coinpayments_pub") and s.get("coinpayments_priv"):
@@ -880,7 +930,6 @@ def universal_router(message):
             if s.get("payeer_active") and s.get("payeer_merchant") and s.get("payeer_secret"):
                 markup.add(types.InlineKeyboardButton(f"🅿️ Payeer (Pay ${amt_usd:.2f})", callback_data=f"PAY_CRYPTO|{amt_usd:.4f}|Payeer"))
                 
-            # Telegram Stars
             if s.get("stars_active"):
                 stars_rate = s.get("stars_rate", 50)
                 stars_amount = int(amt_usd * stars_rate)
@@ -910,9 +959,7 @@ def universal_router(message):
             
             services = get_cached_services()
             s = next((x for x in services if str(x.get('service', '0')) == str(sid)), None)
-            
-            if not s:
-                return bot.send_message(uid, "❌ **Service Not Found!** Try another service.")
+            if not s: return bot.send_message(uid, "❌ **Service Not Found!** Try another service.")
             
             try: min_q = int(s.get('min', 0))
             except: min_q = 0
@@ -1086,30 +1133,51 @@ def universal_router(message):
             markup.add(types.InlineKeyboardButton(f"⚡ ID:{s.get('service', '0')} | {safe_name}", callback_data=f"INFO|{s.get('service', '0')}"))
         return bot.send_message(uid, f"🔍 **Top Results:**", reply_markup=markup, parse_mode="Markdown")
 
+# 🔥 PRE-DEDUCT BALANCE TO PREVENT DOUBLE SPEND
 @bot.callback_query_handler(func=lambda c: c.data in ["PLACE_ORD", "PLACE_BULK"])
 def final_ord(call):
     if is_button_locked(call.from_user.id, call.id): return
     bot.answer_callback_query(call.id)
     
     uid = call.message.chat.id
-    u = get_cached_user(uid)
+    u = get_cached_user(uid) or {}
     session_data = get_user_session(uid)
     
     if call.data == "PLACE_BULK":
         drafts = session_data.get('draft_bulk')
         if not drafts: return bot.send_message(uid, "❌ Session expired. Please try again.")
+        
+        total_cost = session_data.get('total_bulk_cost', 0)
+        if u.get('balance', 0) < total_cost:
+            return bot.send_message(uid, "❌ Insufficient balance for this bulk order!")
+            
+        # 🔥 PRE-DEDUCTION
+        users_col.update_one({"_id": uid}, {"$inc": {"balance": -total_cost}})
+        clear_cached_user(uid)
+        clear_user_session(uid)
+        
         safe_edit_message("⏳ **Processing Bulk Orders in the background... Please wait.**", uid, call.message.message_id, parse_mode="Markdown")
-        threading.Thread(target=process_bulk_background, args=(uid, u, drafts, call.message.message_id)).start()
+        order_executor.submit(process_bulk_background, uid, drafts, call.message.message_id, total_cost)
     else:
         draft = session_data.get('draft')
         if not draft: return bot.send_message(uid, "❌ Session expired. Please try again.")
+        
+        cost = draft.get('cost', 0)
+        if u.get('balance', 0) < cost:
+            return bot.send_message(uid, "❌ Insufficient balance for this order!")
+            
+        # 🔥 PRE-DEDUCTION
+        users_col.update_one({"_id": uid}, {"$inc": {"balance": -cost}})
+        clear_cached_user(uid)
+        clear_user_session(uid)
+        
         safe_edit_message("⏳ **Processing your order securely in the background... Please wait.**", uid, call.message.message_id, parse_mode="Markdown")
-        threading.Thread(target=process_order_background, args=(uid, u, draft, call.message.message_id)).start()
+        order_executor.submit(process_order_background, uid, draft, call.message.message_id, cost)
 
-def process_bulk_background(uid, u, drafts, message_id):
+def process_bulk_background(uid, drafts, message_id, pre_deducted_cost):
     try:
         success_count = 0
-        total_cost_deducted = 0
+        successful_cost = 0
         points_earned = 0
         s = get_settings()
         
@@ -1118,29 +1186,35 @@ def process_bulk_background(uid, u, drafts, message_id):
             res = api.place_order(d['sid'], link=d['link'], quantity=d['qty'])
             if res and 'order' in res:
                 success_count += 1
-                total_cost_deducted += d['cost']
+                successful_cost += d['cost']
                 pts = int(float(d['cost']) * float(s.get("points_per_usd", 100)))
                 points_earned += pts
                 orders_col.insert_one({"oid": res['order'], "uid": uid, "sid": d['sid'], "link": d['link'], "qty": d['qty'], "cost": d['cost'], "status": "pending", "date": datetime.now()})
                 
-        users_col.update_one({"_id": uid}, {"$inc": {"balance": -total_cost_deducted, "spent": total_cost_deducted, "points": points_earned}})
+        refund_amount = pre_deducted_cost - successful_cost
+        update_query = {"$inc": {"spent": successful_cost, "points": points_earned}}
+        if refund_amount > 0:
+            update_query["$inc"]["balance"] = refund_amount
+            
+        users_col.update_one({"_id": uid}, update_query)
         clear_cached_user(uid)
-        clear_user_session(uid)
-        safe_edit_message(f"✅ **BULK PROCESS COMPLETE!**\n━━━━━━━━━━━━━━━━━━━━\n📦 Successful: {success_count} / {len(drafts)}\n💰 Cost Deducted: `${total_cost_deducted:.3f}`\n🎁 Points Earned: `+{points_earned}`", uid, message_id, parse_mode="Markdown")
+        
+        safe_edit_message(f"✅ **BULK PROCESS COMPLETE!**\n━━━━━━━━━━━━━━━━━━━━\n📦 Successful: {success_count} / {len(drafts)}\n💰 Cost: `${successful_cost:.3f}`\n🎁 Points Earned: `+{points_earned}`\n🔄 Refunded: `${refund_amount:.3f}`", uid, message_id, parse_mode="Markdown")
     except Exception as e:
         logging.error(f"Bulk Process Error: {e}")
+        users_col.update_one({"_id": uid}, {"$inc": {"balance": pre_deducted_cost}})
 
-def process_order_background(uid, u, draft, message_id):
+def process_order_background(uid, draft, message_id, deducted_cost):
     try:
         s = get_settings()
         points_earned = int(float(draft['cost']) * float(s.get("points_per_usd", 100)))
         o_type = draft.get("type", "normal")
+        u = get_cached_user(uid) or {}
         
         if u.get('shadow_banned'):
             fake_oid = random.randint(100000, 999999)
-            users_col.update_one({"_id": uid}, {"$inc": {"balance": -draft['cost'], "spent": draft['cost'], "points": points_earned}})
+            users_col.update_one({"_id": uid}, {"$inc": {"spent": deducted_cost, "points": points_earned}})
             clear_cached_user(uid)
-            clear_user_session(uid)
             
             insert_data = {"oid": fake_oid, "uid": uid, "sid": draft['sid'], "cost": draft['cost'], "status": "pending", "date": datetime.now(), "is_shadow": True}
             if o_type == "sub": insert_data.update({"is_sub": True, "username": draft['username'], "posts": draft['posts'], "qty": draft['qty']})
@@ -1165,9 +1239,8 @@ def process_order_background(uid, u, draft, message_id):
             res = api.place_order(draft['sid'], link=draft['link'], quantity=draft['qty'])
         
         if res and 'order' in res:
-            users_col.update_one({"_id": uid}, {"$inc": {"balance": -draft['cost'], "spent": draft['cost'], "points": points_earned}})
+            users_col.update_one({"_id": uid}, {"$inc": {"spent": deducted_cost, "points": points_earned}})
             clear_cached_user(uid)
-            clear_user_session(uid)
             
             insert_data = {"oid": res['order'], "uid": uid, "sid": draft['sid'], "cost": draft['cost'], "status": "pending", "date": datetime.now()}
             if o_type == "sub": insert_data.update({"is_sub": True, "username": draft['username'], "posts": draft['posts'], "qty": draft['qty']})
@@ -1183,12 +1256,15 @@ def process_order_background(uid, u, draft, message_id):
                 try: bot.send_message(proof_ch, channel_post, parse_mode="Markdown")
                 except: pass
         else:
+            users_col.update_one({"_id": uid}, {"$inc": {"balance": deducted_cost}})
+            clear_cached_user(uid)
             err_msg = escape_md(res.get('error', 'API Timeout') if res else 'API Timeout')
-            safe_edit_message(f"❌ **API REJECTED THE ORDER!**\n\n**Reason:** `{err_msg}`\n\nPlease check your link or try another service.", uid, message_id, parse_mode="Markdown")
-            clear_user_session(uid)
+            safe_edit_message(f"❌ **API REJECTED THE ORDER!**\n\n**Reason:** `{err_msg}`\n\n_Your balance has been refunded._", uid, message_id, parse_mode="Markdown")
     except Exception as e:
         logging.error(f"Order Background Error: {e}")
-        safe_edit_message("❌ **Internal Server Error!** Could not process order. Try again later.", uid, message_id, parse_mode="Markdown")
+        users_col.update_one({"_id": uid}, {"$inc": {"balance": deducted_cost}})
+        clear_cached_user(uid)
+        safe_edit_message("❌ **Internal Server Error!** Could not process order. Your balance has been refunded.", uid, message_id, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data == "CANCEL_ORD")
 def cancel_ord(call):
