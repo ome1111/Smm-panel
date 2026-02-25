@@ -6,9 +6,10 @@ import threading
 import logging
 from datetime import datetime, timedelta
 from telebot import types
+from bson.objectid import ObjectId
 
 # 🔥 loader এবং utils থেকে প্রয়োজনীয় ফাংশন ইম্পোর্ট
-from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, redis_client
+from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, redis_client, logs_col
 from config import *
 import api
 from utils import *
@@ -469,9 +470,17 @@ def set_currency_callback(call):
 def pay_details(call):
     if is_button_locked(call.from_user.id, call.id): return
     bot.answer_callback_query(call.id)
-    _, amt_usd, method = call.data.split("|")
-    amt_usd = float(amt_usd)
     
+    parts = call.data.split("|")
+    if len(parts) == 4:
+        _, amt_usd_str, exact_local_amt_str, method = parts
+        amt_usd = float(amt_usd_str)
+        exact_local_amt = float(exact_local_amt_str)
+    else:
+        _, amt_usd_str, method = parts
+        amt_usd = float(amt_usd_str)
+        exact_local_amt = None
+        
     uid = call.message.chat.id
     u = get_cached_user(uid)
     curr = u.get("currency", "BDT") if u else "BDT"
@@ -487,7 +496,10 @@ def pay_details(call):
     if is_crypto:
         display_amt = f"${amt_usd:.2f}"
     else:
-        formatted_amt = int(local_amt) if local_amt.is_integer() else round(local_amt, 2)
+        if exact_local_amt is not None:
+            formatted_amt = int(exact_local_amt) if exact_local_amt.is_integer() else round(exact_local_amt, 2)
+        else:
+            formatted_amt = int(local_amt) if local_amt.is_integer() else round(local_amt, 2)
         display_amt = f"{formatted_amt} TK" if curr == "BDT" else f"{formatted_amt} {curr}"
     
     safe_method = escape_md(method)
@@ -497,6 +509,23 @@ def pay_details(call):
     
     update_user_session(uid, {"step": "awaiting_trx", "temp_dep_amt": amt_usd, "temp_dep_method": method})
     safe_edit_message(txt, uid, call.message.message_id, parse_mode="Markdown")
+
+# 🔥 CLOSE TICKET HANDLER
+@bot.callback_query_handler(func=lambda c: c.data.startswith("CLOSE_TICKET|"))
+def close_support_ticket(call):
+    bot.answer_callback_query(call.id, "Ticket Closed Successfully!")
+    tid = call.data.split("|")[1]
+    tickets_col.update_one({"_id": ObjectId(tid)}, {"$set": {"status": "closed", "closed_by": "User"}})
+    try: bot.delete_message(call.message.chat.id, call.message.message_id)
+    except: pass
+    bot.send_message(call.message.chat.id, "✅ **Support Ticket Closed.**\nIf you need further help, you can open a new ticket from Live Chat.", parse_mode="Markdown")
+
+# 🔥 CREATE NEW TICKET HANDLER
+@bot.callback_query_handler(func=lambda c: c.data == "NEW_TICKET")
+def start_new_ticket(call):
+    bot.answer_callback_query(call.id)
+    update_user_session(call.message.chat.id, {"step": "awaiting_ticket"})
+    safe_edit_message("💬 **NEW LIVE SUPPORT TICKET**\nSend your message here. You can also send Screenshots or Photos! Our Admins will reply directly.", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("PAY_CRYPTO|"))
 def pay_crypto_details(call):
@@ -602,8 +631,19 @@ def universal_buttons(message):
         bot.send_message(uid, "🔍 **SMART SEARCH**\nEnter Service ID or Keyword (e.g., 'Instagram'):", parse_mode="Markdown")
         
     elif message.text == "💬 Live Chat":
-        update_user_session(uid, {"step": "awaiting_ticket"})
-        bot.send_message(uid, "💬 **LIVE SUPPORT**\nSend your message here. You can also send Screenshots or Photos! Our Admins will reply directly.", parse_mode="Markdown")
+        open_tickets = list(tickets_col.find({"uid": uid, "status": "open"}))
+        if open_tickets:
+            for t in open_tickets:
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("❌ Close Ticket", callback_data=f"CLOSE_TICKET|{t['_id']}"))
+                safe_msg = escape_md(t['msg'][:100])
+                bot.send_message(uid, f"🎧 **OPEN SUPPORT TICKET**\n━━━━━━━━━━━━━━━━━━━━\n**Date:** `{t.get('date', datetime.now()).strftime('%Y-%m-%d %H:%M')}`\n**Your Message:** {safe_msg}...\n\n_Wait for an admin to reply, or close this ticket._", reply_markup=markup, parse_mode="Markdown")
+            
+            markup = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("➕ Open New Ticket", callback_data="NEW_TICKET"))
+            bot.send_message(uid, "Do you want to open another ticket?", reply_markup=markup)
+        else:
+            update_user_session(uid, {"step": "awaiting_ticket"})
+            bot.send_message(uid, "💬 **LIVE SUPPORT**\nSend your message here. You can also send Screenshots or Photos! Our Admins will reply directly.", parse_mode="Markdown")
         
     elif message.text == "📝 Bulk Order":
         update_user_session(uid, {"step": "awaiting_bulk_order"})
@@ -724,7 +764,7 @@ def universal_router(message):
             except: pass
             return
 
-    if step == "awaiting_deposit_amt":
+    elif step == "awaiting_deposit_amt":
         try:
             amt = float(text)
             curr_code = u.get("currency", "BDT")
@@ -737,15 +777,19 @@ def universal_router(message):
             
             for p in payments: 
                 is_crypto = any(x in p['name'].lower() for x in ['usdt', 'binance', 'crypto', 'btc', 'pm', 'perfect', 'payeer'])
-                local_amt = amt_usd * float(p['rate'])
                 
                 if is_crypto:
                     display_amt = f"${amt_usd:.2f}"
                 else:
-                    formatted_amt = int(local_amt) if local_amt.is_integer() else round(local_amt, 2)
+                    formatted_amt = int(amt) if amt.is_integer() else round(amt, 2)
                     display_amt = f"{formatted_amt} TK" if curr_code == "BDT" else f"{formatted_amt} {curr_code}"
                     
-                markup.add(types.InlineKeyboardButton(f"🏦 {p['name']} (Pay {display_amt})", callback_data=f"PAY|{amt_usd}|{p['name']}"))
+                markup.add(types.InlineKeyboardButton(f"🏦 {p['name']} (Pay {display_amt})", callback_data=f"PAY|{amt_usd:.4f}|{amt}|{p['name']}"))
+            
+            if s.get("cryptomus_active") and s.get("cryptomus_merchant") and s.get("cryptomus_api"):
+                markup.add(types.InlineKeyboardButton(f"🤖 Cryptomus (Pay ${amt_usd:.2f})", callback_data=f"PAY_CRYPTO|{amt_usd:.4f}|Cryptomus"))
+            if s.get("coinpayments_active") and s.get("coinpayments_pub") and s.get("coinpayments_priv"):
+                markup.add(types.InlineKeyboardButton(f"🪙 CoinPayments (Pay ${amt_usd:.2f})", callback_data=f"PAY_CRYPTO|{amt_usd:.4f}|CoinPayments"))
 
             clear_user_session(uid)
             return bot.send_message(uid, "💳 **Select Gateway:**", reply_markup=markup, parse_mode="Markdown")
@@ -905,12 +949,14 @@ def universal_router(message):
 
     elif step == "awaiting_ticket":
         clear_user_session(uid)
-        tickets_col.insert_one({"uid": uid, "msg": text, "status": "open", "date": datetime.now()})
+        insert_res = tickets_col.insert_one({"uid": uid, "msg": text, "status": "open", "date": datetime.now()})
+        ticket_id = insert_res.inserted_id
+        
         safe_name = escape_md(message.from_user.first_name)
         safe_text = escape_md(text)
-        admin_msg = f"📩 **NEW LIVE CHAT**\n👤 User: `{safe_name}`\n🆔 ID: `{uid}`\n\n💬 **Message:**\n{safe_text}\n\n_Reply to this message to send an answer directly._"
+        admin_msg = f"📩 **NEW LIVE CHAT**\n👤 User: `{safe_name}`\n🆔 ID: `{uid}`\n🎫 Ticket: `{ticket_id}`\n\n💬 **Message:**\n{safe_text}\n\n_Reply to this message with '🆔 ID: {uid}' to send an answer directly._"
         threading.Thread(target=send_media_to_admin, args=(message, admin_msg)).start()
-        return bot.send_message(uid, "✅ **Message Sent Successfully!** Admin will reply soon.", parse_mode="Markdown")
+        return bot.send_message(uid, "✅ **Message Sent Successfully!** Admin will reply soon.\n_You can check or close this ticket from Live Chat menu._", parse_mode="Markdown")
 
     elif step == "awaiting_voucher":
         clear_user_session(uid)
@@ -1054,3 +1100,4 @@ def cancel_ord(call):
     bot.answer_callback_query(call.id)
     clear_user_session(call.message.chat.id)
     safe_edit_message("🚫 **Order Cancelled.**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+
