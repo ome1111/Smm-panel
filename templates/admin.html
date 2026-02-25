@@ -113,9 +113,10 @@
             <div class="glass-card p-6 mb-8">
                 <h3 class="text-xl font-bold text-white mb-4"><i class="fas fa-star text-amber-400"></i> Admin Best Choice Setup</h3>
                 <form action="/save_best_choice" method="POST" class="flex flex-col sm:flex-row gap-4">
-                    <input type="text" name="best_choice_sids" value="{{ s.get('best_choice_sids', []) | join(', ') }}" placeholder="Enter Service IDs (e.g., 102, 55, 301)" class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white outline-none focus:border-sky-500 data-font">
+                    <input type="text" name="best_choice_sids" value="{{ s.get('best_choice_sids', []) | join(', ') }}" placeholder="Enter Service IDs (e.g., 102, 55, 301, ext_0_15)" class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white outline-none focus:border-sky-500 data-font">
                     <button type="submit" class="bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold px-8 py-3 rounded-lg transition shadow-lg shadow-sky-500/30"><i class="fas fa-save"></i> Save IDs</button>
                 </form>
+                <p class="text-xs text-slate-500 mt-2">To feature external API services, use the tag (e.g. `ext_0_SERVICE_ID`).</p>
             </div>
         </section>
 
@@ -382,6 +383,29 @@
                 </div>
 
                 <div class="glass-card p-6">
+                    <div class="flex items-center justify-between mb-4 border-b border-slate-700/50 pb-3">
+                        <h3 class="text-xl font-bold text-white"><i class="fas fa-plug text-sky-400"></i> External APIs (Hybrid Mode)</h3>
+                        <button type="button" onclick="addExtApiRow()" class="text-sky-400 text-sm font-bold bg-sky-500/10 px-3 py-1 rounded hover:bg-sky-500/20 transition"><i class="fas fa-plus"></i> Add API</button>
+                    </div>
+                    <p class="text-sm text-slate-400 mb-4">Fetch specific services from other SMM panels. After saving, go to Dashboard and copy the <span class="bg-slate-800 text-sky-400 px-1 rounded">ext_X_ID</span> tags to "Admin Best Choice".</p>
+                    
+                    <div id="ext-api-methods" class="space-y-4">
+                        {% for api in s.get('external_apis', []) %}
+                        <div class="ext-api-row bg-slate-900/50 p-4 rounded-lg border border-slate-700/50 relative shadow-inner">
+                            <div class="absolute top-0 right-0 bg-sky-500/20 text-sky-400 px-2 py-1 rounded-bl-lg rounded-tr-lg text-xs font-bold border-b border-l border-sky-500/30">Index: {{ loop.index0 }}</div>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3 pt-3">
+                                <input type="url" name="ext_api_url[]" value="{{ api.url }}" placeholder="API URL (e.g. https://abcpanel.com/api/v2)" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white outline-none focus:border-sky-500" required>
+                                <input type="password" name="ext_api_key[]" value="{{ api.key }}" placeholder="API Key" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white outline-none focus:border-sky-500" required>
+                            </div>
+                            <input type="text" name="ext_api_services[]" value="{{ api.services | join(', ') }}" placeholder="Target Service IDs to fetch (e.g. 10, 205, 30)" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white outline-none focus:border-sky-500" required>
+                            <p class="text-xs text-slate-500 mt-2">Example: ID `10` here will become `ext_{{ loop.index0 }}_10` in Bot.</p>
+                            <button type="button" onclick="this.closest('.ext-api-row').remove()" class="absolute bottom-4 right-4 text-slate-500 hover:text-red-500 bg-slate-800 rounded px-2 py-1 transition"><i class="fas fa-trash"></i> Remove</button>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="glass-card p-6">
                     <h3 class="text-xl font-bold text-white border-b border-slate-700/50 pb-3 mb-4"><i class="fas fa-wallet text-emerald-400"></i> Payment Gateways</h3>
                     
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
@@ -591,7 +615,6 @@
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             event.currentTarget.classList.add('active');
             
-            // Auto close sidebar on mobile after clicking a menu item
             if(window.innerWidth < 768) {
                 const sidebar = document.getElementById('sidebar');
                 if(!sidebar.classList.contains('-translate-x-[150%]')) {
@@ -612,7 +635,6 @@
         function openModal(id) { document.getElementById(id).classList.add('active'); }
         function closeModal(id) { document.getElementById(id).classList.remove('active'); }
 
-        // User Edit Populate Logic
         function openEditModal(uid, name, bal, spent, ref, pts, disc, tier) {
             document.getElementById('e_uid').value = uid;
             document.getElementById('e_name').innerText = name + ' (' + uid + ')';
@@ -625,7 +647,6 @@
             openModal('editUserModal');
         }
 
-        // Dynamic Payment Row Adder
         function addPaymentRow() {
             const container = document.getElementById('payment-methods');
             const row = document.createElement('div');
@@ -635,6 +656,25 @@
                 <input type="number" step="0.01" name="pay_rate[]" placeholder="Rate (e.g. 1)" class="w-full sm:w-32 bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white data-font outline-none focus:border-sky-500" required>
                 <input type="text" name="pay_address[]" placeholder="Account Number or Crypto Address" class="flex-1 bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white outline-none focus:border-sky-500" required>
                 <button type="button" onclick="this.closest('.payment-row').remove()" class="text-slate-500 hover:text-red-500 px-2 py-2 sm:py-0 absolute top-2 right-2 sm:relative sm:top-0 sm:right-0"><i class="fas fa-times"></i></button>
+            `;
+            container.appendChild(row);
+        }
+
+        // 🔥 NEW: Dynamic External API Row Adder
+        function addExtApiRow() {
+            const container = document.getElementById('ext-api-methods');
+            const rowCount = container.children.length;
+            const row = document.createElement('div');
+            row.className = 'ext-api-row bg-slate-900/50 p-4 rounded-lg border border-slate-700/50 relative mt-3 shadow-inner animate-[fadeIn_0.2s_ease-out]';
+            row.innerHTML = `
+                <div class="absolute top-0 right-0 bg-amber-500/20 text-amber-400 px-2 py-1 rounded-bl-lg rounded-tr-lg text-xs font-bold border-b border-l border-amber-500/30">Index: ${rowCount}</div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3 pt-3">
+                    <input type="url" name="ext_api_url[]" placeholder="API URL (e.g. https://abcpanel.com/api/v2)" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white outline-none focus:border-sky-500" required>
+                    <input type="text" name="ext_api_key[]" placeholder="API Key" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white outline-none focus:border-sky-500" required>
+                </div>
+                <input type="text" name="ext_api_services[]" placeholder="Target Service IDs (comma separated, e.g. 10, 205, 30)" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white outline-none focus:border-sky-500" required>
+                <p class="text-xs text-slate-500 mt-2">Example: ID \`10\` here will become \`ext_${rowCount}_10\` in Bot.</p>
+                <button type="button" onclick="this.closest('.ext-api-row').remove()" class="absolute bottom-4 right-4 text-slate-500 hover:text-red-500 bg-slate-800 rounded px-2 py-1 transition"><i class="fas fa-trash"></i> Remove</button>
             `;
             container.appendChild(row);
         }
