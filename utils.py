@@ -30,7 +30,7 @@ def update_spy(uid, action_text):
     pass
 
 # ==========================================
-# 0. SECURITY: MARKDOWN ESCAPE ENGINE (PREVENTS CRASHES)
+# 0. SECURITY: MARKDOWN ESCAPE ENGINE
 # ==========================================
 def escape_md(text):
     """টেলিগ্রামের Markdown পার্স এরর ঠেকানোর জন্য স্পেশাল ক্যারেক্টার এস্কেপ করা"""
@@ -41,12 +41,11 @@ def escape_md(text):
     return text
 
 # ==========================================
-# 1. CURRENCY ENGINE & FAST SETTINGS CACHE (REDIS OPTIMIZED)
+# 1. CURRENCY ENGINE & FAST SETTINGS CACHE
 # ==========================================
 BASE_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://smm-panel-g8ab.onrender.com')
 
 def get_currency_rates():
-    """Gunicorn এর একাধিক ওয়ার্কারের জন্য রেট Redis থেকে আনা হচ্ছে"""
     cached = redis_client.get("currency_rates")
     if cached:
         return json.loads(cached)
@@ -124,30 +123,43 @@ def check_maintenance(chat_id):
     return False
 
 # ==========================================
-# 2. PRO-LEVEL CACHE, SYNC & DRIP CAMPAIGNS
+# 2. PRO-LEVEL CACHE, SYNC & BACKGROUND WORKERS
 # ==========================================
 
 def auto_sync_services_cron():
+    """1xpanel API Sync with Dead-Lock Protection"""
     while True:
-        if not redis_client.set("lock_sync_services", "locked", nx=True, ex=43000):
+        # শুধু কাজ চলাকালীন ৫ মিনিটের লক (যাতে অন্য ওয়ার্কার ইন্টারফেয়ার না করে)
+        if not redis_client.set("lock_sync_services_running", "locked", nx=True, ex=300):
             time.sleep(60)
             continue
+            
         try:
             logging.info("🔄 Syncing services from 1xpanel API...")
             res = api.get_services()
-            if res and isinstance(res, list): 
+            if res and isinstance(res, list) and len(res) > 0: 
                 redis_client.setex("services_cache", 43200, json.dumps(res))
                 config_col.update_one({"_id": "api_cache"}, {"$set": {"data": res, "time": time.time()}}, upsert=True)
                 logging.info(f"✅ Successfully synced {len(res)} services.")
+                
+                # সফল হলে লক ডিলিট করে ১২ ঘণ্টা ঘুমাবে
+                redis_client.delete("lock_sync_services_running")
+                time.sleep(43200)
+                continue
+            else:
+                logging.warning("⚠️ API returned empty or invalid data. Retrying in 5 minutes...")
         except Exception as e: 
             logging.error(f"❌ Service Sync Failed: {e}")
-        time.sleep(43200)
+            
+        # ফেইল করলে লক ডিলিট করে ৫ মিনিট পর আবার ট্রাই করবে
+        redis_client.delete("lock_sync_services_running")
+        time.sleep(300)
 
 threading.Thread(target=auto_sync_services_cron, daemon=True).start()
 
 def exchange_rate_sync_cron():
     while True:
-        if not redis_client.set("lock_exchange_rate", "locked", nx=True, ex=43000):
+        if not redis_client.set("lock_exchange_running", "locked", nx=True, ex=300):
             time.sleep(60)
             continue
         try:
@@ -155,9 +167,14 @@ def exchange_rate_sync_cron():
             if rates:
                 redis_client.set("currency_rates", json.dumps(rates))
                 logging.info(f"✅ Live Exchange Rates Synced: {rates}")
+                redis_client.delete("lock_exchange_running")
+                time.sleep(43200)
+                continue
         except Exception as e: 
             logging.error(f"❌ Exchange Rate Sync Failed: {e}")
-        time.sleep(43200)
+            
+        redis_client.delete("lock_exchange_running")
+        time.sleep(300)
 
 threading.Thread(target=exchange_rate_sync_cron, daemon=True).start()
 
@@ -199,7 +216,6 @@ def drip_campaign_cron():
 
 threading.Thread(target=drip_campaign_cron, daemon=True).start()
 
-# 🔥 Updated Auto Sync: Now syncs progress (remains)
 def auto_sync_orders_cron():
     while True:
         if not redis_client.set("lock_orders_sync", "locked", nx=True, ex=110):
@@ -220,7 +236,6 @@ def auto_sync_orders_cron():
                         old_status = str(o.get('status', '')).lower()
                         remains = res.get('remains', 0)
                         
-                        # Update DB with new status and remains
                         update_data = {"status": new_status, "remains": remains}
                         orders_col.update_one({"_id": o["_id"]}, {"$set": update_data})
                         
@@ -284,7 +299,9 @@ def calculate_price(base_rate, user_spent, user_custom_discount=0.0):
     rate_w_profit = base * (1 + (profit / 100))
     return rate_w_profit * (1 - (total_disc / 100))
 
+# 🔥 FIX: Handle None or Empty Name Crash
 def clean_service_name(raw_name):
+    if not raw_name: return "Premium Service ⚡"
     try:
         n = str(raw_name)
         emojis = ""
@@ -303,8 +320,10 @@ def clean_service_name(raw_name):
         return f"{n[:45]} {emojis}".strip() if n else f"Premium Service {emojis}"
     except: return str(raw_name)[:50]
 
+# 🔥 FIX: Handle None or Empty Category Crash
 def identify_platform(cat_name):
-    cat = cat_name.lower()
+    if not cat_name: return "🌐 Other Services"
+    cat = str(cat_name).lower()
     if 'instagram' in cat or 'ig' in cat: return "📸 Instagram"
     if 'facebook' in cat or 'fb' in cat: return "📘 Facebook"
     if 'youtube' in cat or 'yt' in cat: return "▶️ YouTube"
@@ -313,10 +332,9 @@ def identify_platform(cat_name):
     if 'twitter' in cat or ' x ' in cat: return "🐦 Twitter"
     return "🌐 Other Services"
 
-# 🔥 NEW HELPER: Smart Auto-Routing
 def detect_platform_from_link(link):
-    """লিংক থেকে স্বয়ংক্রিয়ভাবে প্ল্যাটফর্ম চিনে নেওয়া"""
-    link = link.lower()
+    if not link: return None
+    link = str(link).lower()
     if 'instagram.com' in link or 'ig.me' in link: return "📸 Instagram"
     if 'facebook.com' in link or 'fb.com' in link or 'fb.watch' in link: return "📘 Facebook"
     if 'youtube.com' in link or 'youtu.be' in link: return "▶️ YouTube"
@@ -325,9 +343,7 @@ def detect_platform_from_link(link):
     if 'twitter.com' in link or 'x.com' in link: return "🐦 Twitter"
     return None
 
-# 🔥 NEW HELPER: Visual Progress Bar Generator
 def generate_progress_bar(remains, quantity):
-    """রিয়েল-টাইম প্রোগ্রেস বার তৈরি করা"""
     try:
         if remains is None or remains == "": remains = quantity
         remains = int(remains)
