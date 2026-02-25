@@ -2,19 +2,18 @@ import requests
 import time
 import logging
 from config import API_KEY, API_URL
+from loader import config_col
 
 # ==========================================
-# ⚡ SMART API ENGINE (Optimized for Render & Cloudflare)
+# ⚡ SMART API ENGINE (Multi-API Supported)
 # ==========================================
-def _make_request(action, timeout=10, retries=2, **kwargs):
-    """
-    API Request handler with Cloudflare bypass headers and optimized retry logic
-    to prevent Webhook blocking on Render.
-    """
-    payload = {'key': API_KEY, 'action': action}
+def _make_request(action, api_url=API_URL, api_key=API_KEY, timeout=10, retries=2, **kwargs):
+    if not api_url or not api_key:
+        return {"error": "API Setup Missing"}
+        
+    payload = {'key': api_key, 'action': action}
     payload.update(kwargs)
     
-    # Advanced Cloudflare Bypass Headers
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'application/json, text/javascript, */*; q=0.01',
@@ -26,67 +25,90 @@ def _make_request(action, timeout=10, retries=2, **kwargs):
     
     for attempt in range(retries):
         try:
-            response = requests.post(API_URL, data=payload, headers=headers, timeout=timeout)
+            response = requests.post(api_url, data=payload, headers=headers, timeout=timeout)
             try:
                 return response.json()
             except ValueError:
                 if attempt < retries - 1:
                     time.sleep(1)
                     continue
-                logging.error(f"API Error: Invalid JSON response. Status: {response.status_code}")
-                return {"error": f"Invalid response from panel. Status: {response.status_code}"}
+                logging.error(f"API Error: Invalid JSON. Status: {response.status_code}")
+                return {"error": f"Invalid response. Status: {response.status_code}"}
                 
         except requests.exceptions.Timeout:
             if attempt < retries - 1:
                 time.sleep(1)
                 continue
-            logging.error(f"API Error: Connection Timeout on action '{action}'.")
-            return {"error": "API Connection Timeout. Main panel is too slow."}
+            return {"error": "API Connection Timeout."}
             
         except requests.exceptions.RequestException as e:
             if attempt < retries - 1:
                 time.sleep(1)
                 continue
-            logging.error(f"API Request Exception on action '{action}': {e}")
             return {"error": "API Connection Failed."}
             
         except Exception as e:
-            logging.error(f"API General Error on action '{action}': {e}")
             return {"error": str(e)}
 
     return {"error": "Max retries exceeded"}
 
 # ==========================================
+# 🔄 MULTI-API ROUTER
+# ==========================================
+def get_ext_config(target_id):
+    """Check if ID is from External API and route it dynamically"""
+    target_str = str(target_id)
+    if target_str.startswith("ext_"):
+        parts = target_str.split('_')
+        if len(parts) >= 3:
+            try:
+                idx = int(parts[1])
+                real_id = parts[2]
+                s = config_col.find_one({"_id": "settings"})
+                if s and "external_apis" in s and len(s["external_apis"]) > idx:
+                    ext = s["external_apis"][idx]
+                    return ext.get("url"), ext.get("key"), real_id
+            except:
+                pass
+    return API_URL, API_KEY, target_id
+
+# ==========================================
 # 📦 SMM PANEL API FUNCTIONS
 # ==========================================
 def get_services():
-    """প্যানেল থেকে সব সার্ভিসের লিস্ট আনা (Price Auto-Sync)"""
+    """Main 1xpanel Services"""
     res = _make_request('services', timeout=15)
-    
-    # 🔥 FIX: API fail korle ba onno format e asle crash thekanor jonno protection
-    if isinstance(res, list):
-        return res
-    else:
-        logging.error(f"API Error in get_services: Expected list, got {type(res)}. Response: {res}")
-        return []
+    if isinstance(res, list): return res
+    return []
+
+def get_external_services(url, key):
+    """Fetch Services from Custom External APIs"""
+    res = _make_request('services', api_url=url, api_key=key, timeout=15)
+    if isinstance(res, list): return res
+    return []
 
 def place_order(sid, **kwargs):
-    """
-    আসল প্যানেলে অর্ডার প্লেস করা।
-    এখন এটি Normal, Drip-feed এবং Subscription সব ধরনের প্যারামিটার সাপোর্ট করবে।
-    """
-    return _make_request('add', timeout=15, service=sid, **kwargs)
+    """Place order dynamically to main or external panel"""
+    url, key, real_sid = get_ext_config(sid)
+    res = _make_request('add', api_url=url, api_key=key, timeout=15, service=real_sid, **kwargs)
+    
+    # If external, mask the order ID so bot can track status from correct panel
+    if str(sid).startswith("ext_") and res and 'order' in res:
+        parts = str(sid).split('_')
+        idx = parts[1]
+        res['order'] = f"ext_{idx}_{res['order']}"
+        
+    return res
 
 def check_order_status(order_id):
-    """অর্ডারের স্ট্যাটাস এবং প্রোগ্রেস চেক করা"""
-    return _make_request('status', timeout=10, order=order_id)
+    url, key, real_oid = get_ext_config(order_id)
+    return _make_request('status', api_url=url, api_key=key, timeout=10, order=real_oid)
 
 def send_refill(order_id):
-    """Refill request পাঠানো (Auto Refill Supported)"""
-    return _make_request('refill', timeout=10, order=order_id)
+    url, key, real_oid = get_ext_config(order_id)
+    return _make_request('refill', api_url=url, api_key=key, timeout=10, order=real_oid)
 
 def get_balance():
-    """মেইন প্যানেলের ব্যালেন্স চেক করা"""
     res = _make_request('balance', timeout=10)
     if isinstance(res, dict) and 'balance' in res:
         return f"{res.get('balance', '0.00')} {res.get('currency', 'USD')}"
@@ -96,18 +118,14 @@ def get_balance():
 # 🌍 REAL-TIME EXCHANGE RATE API
 # ==========================================
 def get_live_exchange_rates():
-    """
-    ফ্রি ওপেন API ব্যবহার করে লাইভ ফরেক্স মার্কেট থেকে BDT এবং INR এর রেট আনবে।
-    """
     try:
-        res = requests.get("https://open.er-api.com/v6/latest/USD", timeout=8)
+        res = requests.get("test", timeout=8)
         data = res.json()
         if data and "rates" in data:
             return {
                 "BDT": data["rates"].get("BDT", 120),
                 "INR": data["rates"].get("INR", 83)
             }
-    except Exception as e:
-        logging.error(f"Exchange Rate Sync Failed: {e}")
+    except Exception:
         pass
     return None
