@@ -56,8 +56,13 @@ def fmt_curr(usd_amount, curr_code="BDT"):
     rate = rates.get(curr_code, 120)
     sym = {"BDT": "৳", "INR": "₹", "USD": "$"}.get(curr_code, "৳")
     val = float(usd_amount) * rate
-    decimals = 3 if curr_code == "USD" else 2
-    return f"{sym}{val:.{decimals}f}"
+    
+    if curr_code == "USD":
+        return f"{sym}{val:.3f}"
+    else:
+        # 🔥 FIX: No decimal if it's a whole number for local currencies
+        formatted_val = int(val) if val.is_integer() else round(val, 2)
+        return f"{sym}{formatted_val}"
 
 def get_settings():
     cached = redis_client.get("settings_cache")
@@ -74,7 +79,7 @@ def get_settings():
             "flash_sale_active": False, "flash_sale_discount": 0.0, 
             "reward_top1": 10.0, "reward_top2": 5.0, "reward_top3": 2.0, 
             "best_choice_sids": [], "points_per_usd": 100, "points_to_usd_rate": 1000,
-            "proof_channel": "", "profit_tiers": [],
+            "proof_channel": "", "profit_tiers": [], "external_apis": [],
             "cryptomus_merchant": "", "cryptomus_api": "", "coinpayments_pub": "", "coinpayments_priv": "",
             "cryptomus_active": False, "coinpayments_active": False
         }
@@ -123,35 +128,58 @@ def check_maintenance(chat_id):
     return False
 
 # ==========================================
-# 2. PRO-LEVEL CACHE, SYNC & BACKGROUND WORKERS
+# 2. PRO-LEVEL CACHE, SYNC & HYBRID WORKERS
 # ==========================================
 
 def auto_sync_services_cron():
-    """1xpanel API Sync with Dead-Lock Protection"""
+    """Hybrid Sync: 1xpanel + Custom External APIs"""
     while True:
-        # শুধু কাজ চলাকালীন ৫ মিনিটের লক (যাতে অন্য ওয়ার্কার ইন্টারফেয়ার না করে)
         if not redis_client.set("lock_sync_services_running", "locked", nx=True, ex=300):
             time.sleep(60)
             continue
             
         try:
-            logging.info("🔄 Syncing services from 1xpanel API...")
-            res = api.get_services()
-            if res and isinstance(res, list) and len(res) > 0: 
-                redis_client.setex("services_cache", 43200, json.dumps(res))
-                config_col.update_one({"_id": "api_cache"}, {"$set": {"data": res, "time": time.time()}}, upsert=True)
-                logging.info(f"✅ Successfully synced {len(res)} services.")
+            logging.info("🔄 Syncing services from Main API...")
+            main_res = api.get_services()
+            
+            if main_res and isinstance(main_res, list) and len(main_res) > 0: 
+                combined_res = main_res.copy()
+                s = get_settings()
+                ext_apis = s.get("external_apis", [])
                 
-                # সফল হলে লক ডিলিট করে ১২ ঘণ্টা ঘুমাবে
+                # 🔥 Muti-API Hybrid Injection Engine
+                for i, ext in enumerate(ext_apis):
+                    ext_url = ext.get('url')
+                    ext_key = ext.get('key')
+                    target_sids = [str(sid).strip() for sid in ext.get('services', []) if str(sid).strip()]
+                    
+                    if ext_url and ext_key and target_sids:
+                        logging.info(f"🔄 Syncing external API {i}...")
+                        ext_data = api.get_external_services(ext_url, ext_key)
+                        
+                        if ext_data and isinstance(ext_data, list):
+                            for srv in ext_data:
+                                original_id = str(srv.get('service'))
+                                if original_id in target_sids:
+                                    new_srv = srv.copy()
+                                    new_id = f"ext_{i}_{original_id}"
+                                    new_srv['service'] = new_id
+                                    # Optional: Add a hidden tag to name for admin identification
+                                    new_srv['name'] = f"{new_srv.get('name', 'Unknown')} 🌟"
+                                    combined_res.append(new_srv)
+
+                redis_client.setex("services_cache", 43200, json.dumps(combined_res))
+                config_col.update_one({"_id": "api_cache"}, {"$set": {"data": combined_res, "time": time.time()}}, upsert=True)
+                logging.info(f"✅ Successfully synced {len(combined_res)} services (Hybrid Mode).")
+                
                 redis_client.delete("lock_sync_services_running")
                 time.sleep(43200)
                 continue
             else:
-                logging.warning("⚠️ API returned empty or invalid data. Retrying in 5 minutes...")
+                logging.warning("⚠️ Main API returned empty data. Retrying in 5 minutes...")
         except Exception as e: 
             logging.error(f"❌ Service Sync Failed: {e}")
             
-        # ফেইল করলে লক ডিলিট করে ৫ মিনিট পর আবার ট্রাই করবে
         redis_client.delete("lock_sync_services_running")
         time.sleep(300)
 
@@ -228,6 +256,8 @@ def auto_sync_orders_cron():
                 try:
                     time.sleep(0.1) 
                     if o.get("is_shadow"): continue
+                    
+                    # 🔥 api.py will automatically handle "ext_" orders
                     try: res = api.check_order_status(o['oid'])
                     except: continue
                     
@@ -299,7 +329,6 @@ def calculate_price(base_rate, user_spent, user_custom_discount=0.0):
     rate_w_profit = base * (1 + (profit / 100))
     return rate_w_profit * (1 - (total_disc / 100))
 
-# 🔥 FIX: Handle None or Empty Name Crash
 def clean_service_name(raw_name):
     if not raw_name: return "Premium Service ⚡"
     try:
@@ -320,7 +349,6 @@ def clean_service_name(raw_name):
         return f"{n[:45]} {emojis}".strip() if n else f"Premium Service {emojis}"
     except: return str(raw_name)[:50]
 
-# 🔥 FIX: Handle None or Empty Category Crash
 def identify_platform(cat_name):
     if not cat_name: return "🌐 Other Services"
     cat = str(cat_name).lower()
