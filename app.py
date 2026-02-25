@@ -17,7 +17,7 @@ import telebot
 from bson.objectid import ObjectId
 import re
 
-# [span_0](start_span)Import from loader and config[span_0](end_span)
+# Import from loader and config
 from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, redis_client, logs_col
 from config import BOT_TOKEN, ADMIN_ID, ADMIN_PASSWORD
 
@@ -26,7 +26,7 @@ import utils
 import admin
 import main_router
 
-[span_1](start_span)app = Flask(__name__)[span_1](end_span)
+app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'super_secret_nexus_titan_key_1010')
 
 # 🔥 ADMIN PANEL SECURITY (Cookie Theft Protection)
@@ -77,7 +77,7 @@ def auto_fake_proof_cron():
             if not proof_channel:
                 continue
 
-            # 🔥 Redis Lock: মাল্টিপল Gunicorn Worker থাকলেও শুধু একজন পোস্ট করবে
+            # 🔥 Redis Lock
             if not redis_client.set("fake_proof_lock", "locked", nx=True, ex=40):
                 continue
 
