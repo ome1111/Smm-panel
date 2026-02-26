@@ -34,11 +34,11 @@ def update_spy(uid, action_text):
 # 0. SECURITY: MARKDOWN ESCAPE ENGINE
 # ==========================================
 def escape_md(text):
-    """টেলিগ্রামের Markdown/MarkdownV2 পার্স এরর ঠেকানোর জন্য স্পেশাল ক্যারেক্টার এস্কেপ করা"""
+    """টেলিগ্রামের Legacy Markdown পার্স এরর ঠেকানোর জন্য স্পেশাল ক্যারেক্টার এস্কেপ করা"""
     if not text: return ""
     text = str(text)
-    # 🔥 FIX: Added all restricted characters for MarkdownV2 to prevent API crash
-    escape_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+    # Fix: Only escape characters required for Legacy 'Markdown' to prevent backslashes in links
+    escape_chars = ['_', '*', '`', '[']
     for char in escape_chars:
         text = text.replace(char, f"\\{char}")
     return text
