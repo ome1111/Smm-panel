@@ -35,6 +35,14 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 # app.config['SESSION_COOKIE_SECURE'] = True  # (Render-এ HTTPS থাকলে এটি Enable করতে পারেন)
 
 # ==========================================
+# 🚀 RENDER HEALTH CHECK (PORT TIMEOUT FIX)
+# ==========================================
+@app.route('/health')
+def health_check():
+    """Render uses this to verify if the app is running properly and bind the port."""
+    return "OK", 200
+
+# ==========================================
 # 1. WEBHOOK FAST ENGINE (10x Speed & Memory Leak Fixed)
 # ==========================================
 @app.route(f"/{BOT_TOKEN}", methods=['POST'])
@@ -920,4 +928,6 @@ def payeer_ipn():
         return str(e), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    # Render assigns dynamic port on runtime
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port)
