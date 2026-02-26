@@ -640,6 +640,10 @@ def got_payment(message):
         try: bot.send_message(uid, f"✅ **STARS DEPOSIT SUCCESS!**\nAmount: `${amt_usd:.2f}` has been securely added to your wallet.", parse_mode="Markdown")
         except: pass
 
+        # 🔥 NEW: Admin Notification for Telegram Stars Deposit
+        try: bot.send_message(ADMIN_ID, f"🔔 **STARS DEPOSIT:** User `{uid}` added `${amt_usd:.2f}` via Telegram Stars!", parse_mode="Markdown")
+        except: pass
+
 def universal_buttons(message):
     uid = message.chat.id
     clear_user_session(uid)
@@ -862,8 +866,11 @@ def universal_router(message):
             user_trx = text.upper().strip()
             trx_data = config_col.find_one({"_id": "transactions", "valid_list.trx": user_trx})
             
+            # 🔥 NEW: Live Chat Button on Invalid TRX ID
             if not trx_data:
-                return bot.send_message(uid, "❌ **INVALID TRX ID!**\nআপনার ট্রানজেকশন আইডিটি পাওয়া যায়নি। অনুগ্রহ করে সঠিক আইডি দিন।", parse_mode="Markdown")
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("💬 Live Chat", callback_data="NEW_TICKET"))
+                return bot.send_message(uid, "❌ **INVALID TRX ID!**\nআপনার ট্রানজেকশন আইডিটি পাওয়া যায়নি। অনুগ্রহ করে সঠিক আইডি দিন।", reply_markup=markup, parse_mode="Markdown")
 
             entry = next((x for x in trx_data['valid_list'] if x['trx'] == user_trx), None)
             if entry['status'] == "used":
@@ -1291,3 +1298,4 @@ def cancel_ord(call):
     bot.answer_callback_query(call.id)
     clear_user_session(call.message.chat.id)
     safe_edit_message("🚫 **Order Cancelled.**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+
