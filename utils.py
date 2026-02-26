@@ -31,13 +31,18 @@ def update_spy(uid, action_text):
     pass
 
 # ==========================================
+# 🔥 GLOBAL CACHE VARIABLES (To save Redis limits)
+# ==========================================
+local_settings_cache = None
+last_settings_update = 0
+
+# ==========================================
 # 0. SECURITY: MARKDOWN ESCAPE ENGINE
 # ==========================================
 def escape_md(text):
     """টেলিগ্রামের Legacy Markdown পার্স এরর ঠেকানোর জন্য স্পেশাল ক্যারেক্টার এস্কেপ করা"""
     if not text: return ""
     text = str(text)
-    # Fix: '_' সরানো হয়েছে যাতে লিংকের আন্ডারস্কোর নষ্ট না হয়
     escape_chars = ['*', '`', '[']
     for char in escape_chars:
         text = text.replace(char, f"\\{char}")
@@ -63,15 +68,29 @@ def fmt_curr(usd_amount, curr_code="BDT"):
     if curr_code == "USD":
         return f"{sym}{val:.3f}"
     else:
-        # 🔥 FIX: No decimal if it's a whole number for local currencies
+        # No decimal if it's a whole number for local currencies
         formatted_val = int(val) if val.is_integer() else round(val, 2)
         return f"{sym}{formatted_val}"
 
 def get_settings():
-    cached = redis_client.get("settings_cache")
-    if cached:
-        return json.loads(cached)
+    global local_settings_cache, last_settings_update
+    now = time.time()
+    
+    # 1. Check local memory first (Zero Cost & Ultra Fast)
+    if local_settings_cache and (now - last_settings_update < 60):
+        return local_settings_cache
         
+    # 2. Check Redis
+    try:
+        cached = redis_client.get("settings_cache")
+        if cached:
+            local_settings_cache = json.loads(cached)
+            last_settings_update = now
+            return local_settings_cache
+    except:
+        pass
+        
+    # 3. Check Database
     s = config_col.find_one({"_id": "settings"})
     if not s:
         s = {
@@ -91,38 +110,52 @@ def get_settings():
         }
         config_col.insert_one(s)
         
-    redis_client.setex("settings_cache", 30, json.dumps(s)) 
+    local_settings_cache = s
+    last_settings_update = now
+    try: redis_client.setex("settings_cache", 60, json.dumps(s)) 
+    except: pass
     return s
 
 def update_settings_cache(key, value):
+    global local_settings_cache
     s = get_settings()
     s[key] = value
-    redis_client.setex("settings_cache", 30, json.dumps(s))
+    local_settings_cache = s # Update local memory instantly
+    try: redis_client.setex("settings_cache", 60, json.dumps(s))
+    except: pass
 
 def get_cached_user(uid):
-    cached = redis_client.get(f"user_cache_{uid}")
-    if cached:
-        return json.loads(cached, object_hook=json_util.object_hook)
+    try:
+        cached = redis_client.get(f"user_cache_{uid}")
+        if cached:
+            return json.loads(cached, object_hook=json_util.object_hook)
+    except:
+        pass
     
     user = users_col.find_one({"_id": uid})
     if user:
-        redis_client.setex(f"user_cache_{uid}", 300, json.dumps(user, default=json_util.default)) 
+        try: redis_client.setex(f"user_cache_{uid}", 300, json.dumps(user, default=json_util.default)) 
+        except: pass
     return user
 
 def clear_cached_user(uid):
-    redis_client.delete(f"user_cache_{uid}")
+    try: redis_client.delete(f"user_cache_{uid}")
+    except: pass
 
 def check_spam(uid):
     if str(uid) == str(ADMIN_ID): return False 
-    if redis_client.get(f"blocked_{uid}"): return True
-    key = f"spam_{uid}"
-    reqs = redis_client.incr(key)
-    if reqs == 1: redis_client.expire(key, 3) 
-    if reqs > 5:
-        redis_client.setex(f"blocked_{uid}", 300, "1") 
-        try: bot.send_message(uid, "🛡 **ANTI-SPAM ACTIVATED!**\nYou are clicking too fast. Please wait 5 minutes.", parse_mode="Markdown")
-        except: pass
-        return True
+    try:
+        if redis_client.get(f"blocked_{uid}"): return True
+        key = f"spam_{uid}"
+        reqs = redis_client.incr(key)
+        if reqs == 1: redis_client.expire(key, 3) 
+        if reqs > 5:
+            redis_client.setex(f"blocked_{uid}", 300, "1") 
+            try: bot.send_message(uid, "🛡 **ANTI-SPAM ACTIVATED!**\nYou are clicking too fast. Please wait 5 minutes.", parse_mode="Markdown")
+            except: pass
+            return True
+    except:
+        pass
     return False
 
 def check_maintenance(chat_id):
@@ -139,8 +172,11 @@ def check_maintenance(chat_id):
 def auto_sync_services_cron():
     """Hybrid Sync: 1xpanel + Custom External APIs"""
     while True:
-        # 🔥 FIX: Lock expiry set to 12 hours (43200 seconds)
-        if not redis_client.set("lock_sync_services_running", "locked", nx=True, ex=43200):
+        try:
+            if not redis_client.set("lock_sync_services_running", "locked", nx=True, ex=43200):
+                time.sleep(60)
+                continue
+        except:
             time.sleep(60)
             continue
             
@@ -174,23 +210,23 @@ def auto_sync_services_cron():
                         except Exception as inner_e:
                             logging.error(f"External API {i} Sync Error: {inner_e}")
 
-                redis_client.setex("services_cache", 43200, json.dumps(combined_res))
+                try: redis_client.setex("services_cache", 43200, json.dumps(combined_res))
+                except: pass
                 config_col.update_one({"_id": "api_cache"}, {"$set": {"data": combined_res, "time": time.time()}}, upsert=True)
                 logging.info(f"✅ Successfully synced {len(combined_res)} services (Hybrid Mode).")
                 
-                # 🔥 FIX: Removed redis_client.delete() here. Lock will naturally expire after 12 hours.
                 time.sleep(43200)
                 continue
             else:
                 logging.warning("⚠️ Main API returned empty data. Retrying in 5 minutes...")
-                # 🔥 FAIL-SAFE: Empty data means we need to retry, release lock early.
-                redis_client.delete("lock_sync_services_running")
+                try: redis_client.delete("lock_sync_services_running")
+                except: pass
         except Exception as e: 
             logging.error(f"❌ Service Sync Failed: {e}")
             try: logs_col.insert_one({"error": str(traceback.format_exc()), "source": "Service Sync", "date": datetime.now()})
             except: pass
-            # 🔥 FAIL-SAFE: Error occurred, release lock to allow retry
-            redis_client.delete("lock_sync_services_running")
+            try: redis_client.delete("lock_sync_services_running")
+            except: pass
             
         time.sleep(300)
 
@@ -198,27 +234,32 @@ threading.Thread(target=auto_sync_services_cron, daemon=True).start()
 
 def exchange_rate_sync_cron():
     while True:
-        # 🔥 FIX: Lock expiry set to 12 hours (43200 seconds)
-        if not redis_client.set("lock_exchange_running", "locked", nx=True, ex=43200):
+        try:
+            if not redis_client.set("lock_exchange_running", "locked", nx=True, ex=43200):
+                time.sleep(60)
+                continue
+        except:
             time.sleep(60)
             continue
+            
         try:
             rates = api.get_live_exchange_rates()
             if rates:
-                redis_client.set("currency_rates", json.dumps(rates))
+                try: redis_client.set("currency_rates", json.dumps(rates))
+                except: pass
                 logging.info(f"✅ Live Exchange Rates Synced: {rates}")
                 
-                # 🔥 FIX: Removed redis_client.delete()
                 time.sleep(43200)
                 continue
             else:
-                # Fail-safe retry
-                redis_client.delete("lock_exchange_running")
+                try: redis_client.delete("lock_exchange_running")
+                except: pass
         except Exception as e: 
             logging.error(f"❌ Exchange Rate Sync Failed: {e}")
             try: logs_col.insert_one({"error": str(traceback.format_exc()), "source": "Exchange Rate Sync", "date": datetime.now()})
             except: pass
-            redis_client.delete("lock_exchange_running")
+            try: redis_client.delete("lock_exchange_running")
+            except: pass
             
         time.sleep(300)
 
@@ -226,17 +267,21 @@ threading.Thread(target=exchange_rate_sync_cron, daemon=True).start()
 
 def drip_campaign_cron():
     while True:
-        if not redis_client.set("lock_drip", "locked", nx=True, ex=43000):
+        try:
+            if not redis_client.set("lock_drip", "locked", nx=True, ex=43000):
+                time.sleep(60)
+                continue
+        except:
             time.sleep(60)
             continue
+            
         now = datetime.now()
         try:
-            # 🔥 FIX: Memory Leak Prevention. Removed `list()` to stream data via cursor
             users_cursor = users_col.find({"is_fake": {"$ne": True}}, {"joined": 1, "drip_3": 1, "drip_7": 1, "drip_15": 1})
             
             for u in users_cursor:
                 try: 
-                    time.sleep(0.05) # Prevent Telegram Flood Limit
+                    time.sleep(0.05) 
                     joined = u.get("joined")
                     if not joined: continue
                     days = (now - joined).days
@@ -269,8 +314,13 @@ threading.Thread(target=drip_campaign_cron, daemon=True).start()
 
 def auto_sync_orders_cron():
     while True:
-        if not redis_client.set("lock_orders_sync", "locked", nx=True, ex=110):
-            time.sleep(10)
+        try:
+            # 🔥 Order Sync Lock is now 10 minutes (590s) to save massive Redis limit
+            if not redis_client.set("lock_orders_sync", "locked", nx=True, ex=590):
+                time.sleep(60)
+                continue
+        except:
+            time.sleep(60)
             continue
             
         try:
@@ -318,18 +368,24 @@ def auto_sync_orders_cron():
             logging.error(f"Orders Sync Outer Error: {e}")
             try: logs_col.insert_one({"error": str(traceback.format_exc()), "source": "Order Sync", "date": datetime.now()})
             except: pass
-        time.sleep(120)
+            
+        # 🔥 Sleep for 10 minutes (Huge Optimization)
+        time.sleep(600)
 
 threading.Thread(target=auto_sync_orders_cron, daemon=True).start()
 
 def get_cached_services():
-    cached = redis_client.get("services_cache")
-    if cached: 
-        return json.loads(cached)
+    try:
+        cached = redis_client.get("services_cache")
+        if cached: 
+            return json.loads(cached)
+    except: pass
+    
     cache = config_col.find_one({"_id": "api_cache"})
     data = cache.get('data', []) if cache else []
     if data:
-        redis_client.setex("services_cache", 43200, json.dumps(data))
+        try: redis_client.setex("services_cache", 43200, json.dumps(data))
+        except: pass
     return data
 
 def calculate_price(base_rate, user_spent, user_custom_discount=0.0):
