@@ -592,6 +592,54 @@ def clear_logs():
     logs_col.delete_many({})
     return redirect(url_for('index'))
 
+
+# ==========================================
+# 🔥 ADDED: REDIS ACTION ROUTES (FIX FOR PRO TOOLS 404)
+# ==========================================
+@app.route('/redis_action/<action>')
+def redis_action(action):
+    if 'admin' not in session: return redirect(url_for('login'))
+    
+    msg = ""
+    try:
+        if action == 'clear_cache':
+            # Clear all cached API and user data
+            keys = redis_client.keys("*cache*")
+            if keys: redis_client.delete(*keys)
+            msg = "✅ Redis Cache Cleared Successfully! The bot will fetch fresh API data."
+            
+        elif action == 'release_locks':
+            # Release cron job and background process locks
+            keys = redis_client.keys("*lock*")
+            if keys: redis_client.delete(*keys)
+            msg = "🔓 All Background Locks Released! Stuck tasks will resume now."
+            
+        elif action == 'reset_spam':
+            # Clear Anti-spam blocks
+            keys = redis_client.keys("spam_*") + redis_client.keys("blocked_*")
+            if keys: redis_client.delete(*keys)
+            msg = "🛡️ Anti-Spam Blocks Reset! All users can use the bot normally."
+            
+        elif action == 'clear_sessions':
+            # Clear user current state/sessions in telegram bot
+            keys = redis_client.keys("session_*")
+            if keys: redis_client.delete(*keys)
+            msg = "🚪 All Active Bot Sessions Cleared! Users will be sent back to main menu."
+            
+        else:
+            msg = "❌ Invalid Redis Action!"
+            
+        # Send confirmation to admin telegram
+        bot.send_message(ADMIN_ID, f"🛠 **PRO TOOL EXECUTED**\n━━━━━━━━━━━━━━━━━━━━\n**Action:** `{action}`\n**Status:** {msg}", parse_mode="Markdown")
+        
+    except Exception as e:
+        logging.error(f"Redis Action Error ({action}): {e}")
+        try: bot.send_message(ADMIN_ID, f"❌ **Redis Error:** `{e}`", parse_mode="Markdown")
+        except: pass
+        
+    return redirect(url_for('index'))
+
+
 # ==========================================
 # 8. LOCAL AUTO PAYMENT WEBHOOK API (For MacroDroid)
 # ==========================================
