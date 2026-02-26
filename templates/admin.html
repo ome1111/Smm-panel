@@ -185,7 +185,7 @@
                                 {% endif %}
                             </td>
                             <td class="p-4 text-right space-x-3">
-                                <button onclick="openEditModal({{ u.get('_id', 0) }}, '{{ u.get('name', 'Unknown') | replace('\'', '\\\'') }}', {{ u.get('balance', 0) }}, {{ u.get('spent',0) }}, {{ u.get('ref_earnings',0) }}, {{ u.get('points',0) }}, {{ u.get('custom_discount',0) }}, '{{ u.get('tier_override', 'none') }}')" class="text-sky-400 hover:text-sky-300 text-lg" title="Edit User"><i class="fas fa-edit"></i></button>
+                                <button onclick="openEditModal({{ u.get('_id', 0) }}, '{{ u.get('name', 'Unknown') | replace('\'', '\\\'') | replace('\"', '&quot;') }}', {{ u.get('balance', 0) }}, {{ u.get('spent',0) }}, {{ u.get('ref_earnings',0) }}, {{ u.get('points',0) }}, {{ u.get('custom_discount',0) }}, '{{ u.get('tier_override', 'none') }}')" class="text-sky-400 hover:text-sky-300 text-lg" title="Edit User"><i class="fas fa-edit"></i></button>
                                 
                                 <a href="/toggle_shadow_ban/{{ u.get('_id') }}" class="text-stone-400 hover:text-stone-300 text-lg" title="Toggle Shadow Ban"><i class="fas fa-ghost"></i></a>
                                 
