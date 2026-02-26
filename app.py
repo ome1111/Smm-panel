@@ -771,6 +771,10 @@ def cryptomus_webhook():
             try: bot.send_message(uid, f"✅ **CRYPTOMUS DEPOSIT SUCCESS!**\nAmount: `${amt}` added to your wallet.", parse_mode="Markdown")
             except: pass
             
+            # 🔥 NEW: Admin Notification for Cryptomus Deposit
+            try: bot.send_message(ADMIN_ID, f"🔔 **CRYPTO DEPOSIT:** User `{uid}` added `${amt}` via Cryptomus!", parse_mode="Markdown")
+            except: pass
+            
         return "OK", 200
     except Exception as e:
         logging.error(f"Cryptomus Webhook Error: {e}")
@@ -809,6 +813,10 @@ def coinpayments_ipn():
             try: bot.send_message(uid, f"✅ **COINPAYMENTS DEPOSIT SUCCESS!**\nAmount: `${amt}` added to your wallet.", parse_mode="Markdown")
             except: pass
             
+            # 🔥 NEW: Admin Notification for CoinPayments Deposit
+            try: bot.send_message(ADMIN_ID, f"🔔 **CRYPTO DEPOSIT:** User `{uid}` added `${amt}` via CoinPayments!", parse_mode="Markdown")
+            except: pass
+            
         return "OK", 200
     except Exception as e:
         logging.error(f"CoinPayments Webhook Error: {e}")
@@ -845,6 +853,10 @@ def nowpayments_ipn():
             utils.clear_cached_user(uid)
             
             try: bot.send_message(uid, f"✅ **NOWPAYMENTS DEPOSIT SUCCESS!**\nAmount: `${amt}` added to your wallet.", parse_mode="Markdown")
+            except: pass
+            
+            # 🔥 NEW: Admin Notification for NowPayments Deposit
+            try: bot.send_message(ADMIN_ID, f"🔔 **CRYPTO DEPOSIT:** User `{uid}` added `${amt}` via NowPayments!", parse_mode="Markdown")
             except: pass
             
         return "OK", 200
@@ -895,6 +907,11 @@ def payeer_ipn():
                 
                 try: bot.send_message(uid, f"✅ **PAYEER DEPOSIT SUCCESS!**\nAmount: `${amt}` added to your wallet.", parse_mode="Markdown")
                 except: pass
+                
+                # 🔥 NEW: Admin Notification for Payeer Deposit
+                try: bot.send_message(ADMIN_ID, f"🔔 **CRYPTO DEPOSIT:** User `{uid}` added `${amt}` via Payeer!", parse_mode="Markdown")
+                except: pass
+                
                 return "success", 200
         return "error", 400
     except Exception as e:
