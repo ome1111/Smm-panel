@@ -136,7 +136,15 @@
                     <h2 class="text-2xl font-bold text-white">Users Manager</h2>
                     <p class="text-sm text-sky-400 data-font font-bold mt-1">Page {{ page }} of {{ total_pages }}</p>
                 </div>
-                <div class="flex gap-2 w-full sm:w-auto">
+                <div class="flex flex-wrap gap-2 w-full sm:w-auto items-center">
+                    
+                    <div class="relative w-full sm:w-auto flex-1 sm:min-w-[250px]">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <i class="fas fa-search text-slate-500"></i>
+                        </div>
+                        <input type="text" id="userSearchInput" onkeyup="searchUsers()" placeholder="Search by UID or Name..." class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 pl-10 text-white outline-none focus:border-sky-500 transition">
+                    </div>
+
                     <button onclick="openModal('fakeUserModal')" class="flex-1 sm:flex-none bg-violet-500/20 text-violet-400 border border-violet-500/50 px-4 py-2 rounded font-bold hover:bg-violet-500 hover:text-white transition">
                         <i class="fas fa-user-ninja"></i> Fake User
                     </button>
@@ -859,6 +867,26 @@
                 <button type="button" onclick="this.closest('.ext-api-row').remove()" class="absolute bottom-4 right-4 text-slate-500 hover:text-red-500 bg-slate-800 rounded px-2 py-1 transition"><i class="fas fa-trash"></i> Remove</button>
             `;
             container.appendChild(row);
+        }
+
+        // 🔍 Live User Search Function
+        function searchUsers() {
+            let input = document.getElementById("userSearchInput").value.toLowerCase();
+            let table = document.querySelector("#tab-users table");
+            let tr = table.getElementsByTagName("tr");
+
+            // Loop through all table rows, and hide those who don't match the search query
+            for (let i = 1; i < tr.length; i++) { // i=1 to skip table header
+                let td = tr[i].getElementsByTagName("td")[0]; // Index 0 is the "UID / Name" column
+                if (td) {
+                    let txtValue = td.textContent || td.innerText;
+                    if (txtValue.toLowerCase().indexOf(input) > -1) {
+                        tr[i].style.display = "";
+                    } else {
+                        tr[i].style.display = "none";
+                    }
+                }
+            }
         }
     </script>
 </body>
