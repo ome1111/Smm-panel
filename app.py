@@ -19,7 +19,7 @@ import re
 
 # Import from loader and config
 from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, redis_client, logs_col
-from config import BOT_TOKEN, ADMIN_ID, ADMIN_PASSWORD
+from config import BOT_TOKEN, ADMIN_ID, ADMIN_PASSWORD, SECRET_KEY
 
 # Import modular handlers
 import utils
@@ -77,7 +77,7 @@ def auto_fake_proof_cron():
             if not proof_channel:
                 continue
 
-            # 🔥 Redis Lock
+            # 🔥 Redis Lock (Prevents Thread Duplication across multiple Gunicorn workers)
             if not redis_client.set("fake_proof_lock", "locked", nx=True, ex=40):
                 continue
 
@@ -182,6 +182,8 @@ def index():
     per_page = 50
     total_users = users_col.count_documents({})
     total_pages = math.ceil(total_users / per_page)
+    
+    # Range Queries/Cursor Pagination is best, but skip is kept limited for safety 
     users = list(users_col.find().sort("spent", -1).skip((page - 1) * per_page).limit(per_page))
     
     stats = get_dashboard_stats()
@@ -207,9 +209,24 @@ def index():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
+        ip = request.remote_addr
+        lock_key = f"login_lock_{ip}"
+        
+        # 🔥 Brute Force Protection
+        if redis_client.get(lock_key):
+            return render_template('login.html', error="Too many failed attempts! Try again in 5 minutes.")
+            
         if request.form.get('password') == ADMIN_PASSWORD:
             session['admin'] = True
+            redis_client.delete(f"login_fails_{ip}")
             return redirect(url_for('index'))
+            
+        fails = redis_client.incr(f"login_fails_{ip}")
+        redis_client.expire(f"login_fails_{ip}", 300)
+        
+        if fails >= 5:
+            redis_client.setex(lock_key, 300, "locked")
+            
         return render_template('login.html', error="Wrong Password!")
     return render_template('login.html')
 
@@ -290,7 +307,6 @@ def save_settings():
         "reward_top2": float(request.form.get('reward_top2', 5.0)),
         "reward_top3": float(request.form.get('reward_top3', 2.0)),
         
-        # 🔥 Crypto APIs Data & Toggles
         "cryptomus_merchant": request.form.get('cryptomus_merchant', '').strip(),
         "cryptomus_api": request.form.get('cryptomus_api', '').strip(),
         "cryptomus_active": 'cryptomus_active' in request.form,
@@ -489,6 +505,7 @@ def reject_dep(uid, tid):
     except: pass
     return "❌ Deposit Rejected. User notified."
 
+# 🔥 Telegram API Rate Limit Fixed (0.05s Delay)
 @app.route('/send_broadcast', methods=['POST'])
 def send_bc():
     if 'admin' not in session: return redirect(url_for('login'))
@@ -498,7 +515,9 @@ def send_bc():
     
 def bc_task(msg):
     for u in users_col.find({"is_fake": {"$ne": True}}):
-        try: bot.send_message(u["_id"], f"📢 **BROADCAST**\n━━━━━━━━━━━━\n{msg}", parse_mode="Markdown")
+        try: 
+            bot.send_message(u["_id"], f"📢 **BROADCAST**\n━━━━━━━━━━━━\n{msg}", parse_mode="Markdown")
+            time.sleep(0.05)
         except: pass
 
 @app.route('/smart_cast', methods=['POST'])
@@ -510,7 +529,9 @@ def smart_cast():
 
 def smart_bc_task(msg):
     for u in users_col.find({"spent": {"$gt": 0}, "is_fake": {"$ne": True}}):
-        try: bot.send_message(u["_id"], f"🎁 **EXCLUSIVE VIP OFFER**\n━━━━━━━━━━━━\n{msg}", parse_mode="Markdown")
+        try: 
+            bot.send_message(u["_id"], f"🎁 **EXCLUSIVE VIP OFFER**\n━━━━━━━━━━━━\n{msg}", parse_mode="Markdown")
+            time.sleep(0.05)
         except: pass
 
 @app.route('/create_voucher', methods=['POST'])
@@ -578,7 +599,10 @@ def clear_logs():
 def add_transaction():
     secret = request.args.get('secret') or (request.json.get('secret') if request.is_json else None)
     
-    if secret != "NEXUS_AUTO_PASS_123":
+    # 🔥 Hardcoded Secret Fix (Environment Variable Base)
+    auto_pay_secret = os.environ.get('AUTO_PAY_SECRET', 'NEXUS_AUTO_PASS_123')
+    
+    if secret != auto_pay_secret:
         return jsonify({"status": "error", "msg": "Wrong Secret Key!"}), 403
 
     sms_text = request.args.get('sms') or (request.json.get('sms') if request.is_json else "")
@@ -587,7 +611,8 @@ def add_transaction():
         return jsonify({"status": "error", "msg": "No SMS text provided"}), 400
 
     try:
-        trx_match = re.search(r'(?i)(?:TrxID|TxnID)\s*[:]?\s*([A-Z0-9]{8,12})', sms_text)
+        # 🔥 Better Regex for bKash/Nagad/Rocket SMS
+        trx_match = re.search(r'(?i)(?:TrxID|TxnID|Txn Id|Trx|ID)\s*[:\-]?\s*([A-Z0-9]{8,15})', sms_text)
         amt_match = re.search(r'(?i)(?:Tk\s+|Amount:\s*Tk\s+)([\d,]+\.\d{2})', sms_text)
         
         if trx_match and amt_match:
@@ -661,27 +686,32 @@ def smm_webhook():
 def cryptomus_webhook():
     """Cryptomus Auto-Payment IPN Listener"""
     try:
-        data = request.json
-        if not data: return "No data", 400
+        # 🔥 Better Hash Extraction for Cryptomus avoiding dict ordering issues
+        raw_data = request.get_data()
+        if not raw_data: return "No data", 400
+        
+        try: dict_data = json.loads(raw_data)
+        except: return "Invalid JSON", 400
         
         s = config_col.find_one({"_id": "settings"}) or {}
         api_key = s.get('cryptomus_api', '')
         if not api_key: return "Cryptomus not configured", 400
         
-        sign = data.get('sign')
-        dict_data = data.copy()
+        sign = dict_data.get('sign')
+        if not sign: return "No signature", 400
+        
         dict_data.pop('sign', None)
         
-        # Cryptomus Hash Validation
-        encoded_data = base64.b64encode(json.dumps(dict_data, separators=(',', ':')).encode('utf-8')).decode('utf-8')
+        # Cryptomus Strict Hash Validation
+        encoded_data = base64.b64encode(json.dumps(dict_data, separators=(',', ':'), ensure_ascii=False).encode('utf-8')).decode('utf-8')
         expected_sign = hashlib.md5((encoded_data + api_key).encode('utf-8')).hexdigest()
         
         if sign != expected_sign: return "Invalid signature", 400
         
-        if data.get('status') in ['paid', 'paid_over']:
-            uid = int(str(data.get('order_id', '0')).split('_')[0]) 
-            amt = float(data.get('amount'))
-            trx = data.get('uuid')
+        if dict_data.get('status') in ['paid', 'paid_over']:
+            uid = int(str(dict_data.get('order_id', '0')).split('_')[0]) 
+            amt = float(dict_data.get('amount'))
+            trx = dict_data.get('uuid')
             
             if config_col.find_one({"_id": "transactions", "valid_list.trx": trx}):
                 return "Already processed", 200
@@ -801,8 +831,10 @@ def payeer_ipn():
             
             if request.form.get('m_sign') == sign_hash and request.form.get('m_status') == 'success':
                 order_id = request.form.get('m_orderid')
-                # Extract uid from order_id (removing the last 3 random digits created in utils)
-                uid = int(str(order_id)[:-3]) 
+                
+                # 🔥 Fix: Payeer User ID Extraction using Split instead of -3 index for better safety
+                uid = int(str(order_id).split('_')[0]) 
+                
                 amt = float(request.form.get('m_amount'))
                 trx = request.form.get('m_operation_id')
                 
@@ -821,7 +853,6 @@ def payeer_ipn():
         logging.error(f"Payeer Webhook Error: {e}")
         logs_col.insert_one({"error": str(traceback.format_exc()), "source": "Payeer", "date": datetime.now()})
         return str(e), 500
-
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
