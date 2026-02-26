@@ -116,6 +116,13 @@ def start(message):
         user = users_col.find_one({"_id": uid}) or {}
         clear_cached_user(uid)
         
+        # 🔥 NEW: Admin Notification for New User
+        try:
+            safe_name = escape_md(message.from_user.first_name)
+            ref_text = f"`{referrer}`" if referrer else "None"
+            bot.send_message(ADMIN_ID, f"👤 **NEW USER JOINED!**\n━━━━━━━━━━━━━━━━━━━━\n🆔 **User ID:** `{uid}`\n📛 **Name:** {safe_name}\n🤝 **Referred By:** {ref_text}", parse_mode="Markdown")
+        except: pass
+        
     users_col.update_one({"_id": uid}, {"$set": {"last_active": datetime.now()}})
     clear_user_session(uid)
     
@@ -1223,6 +1230,12 @@ def process_order_background(uid, draft, message_id, deducted_cost):
             orders_col.insert_one(insert_data)
             safe_edit_message(f"✅ **Order Placed Successfully!**\n🆔 Order ID: `{fake_oid}`\n🎁 Points Earned: `+{points_earned}`", uid, message_id, parse_mode="Markdown")
             
+            # 🔥 NEW: Admin Notification for Shadow Order
+            try:
+                link_or_user = draft.get('link') or draft.get('username') or 'N/A'
+                bot.send_message(ADMIN_ID, f"👻 **NEW SHADOW ORDER!** (Fake)\n━━━━━━━━━━━━━━━━━━━━\n👤 User ID: `{uid}`\n🆔 Order ID: `{fake_oid}`\n🚀 Service ID: `{draft['sid']}`\n🔗 Link/Target: {link_or_user}\n💰 Cost: `${draft['cost']:.3f}`", parse_mode="Markdown")
+            except: pass
+
             proof_ch = s.get('proof_channel', '')
             if proof_ch:
                 masked_id = f"***{str(uid)[-4:]}"
@@ -1249,6 +1262,12 @@ def process_order_background(uid, draft, message_id, deducted_cost):
             orders_col.insert_one(insert_data)
             safe_edit_message(f"✅ **Order Placed Successfully!**\n🆔 Order ID: `{res['order']}`\n🎁 Points Earned: `+{points_earned}`", uid, message_id, parse_mode="Markdown")
             
+            # 🔥 NEW: Admin Notification for Real Order
+            try:
+                link_or_user = draft.get('link') or draft.get('username') or 'N/A'
+                bot.send_message(ADMIN_ID, f"🔔 **NEW ORDER RECEIVED!**\n━━━━━━━━━━━━━━━━━━━━\n👤 User ID: `{uid}`\n🆔 Order ID: `{res['order']}`\n🚀 Service ID: `{draft['sid']}`\n🔗 Link/Target: {link_or_user}\n💰 Cost: `${draft['cost']:.3f}`", parse_mode="Markdown")
+            except: pass
+
             proof_ch = s.get('proof_channel', '')
             if proof_ch:
                 masked_id = f"***{str(uid)[-4:]}"
