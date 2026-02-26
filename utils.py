@@ -34,10 +34,12 @@ def update_spy(uid, action_text):
 # 0. SECURITY: MARKDOWN ESCAPE ENGINE
 # ==========================================
 def escape_md(text):
-    """টেলিগ্রামের Markdown পার্স এরর ঠেকানোর জন্য স্পেশাল ক্যারেক্টার এস্কেপ করা"""
+    """টেলিগ্রামের Markdown/MarkdownV2 পার্স এরর ঠেকানোর জন্য স্পেশাল ক্যারেক্টার এস্কেপ করা"""
     if not text: return ""
     text = str(text)
-    for char in ['_', '*', '`', '[']:
+    # 🔥 FIX: Added all restricted characters for MarkdownV2 to prevent API crash
+    escape_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+    for char in escape_chars:
         text = text.replace(char, f"\\{char}")
     return text
 
@@ -150,7 +152,6 @@ def auto_sync_services_cron():
                 s = get_settings()
                 ext_apis = s.get("external_apis", [])
                 
-                # 🔥 Muti-API Hybrid Injection Engine
                 for i, ext in enumerate(ext_apis):
                     ext_url = ext.get('url')
                     ext_key = ext.get('key')
@@ -221,10 +222,12 @@ def drip_campaign_cron():
             continue
         now = datetime.now()
         try:
-            users = list(users_col.find({"is_fake": {"$ne": True}}))
-            for u in users:
+            # 🔥 FIX: Memory Leak Prevention. Removed `list()` to stream data via cursor
+            users_cursor = users_col.find({"is_fake": {"$ne": True}}, {"joined": 1, "drip_3": 1, "drip_7": 1, "drip_15": 1})
+            
+            for u in users_cursor:
                 try: 
-                    time.sleep(0.05) 
+                    time.sleep(0.05) # Prevent Telegram Flood Limit
                     joined = u.get("joined")
                     if not joined: continue
                     days = (now - joined).days
@@ -524,4 +527,3 @@ def create_payeer_payment(amount, order_id, merchant_id, secret_key):
     
     url = f"https://payeer.com/merchant/?m_shop={merchant_id}&m_orderid={order_id}&m_amount={amount_str}&m_curr=USD&m_desc={desc}&m_sign={sign}"
     return url
-
