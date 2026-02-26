@@ -66,7 +66,7 @@ def manual_set_webhook():
         return "<h1>❌ Webhook Connection Failed!</h1><p>Check Render Logs.</p>"
 
 # ==========================================
-# 2. CYBER BOX AUTO ENGINE (Redis Distributed Lock)
+# 2. CYBER BOX AUTO ENGINE (MongoDB Distributed Lock)
 # ==========================================
 def auto_fake_proof_cron():
     while True:
@@ -85,9 +85,17 @@ def auto_fake_proof_cron():
             if not proof_channel:
                 continue
 
-            # 🔥 Redis Lock (Prevents Thread Duplication across multiple Gunicorn workers)
-            if not redis_client.set("fake_proof_lock", "locked", nx=True, ex=40):
-                continue
+            # 🔥 MONGODB LOCK (Upstash Redis এর লিমিট বাঁচানোর জন্য)
+            now = time.time()
+            lock_res = config_col.update_one(
+                {"_id": "sys_locks", "$or": [{"fake_proof": {"$lt": now}}, {"fake_proof": {"$exists": False}}]},
+                {"$set": {"fake_proof": now + 40}},
+                upsert=True
+            )
+            
+            # যদি অন্য কোনো Worker আগে লক করে ফেলে, তবে এটি স্কিপ করবে
+            if not lock_res.upserted_id and lock_res.modified_count == 0:
+                continue 
 
             dep_freq = s.get('fake_dep_freq', 2)
             ord_freq = s.get('fake_ord_freq', 3)
@@ -168,13 +176,8 @@ threading.Thread(target=auto_fake_proof_cron, daemon=True).start()
 # 3. ADMIN WEB PANEL ROUTES (GOD MODE)
 # ==========================================
 def get_dashboard_stats():
-    cached = redis_client.get("settings_cache")
-    if cached:
-        s = json.loads(cached)
-    else:
-        s = config_col.find_one({"_id": "settings"}) or {}
-        redis_client.setex("settings_cache", 30, json.dumps(s))
-        
+    # Use utils fast cache
+    s = utils.get_settings()
     u_count = users_col.count_documents({})
     bal = sum(u.get('balance', 0) for u in users_col.find())
     sales = sum(u.get('spent', 0) for u in users_col.find())
@@ -191,7 +194,6 @@ def index():
     total_users = users_col.count_documents({})
     total_pages = math.ceil(total_users / per_page)
     
-    # Range Queries/Cursor Pagination is best, but skip is kept limited for safety 
     users = list(users_col.find().sort("spent", -1).skip((page - 1) * per_page).limit(per_page))
     
     stats = get_dashboard_stats()
@@ -220,7 +222,6 @@ def login():
         ip = request.remote_addr
         lock_key = f"login_lock_{ip}"
         
-        # 🔥 Brute Force Protection
         if redis_client.get(lock_key):
             return render_template('login.html', error="Too many failed attempts! Try again in 5 minutes.")
             
@@ -362,7 +363,10 @@ def save_settings():
     s["profit_tiers"] = profit_tiers
 
     config_col.update_one({"_id": "settings"}, {"$set": s}, upsert=True)
-    redis_client.setex("settings_cache", 30, json.dumps(s))
+    utils.local_settings_cache = s
+    utils.last_settings_update = time.time()
+    try: redis_client.setex("settings_cache", 60, json.dumps(s))
+    except: pass
     return redirect(url_for('index'))
 
 @app.route('/edit_user', methods=['POST'])
@@ -513,7 +517,6 @@ def reject_dep(uid, tid):
     except: pass
     return "❌ Deposit Rejected. User notified."
 
-# 🔥 Telegram API Rate Limit Fixed (0.05s Delay)
 @app.route('/send_broadcast', methods=['POST'])
 def send_bc():
     if 'admin' not in session: return redirect(url_for('login'))
@@ -742,14 +745,13 @@ def smm_webhook():
 def cryptomus_webhook():
     """Cryptomus Auto-Payment IPN Listener"""
     try:
-        # 🔥 Better Hash Extraction for Cryptomus avoiding dict ordering issues
         raw_data = request.get_data()
         if not raw_data: return "No data", 400
         
         try: dict_data = json.loads(raw_data)
         except: return "Invalid JSON", 400
         
-        s = config_col.find_one({"_id": "settings"}) or {}
+        s = utils.get_settings()
         api_key = s.get('cryptomus_api', '')
         if not api_key: return "Cryptomus not configured", 400
         
@@ -793,7 +795,7 @@ def cryptomus_webhook():
 def coinpayments_ipn():
     """CoinPayments Auto-Payment IPN Listener"""
     try:
-        s = config_col.find_one({"_id": "settings"}) or {}
+        s = utils.get_settings()
         ipn_secret = s.get('coinpayments_priv', '')
         if not ipn_secret: return "CoinPayments not configured", 400
         
@@ -835,7 +837,7 @@ def coinpayments_ipn():
 def nowpayments_ipn():
     """NowPayments Auto-Payment IPN Listener"""
     try:
-        s = config_col.find_one({"_id": "settings"}) or {}
+        s = utils.get_settings()
         ipn_secret = s.get('nowpayments_ipn', '')
         if not ipn_secret: return "NowPayments IPN not configured", 400
         
@@ -877,7 +879,7 @@ def nowpayments_ipn():
 def payeer_ipn():
     """Payeer Auto-Payment IPN Listener"""
     try:
-        s = config_col.find_one({"_id": "settings"}) or {}
+        s = utils.get_settings()
         secret = s.get('payeer_secret', '')
         if not secret: return "Payeer not configured", 400
         
