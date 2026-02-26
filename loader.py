@@ -57,11 +57,11 @@ vouchers_col = db['vouchers']
 logs_col = db['logs'] 
 
 # ==========================================
-# 4. REDIS CONNECTION (FAST CACHE ENGINE)
+# 4. REDIS CONNECTION (FAST CACHE ENGINE - OPTIMIZED)
 # ==========================================
 try:
-    # ConnectionPool ব্যবহার করা হয়েছে যাতে Gunicorn ওয়ার্কারগুলো কানেকশন শেয়ার করতে পারে
-    redis_pool = redis.ConnectionPool.from_url(REDIS_URL, decode_responses=True, max_connections=20)
+    # 🔥 max_connections কমিয়ে ৫ করা হয়েছে লিমিট বাঁচানোর জন্য
+    redis_pool = redis.ConnectionPool.from_url(REDIS_URL, decode_responses=True, max_connections=5)
     redis_client = redis.Redis(connection_pool=redis_pool)
     redis_client.ping()
     logging.info("✅ Redis Engine Connected Successfully! Lightning Speed ON 🚀")
