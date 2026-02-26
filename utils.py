@@ -139,7 +139,8 @@ def check_maintenance(chat_id):
 def auto_sync_services_cron():
     """Hybrid Sync: 1xpanel + Custom External APIs"""
     while True:
-        if not redis_client.set("lock_sync_services_running", "locked", nx=True, ex=300):
+        # 🔥 FIX: Lock expiry set to 12 hours (43200 seconds)
+        if not redis_client.set("lock_sync_services_running", "locked", nx=True, ex=43200):
             time.sleep(60)
             continue
             
@@ -177,24 +178,28 @@ def auto_sync_services_cron():
                 config_col.update_one({"_id": "api_cache"}, {"$set": {"data": combined_res, "time": time.time()}}, upsert=True)
                 logging.info(f"✅ Successfully synced {len(combined_res)} services (Hybrid Mode).")
                 
-                redis_client.delete("lock_sync_services_running")
+                # 🔥 FIX: Removed redis_client.delete() here. Lock will naturally expire after 12 hours.
                 time.sleep(43200)
                 continue
             else:
                 logging.warning("⚠️ Main API returned empty data. Retrying in 5 minutes...")
+                # 🔥 FAIL-SAFE: Empty data means we need to retry, release lock early.
+                redis_client.delete("lock_sync_services_running")
         except Exception as e: 
             logging.error(f"❌ Service Sync Failed: {e}")
             try: logs_col.insert_one({"error": str(traceback.format_exc()), "source": "Service Sync", "date": datetime.now()})
             except: pass
+            # 🔥 FAIL-SAFE: Error occurred, release lock to allow retry
+            redis_client.delete("lock_sync_services_running")
             
-        redis_client.delete("lock_sync_services_running")
         time.sleep(300)
 
 threading.Thread(target=auto_sync_services_cron, daemon=True).start()
 
 def exchange_rate_sync_cron():
     while True:
-        if not redis_client.set("lock_exchange_running", "locked", nx=True, ex=300):
+        # 🔥 FIX: Lock expiry set to 12 hours (43200 seconds)
+        if not redis_client.set("lock_exchange_running", "locked", nx=True, ex=43200):
             time.sleep(60)
             continue
         try:
@@ -202,15 +207,19 @@ def exchange_rate_sync_cron():
             if rates:
                 redis_client.set("currency_rates", json.dumps(rates))
                 logging.info(f"✅ Live Exchange Rates Synced: {rates}")
-                redis_client.delete("lock_exchange_running")
+                
+                # 🔥 FIX: Removed redis_client.delete()
                 time.sleep(43200)
                 continue
+            else:
+                # Fail-safe retry
+                redis_client.delete("lock_exchange_running")
         except Exception as e: 
             logging.error(f"❌ Exchange Rate Sync Failed: {e}")
             try: logs_col.insert_one({"error": str(traceback.format_exc()), "source": "Exchange Rate Sync", "date": datetime.now()})
             except: pass
+            redis_client.delete("lock_exchange_running")
             
-        redis_client.delete("lock_exchange_running")
         time.sleep(300)
 
 threading.Thread(target=exchange_rate_sync_cron, daemon=True).start()
