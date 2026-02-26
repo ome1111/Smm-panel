@@ -8,7 +8,7 @@ from telebot import types
 from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, redis_client
 from config import ADMIN_ID
 import api
-from utils import get_settings, fmt_curr, escape_md
+from utils import get_settings, fmt_curr, escape_md, clear_cached_user
 
 # ==========================================
 # 🔥 ADMIN REDIS SESSION MANAGER
@@ -161,3 +161,42 @@ def admin_callbacks(call):
             caption="📂 **Full Deposit History Report**\n\nএখানে আপনার ডাটাবেসের সব ডিপোজিট হিস্ট্রি দেওয়া হলো।",
             parse_mode="Markdown"
         )
+
+# ==========================================
+# 🔥 ADD/REMOVE BALANCE DIRECTLY FROM BOT
+# ==========================================
+@bot.message_handler(commands=['addbal'])
+def add_balance(message):
+    if str(message.chat.id) != str(ADMIN_ID): 
+        return
+    try:
+        parts = message.text.split()
+        uid = int(parts[1])
+        amt = float(parts[2])
+        
+        users_col.update_one({"_id": uid}, {"$inc": {"balance": amt}})
+        clear_cached_user(uid)
+        
+        bot.send_message(message.chat.id, f"✅ **SUCCESS!**\nAdded `${amt}` to user `{uid}`.", parse_mode="Markdown")
+        try: bot.send_message(uid, f"💰 **WALLET UPDATE!**\nAdmin has added `${amt}` to your balance.", parse_mode="Markdown")
+        except: pass
+    except:
+        bot.send_message(message.chat.id, "❌ **Usage:** `/addbal <user_id> <amount>`\n_Example: /addbal 123456789 5.5_", parse_mode="Markdown")
+
+@bot.message_handler(commands=['rembal'])
+def rem_balance(message):
+    if str(message.chat.id) != str(ADMIN_ID): 
+        return
+    try:
+        parts = message.text.split()
+        uid = int(parts[1])
+        amt = float(parts[2])
+        
+        users_col.update_one({"_id": uid}, {"$inc": {"balance": -amt}})
+        clear_cached_user(uid)
+        
+        bot.send_message(message.chat.id, f"✅ **SUCCESS!**\nRemoved `${amt}` from user `{uid}`.", parse_mode="Markdown")
+        try: bot.send_message(uid, f"📉 **WALLET UPDATE!**\nAdmin has removed `${amt}` from your balance.", parse_mode="Markdown")
+        except: pass
+    except:
+        bot.send_message(message.chat.id, "❌ **Usage:** `/rembal <user_id> <amount>`\n_Example: /rembal 123456789 5.5_", parse_mode="Markdown")
