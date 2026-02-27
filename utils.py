@@ -375,6 +375,48 @@ def auto_sync_orders_cron():
 
 threading.Thread(target=auto_sync_orders_cron, daemon=True).start()
 
+# ==========================================
+# 🔥 AUTO REDIS CLEANUP CRON (Every 2 Hours)
+# ==========================================
+def auto_redis_cleanup_cron():
+    while True:
+        try:
+            # Sleep for 2 hours (7200 seconds)
+            time.sleep(7200)
+            
+            # 1. Clear Cache
+            cache_keys = redis_client.keys("*cache*")
+            if cache_keys: redis_client.delete(*cache_keys)
+            
+            # 2. Release Locks
+            lock_keys = redis_client.keys("*lock*")
+            if lock_keys: redis_client.delete(*lock_keys)
+            
+            # 3. Reset Spam
+            spam_keys = redis_client.keys("spam_*") + redis_client.keys("blocked_*")
+            if spam_keys: redis_client.delete(*spam_keys)
+            
+            # Send Notification to Admin
+            msg = (
+                "🤖 **AUTO REDIS CLEANUP EXECUTED**\n"
+                "━━━━━━━━━━━━━━━━━━━━\n"
+                "✅ Cache Cleared\n"
+                "🔓 Locks Released\n"
+                "🛡️ Spam Reset\n\n"
+                f"⏰ **Time:** `{datetime.now().strftime('%Y-%m-%d %I:%M:%S %p')}`"
+            )
+            try: 
+                bot.send_message(ADMIN_ID, msg, parse_mode="Markdown")
+            except: 
+                pass
+                
+            logging.info("✅ Auto Redis Cleanup executed successfully.")
+            
+        except Exception as e:
+            logging.error(f"❌ Auto Redis Cleanup Error: {e}")
+
+threading.Thread(target=auto_redis_cleanup_cron, daemon=True).start()
+
 def get_cached_services():
     try:
         cached = redis_client.get("services_cache")
@@ -593,3 +635,4 @@ def create_payeer_payment(amount, order_id, merchant_id, secret_key):
     
     url = f"https://payeer.com/merchant/?m_shop={merchant_id}&m_orderid={order_id}&m_amount={amount_str}&m_curr=USD&m_desc={desc}&m_sign={sign}"
     return url
+
