@@ -27,7 +27,8 @@ import admin
 import main_router
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'super_secret_nexus_titan_key_1010')
+# 🔥 FIX: Aligned SECRET_KEY with config.py to prevent session decoding mismatches
+app.secret_key = os.environ.get('SECRET_KEY', 'super_secret_key_123')
 
 # 🔥 ADMIN PANEL SECURITY (Cookie Theft Protection)
 app.config['SESSION_COOKIE_HTTPONLY'] = True
@@ -697,6 +698,11 @@ def add_transaction():
             )
             return jsonify({"status": "success", "msg": f"Auto Added: Trx {trx}, Amt {amt}"})
         else:
+            # 🔥 FIX: Added Admin Alert for Unrecognized SMS Formats
+            try:
+                bot.send_message(ADMIN_ID, f"⚠️ **Unrecognized SMS Received:**\n`{sms_text}`\n_Could not extract TrxID or Amount. Check your local payment app format._", parse_mode="Markdown")
+            except: pass
+            
             return jsonify({"status": "ignored", "msg": "TrxID or Amount not found in SMS"}), 200
             
     except Exception as e:
