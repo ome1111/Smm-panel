@@ -277,7 +277,11 @@ def save_service_order():
 def save_settings():
     if 'admin' not in session: return redirect(url_for('login'))
     
-    s = {
+    # 🟢 FIX 1: Fetch existing settings first to prevent overwriting hidden/telegram-configured data
+    current_settings = config_col.find_one({"_id": "settings"}) or {}
+    
+    # Update with new values from the form
+    current_settings.update({
         "profit_margin": float(request.form.get('profit_margin', 20.0)),
         "channels": [c.strip() for c in request.form.get('channels', '').split(',') if c.strip()],
         "log_channel": request.form.get('log_channel', ''),
@@ -320,9 +324,7 @@ def save_settings():
         
         "stars_rate": int(request.form.get('stars_rate', 50)),
         "stars_active": 'stars_active' in request.form,
-        
-        "best_choice_sids": config_col.find_one({"_id": "settings"}).get('best_choice_sids', []) if config_col.find_one({"_id": "settings"}) else []
-    }
+    })
     
     # 1. Payment Gateways
     payments = []
@@ -333,7 +335,7 @@ def save_settings():
     for i in range(len(pay_names)):
         if pay_names[i].strip():
             payments.append({"name": pay_names[i].strip(), "rate": float(pay_rates[i]), "address": pay_addrs[i].strip()})
-    s["payments"] = payments
+    current_settings["payments"] = payments
 
     # 2. Profit Tiers
     profit_tiers = []
@@ -348,9 +350,9 @@ def save_settings():
                 "max": float(tier_maxs[i]),
                 "margin": float(tier_margins[i])
             })
-    s["profit_tiers"] = profit_tiers
+    current_settings["profit_tiers"] = profit_tiers
 
-    # 3. 🔥 External APIs (Hybrid Mode Fix)
+    # 3. External APIs (Hybrid Mode Fix)
     external_apis = []
     ext_urls = request.form.getlist('ext_api_url[]')
     ext_keys = request.form.getlist('ext_api_key[]')
@@ -364,15 +366,15 @@ def save_settings():
                 "key": ext_keys[i].strip(),
                 "services": srv_list
             })
-    s["external_apis"] = external_apis
+    current_settings["external_apis"] = external_apis
 
     # Database Update
-    config_col.update_one({"_id": "settings"}, {"$set": s}, upsert=True)
-    utils.local_settings_cache = s
+    config_col.update_one({"_id": "settings"}, {"$set": current_settings}, upsert=True)
+    utils.local_settings_cache = current_settings
     utils.last_settings_update = time.time()
     
     try: 
-        redis_client.setex("settings_cache", 60, json.dumps(s))
+        redis_client.setex("settings_cache", 60, json.dumps(current_settings))
         # Clear services cache so external APIs are fetched on the next order request
         redis_client.delete("services_cache")
     except: pass
