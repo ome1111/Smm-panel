@@ -3,6 +3,9 @@ import logging
 from config import API_URL, API_KEY
 from loader import config_col, orders_col
 
+# 🔥 Global Session for faster API calls (Reuses TCP connections)
+session = requests.Session()
+
 def get_api_settings():
     s = config_col.find_one({"_id": "settings"})
     return s if s else {}
@@ -10,8 +13,7 @@ def get_api_settings():
 def get_services():
     try:
         payload = {'key': API_KEY, 'action': 'services'}
-        # 15 seconds timeout
-        r = requests.post(API_URL, data=payload, timeout=15)
+        r = session.post(API_URL, data=payload, timeout=15)
         return r.json()
     except Exception as e:
         logging.error(f"Main API Sync Error: {e}")
@@ -20,7 +22,7 @@ def get_services():
 def get_external_services(url, key):
     try:
         payload = {'key': key, 'action': 'services'}
-        r = requests.post(url, data=payload, timeout=15)
+        r = session.post(url, data=payload, timeout=15)
         return r.json()
     except Exception as e:
         logging.error(f"Ext API Sync Error: {e}")
@@ -28,7 +30,7 @@ def get_external_services(url, key):
 
 def get_live_exchange_rates():
     try:
-        r = requests.get("https://api.exchangerate-api.com/v4/latest/USD", timeout=10)
+        r = session.get("https://api.exchangerate-api.com/v4/latest/USD", timeout=10)
         data = r.json()
         rates = data.get('rates', {})
         return {"BDT": rates.get("BDT", 120), "INR": rates.get("INR", 83), "USD": 1}
@@ -38,7 +40,7 @@ def get_live_exchange_rates():
 def place_order(service, link=None, quantity=None, username=None, min=None, max=None, posts=None, delay=None, runs=None, interval=None):
     str_sid = str(service)
     
-    # 🔥 SMART ROUTING: EXTERNAL PANELS (FAST)
+    # 🚀 SMART ROUTING: EXTERNAL PANELS (FAST)
     if str_sid.startswith("ext_"):
         try:
             parts = str_sid.split("_")
@@ -64,13 +66,13 @@ def place_order(service, link=None, quantity=None, username=None, min=None, max=
                 if runs: payload['runs'] = runs
                 if interval: payload['interval'] = interval
                 
-                r = requests.post(url, data=payload, timeout=10)
+                r = session.post(url, data=payload, timeout=10)
                 return r.json()
         except Exception as e:
             logging.error(f"Ext API Order Error: {e}")
             return {"error": "External API Timeout"}
 
-    # 🔥 MAIN PANEL ROUTING
+    # 🚀 MAIN PANEL ROUTING
     try:
         payload = {'key': API_KEY, 'action': 'add', 'service': service}
         if link: payload['link'] = link
@@ -83,7 +85,7 @@ def place_order(service, link=None, quantity=None, username=None, min=None, max=
         if runs: payload['runs'] = runs
         if interval: payload['interval'] = interval
         
-        r = requests.post(API_URL, data=payload, timeout=10)
+        r = session.post(API_URL, data=payload, timeout=10)
         return r.json()
     except Exception as e:
         logging.error(f"Main API Order Error: {e}")
@@ -91,7 +93,6 @@ def place_order(service, link=None, quantity=None, username=None, min=None, max=
 
 def check_order_status(order_id):
     try:
-        # 🔥 FIX: Ensure order_id is cast properly based on how it's saved
         search_query = int(order_id) if str(order_id).isdigit() else order_id
         order = orders_col.find_one({"oid": search_query})
         sid = str(order.get("sid", "")) if order else ""
@@ -108,19 +109,17 @@ def check_order_status(order_id):
                 key = ext_panel.get("key")
                 
                 payload = {'key': key, 'action': 'status', 'order': order_id}
-                r = requests.post(url, data=payload, timeout=10)
+                r = session.post(url, data=payload, timeout=10)
                 return r.json()
 
-        # Default Main Panel
         payload = {'key': API_KEY, 'action': 'status', 'order': order_id}
-        r = requests.post(API_URL, data=payload, timeout=10)
+        r = session.post(API_URL, data=payload, timeout=10)
         return r.json()
     except Exception as e:
         return {"error": str(e)}
 
 def send_refill(order_id):
     try:
-        # 🔥 FIX: Ensure order_id is cast properly
         search_query = int(order_id) if str(order_id).isdigit() else order_id
         order = orders_col.find_one({"oid": search_query})
         sid = str(order.get("sid", "")) if order else ""
@@ -137,11 +136,11 @@ def send_refill(order_id):
                 key = ext_panel.get("key")
                 
                 payload = {'key': key, 'action': 'refill', 'order': order_id}
-                r = requests.post(url, data=payload, timeout=10)
+                r = session.post(url, data=payload, timeout=10)
                 return r.json()
 
         payload = {'key': API_KEY, 'action': 'refill', 'order': order_id}
-        r = requests.post(API_URL, data=payload, timeout=10)
+        r = session.post(API_URL, data=payload, timeout=10)
         return r.json()
     except Exception as e:
         return {"error": str(e)}
