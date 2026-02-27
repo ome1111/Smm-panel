@@ -116,7 +116,6 @@ def start(message):
         user = users_col.find_one({"_id": uid}) or {}
         clear_cached_user(uid)
         
-        # 🔥 NEW: Admin Notification for New User
         try:
             safe_name = escape_md(message.from_user.first_name)
             ref_text = f"`{referrer}`" if referrer else "None"
@@ -461,7 +460,7 @@ def fetch_orders_page(chat_id, page=0, filter_type="all"):
 def process_instant_refill(call):
     if is_button_locked(call.from_user.id, call.id): return
     try:
-        oid = int(call.data.split("|")[1]) # 🔥 FIX: Type Casting to Integer
+        oid = int(call.data.split("|")[1])
     except ValueError:
         return bot.answer_callback_query(call.id, "❌ Invalid Order ID.", show_alert=True)
         
