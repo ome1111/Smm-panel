@@ -376,44 +376,32 @@ def auto_sync_orders_cron():
 threading.Thread(target=auto_sync_orders_cron, daemon=True).start()
 
 # ==========================================
-# 🔥 AUTO REDIS CLEANUP CRON (Every 2 Hours)
+# 🔥 1 HOUR AUTO REDIS CLEANUP CRON (NEW)
 # ==========================================
 def auto_redis_cleanup_cron():
     while True:
         try:
-            # Sleep for 2 hours (7200 seconds)
-            time.sleep(7200)
+            time.sleep(3600) # 1 Hour interval
             
             # 1. Clear Cache
             cache_keys = redis_client.keys("*cache*")
-            if cache_keys: redis_client.delete(*cache_keys)
+            if cache_keys: 
+                redis_client.delete(*cache_keys)
             
             # 2. Release Locks
             lock_keys = redis_client.keys("*lock*")
-            if lock_keys: redis_client.delete(*lock_keys)
+            if lock_keys: 
+                redis_client.delete(*lock_keys)
             
             # 3. Reset Spam
             spam_keys = redis_client.keys("spam_*") + redis_client.keys("blocked_*")
-            if spam_keys: redis_client.delete(*spam_keys)
-            
-            # Send Notification to Admin
-            msg = (
-                "🤖 **AUTO REDIS CLEANUP EXECUTED**\n"
-                "━━━━━━━━━━━━━━━━━━━━\n"
-                "✅ Cache Cleared\n"
-                "🔓 Locks Released\n"
-                "🛡️ Spam Reset\n\n"
-                f"⏰ **Time:** `{datetime.now().strftime('%Y-%m-%d %I:%M:%S %p')}`"
-            )
-            try: 
-                bot.send_message(ADMIN_ID, msg, parse_mode="Markdown")
-            except: 
-                pass
+            if spam_keys: 
+                redis_client.delete(*spam_keys)
                 
-            logging.info("✅ Auto Redis Cleanup executed successfully.")
+            logging.info("🧹 Auto Redis Cleanup Executed: Cache, Locks & Spam Cleared!")
             
         except Exception as e:
-            logging.error(f"❌ Auto Redis Cleanup Error: {e}")
+            logging.error(f"Auto Redis Cleanup Error: {e}")
 
 threading.Thread(target=auto_redis_cleanup_cron, daemon=True).start()
 
