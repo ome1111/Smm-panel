@@ -67,20 +67,16 @@ def manual_set_webhook():
         return "<h1>❌ Webhook Connection Failed!</h1><p>Check Render Logs.</p>"
 
 # ==========================================
-# 2. CYBER BOX AUTO ENGINE (MongoDB Distributed Lock)
+# 2. CYBER BOX AUTO ENGINE (MongoDB Distributed Lock) - SMART TIME SYNC
 # ==========================================
 def auto_fake_proof_cron():
     while True:
         try:
+            # 45 সেকেন্ড পর পর চেক করবে
             time.sleep(45)
             s = config_col.find_one({"_id": "settings"})
             if not s or not s.get('fake_proof_status', False):
                 continue
-
-            if s.get('night_mode', False):
-                hour = datetime.now().hour
-                if 2 <= hour <= 8:
-                    continue
 
             proof_channel = s.get('proof_channel', '')
             if not proof_channel:
@@ -89,27 +85,38 @@ def auto_fake_proof_cron():
             # 🔥 MONGODB LOCK FIX: Duplicate Key Error Prevention
             now = time.time()
             
-            # ১. ডেটাবেসে sys_locks না থাকলে তৈরি করে নিবে
             config_col.update_one(
                 {"_id": "sys_locks"}, 
                 {"$setOnInsert": {"fake_proof": 0}}, 
                 upsert=True
             )
             
-            # ২. এরপর লক করার চেষ্টা করবে (upsert ছাড়া)
             lock_res = config_col.update_one(
                 {"_id": "sys_locks", "$or": [{"fake_proof": {"$lt": now}}, {"fake_proof": {"$exists": False}}]},
                 {"$set": {"fake_proof": now + 40}}
             )
             
-            # যদি অন্য কোনো Worker আগে লক করে ফেলে, তবে এটি স্কিপ করবে
             if lock_res.modified_count == 0:
                 continue 
 
-            dep_freq = s.get('fake_dep_freq', 2)
-            ord_freq = s.get('fake_ord_freq', 3)
+            # বাংলাদেশ সময় বের করা (Asia/Dhaka is set in loader.py)
+            hour = datetime.now().hour
+            
+            # অ্যাডমিন প্যানেল থেকে সেট করা বেস ফ্রিকোয়েন্সি
+            base_dep_freq = s.get('fake_dep_freq', 2)
+            base_ord_freq = s.get('fake_ord_freq', 3)
 
-            # 💰 FAKE DEPOSIT GENERATOR
+            # 🕒 SMART TIME MULTIPLIER (BD TIME)
+            if 0 <= hour < 8:
+                # রাত ১২টা থেকে সকাল ৮টা: পোস্ট হওয়ার স্পিড মাত্র ১০% করে দেওয়া হলো (খুব রেয়ারলি পোস্ট হবে)
+                dep_freq = base_dep_freq * 0.10
+                ord_freq = base_ord_freq * 0.10
+            else:
+                # সকাল ৮টা থেকে রাত ১২টা: নরমাল স্পিড, তবে মানুষের মতো র‍্যান্ডম ভ্যারিয়েশন থাকবে
+                dep_freq = base_dep_freq * random.uniform(0.8, 1.2)
+                ord_freq = base_ord_freq * random.uniform(0.8, 1.2)
+
+            # 💰 ORIGINAL FORMAT FAKE DEPOSIT GENERATOR
             if random.random() < (dep_freq / 60): 
                 gateways = ["bKash Auto", "Nagad Express", "Binance Pay", "USDT TRC20", "PerfectMoney"]
                 method = random.choice(gateways)
@@ -127,10 +134,11 @@ def auto_fake_proof_cron():
                 fake_uid = str(random.randint(1000000, 9999999))
                 masked_id = f"***{fake_uid[-4:]}"
                 
+                # EXACT ORIGINAL FORMAT
                 msg = f"```text\n╔══ 💰 𝗡𝗘𝗪 𝗗𝗘𝗣𝗢𝗦𝗜𝗧 ══╗\n║ 👤 𝗜𝗗: {masked_id}\n║ 🏦 𝗠𝗲𝘁𝗵𝗼𝗱: {method}\n║ 💵 𝗔𝗺𝗼𝘂𝗻𝘁: {display_amt}\n║ ✅ 𝗦𝘁𝗮𝘁𝘂𝘀: Approved\n╚════════════════════╝\n```"
                 bot.send_message(proof_channel, msg, parse_mode="Markdown")
 
-            # 🛒 FAKE ORDER GENERATOR
+            # 🛒 ORIGINAL FORMAT FAKE ORDER GENERATOR
             if random.random() < (ord_freq / 60):
                 qty = random.choice([500, 1000, 2000, 3000, 5000, 10000, 20000, 50000]) 
                 
@@ -139,9 +147,10 @@ def auto_fake_proof_cron():
                     srv = random.choice(cached_services)
                     base_rate = float(srv.get('rate', 0.5))
                     cost_usd = (base_rate / 1000) * qty * 1.2
+                    sid = srv.get('service', str(random.randint(10, 500)))
                 else:
                     cost_usd = (random.uniform(s.get('fake_order_min', 0.5), s.get('fake_order_max', 10.0)) / 1000) * qty
-                    srv = {}
+                    sid = str(random.randint(10, 500))
                     
                 if cost_usd < 0.01: cost_usd = 0.12 
                 
@@ -156,8 +165,7 @@ def auto_fake_proof_cron():
                 fake_uid = str(random.randint(1000000, 9999999))
                 masked_id = f"***{fake_uid[-4:]}"
                 
-                sid = srv.get('service', str(random.randint(10, 500)))
-                
+                # EXACT ORIGINAL FORMAT
                 msg = f"```text\n╔════ 🟢 𝗡𝗘𝗪 𝗢𝗥𝗗𝗘𝗥 ════╗\n║ 👤 𝗜𝗗: {masked_id}\n║ 🚀 𝗦𝗲𝗿𝘃𝗶𝗰𝗲 𝗜𝗗: {sid}\n║ 💵 𝗖𝗼𝘀𝘁: {display_cost}\n╚════════════════════╝\n```"
                 bot.send_message(proof_channel, msg, parse_mode="Markdown")
 
