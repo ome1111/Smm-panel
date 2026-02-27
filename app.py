@@ -324,6 +324,7 @@ def save_settings():
         "best_choice_sids": config_col.find_one({"_id": "settings"}).get('best_choice_sids', []) if config_col.find_one({"_id": "settings"}) else []
     }
     
+    # 1. Payment Gateways
     payments = []
     pay_names = request.form.getlist('pay_name[]')
     pay_rates = request.form.getlist('pay_rate[]')
@@ -334,6 +335,7 @@ def save_settings():
             payments.append({"name": pay_names[i].strip(), "rate": float(pay_rates[i]), "address": pay_addrs[i].strip()})
     s["payments"] = payments
 
+    # 2. Profit Tiers
     profit_tiers = []
     tier_mins = request.form.getlist('tier_min[]')
     tier_maxs = request.form.getlist('tier_max[]')
@@ -348,11 +350,33 @@ def save_settings():
             })
     s["profit_tiers"] = profit_tiers
 
+    # 3. 🔥 External APIs (Hybrid Mode Fix)
+    external_apis = []
+    ext_urls = request.form.getlist('ext_api_url[]')
+    ext_keys = request.form.getlist('ext_api_key[]')
+    ext_srvs = request.form.getlist('ext_api_services[]')
+
+    for i in range(len(ext_urls)):
+        if ext_urls[i].strip() and ext_keys[i].strip():
+            srv_list = [sid.strip() for sid in ext_srvs[i].split(',') if sid.strip()]
+            external_apis.append({
+                "url": ext_urls[i].strip(),
+                "key": ext_keys[i].strip(),
+                "services": srv_list
+            })
+    s["external_apis"] = external_apis
+
+    # Database Update
     config_col.update_one({"_id": "settings"}, {"$set": s}, upsert=True)
     utils.local_settings_cache = s
     utils.last_settings_update = time.time()
-    try: redis_client.setex("settings_cache", 60, json.dumps(s))
+    
+    try: 
+        redis_client.setex("settings_cache", 60, json.dumps(s))
+        # Clear services cache so external APIs are fetched on the next order request
+        redis_client.delete("services_cache")
     except: pass
+    
     return redirect(url_for('index'))
 
 @app.route('/edit_user', methods=['POST'])
