@@ -43,7 +43,8 @@ def escape_md(text):
     """টেলিগ্রামের Legacy Markdown পার্স এরর ঠেকানোর জন্য স্পেশাল ক্যারেক্টার এস্কেপ করা"""
     if not text: return ""
     text = str(text)
-    escape_chars = ['*', '`', '[']
+    # 🔥 FIX: Added '_' to prevent Telegram Markdown formatting crashes
+    escape_chars = ['*', '_', '`', '['] 
     for char in escape_chars:
         text = text.replace(char, f"\\{char}")
     return text
@@ -623,4 +624,3 @@ def create_payeer_payment(amount, order_id, merchant_id, secret_key):
     
     url = f"https://payeer.com/merchant/?m_shop={merchant_id}&m_orderid={order_id}&m_amount={amount_str}&m_curr=USD&m_desc={desc}&m_sign={sign}"
     return url
-
