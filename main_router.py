@@ -1246,7 +1246,9 @@ def process_order_background(uid, draft, message_id, deducted_cost):
             proof_ch = s.get('proof_channel', '')
             if proof_ch:
                 masked_id = f"***{str(uid)[-4:]}"
-                channel_post = f"```text\n╔════ 🟢 𝗡𝗘𝗪 𝗢𝗥𝗗𝗘𝗥 ════╗\n║ 👤 𝗜𝗗: {masked_id}\n║ 🚀 𝗦𝗲𝗿𝘃𝗶𝗰𝗲 𝗜𝗗: {draft['sid']}\n║ 💵 𝗖𝗼𝘀𝘁: ${draft['cost']:.3f}\n╚════════════════════╝\n```"
+                user_currency = u.get("currency", "BDT")
+                formatted_cost = fmt_curr(draft['cost'], user_currency)
+                channel_post = f"```text\n╔════ 🟢 𝗡𝗘𝗪 𝗢𝗥𝗗𝗘𝗥 ════╗\n║ 👤 𝗜𝗗: {masked_id}\n║ 🚀 𝗦𝗲𝗿𝘃𝗶𝗰𝗲 𝗜𝗗: {draft['sid']}\n║ 💵 𝗖𝗼𝘀𝘁: {formatted_cost}\n╚════════════════════╝\n```"
                 try: bot.send_message(proof_ch, channel_post, parse_mode="Markdown")
                 except: pass
             return
@@ -1278,7 +1280,9 @@ def process_order_background(uid, draft, message_id, deducted_cost):
             proof_ch = s.get('proof_channel', '')
             if proof_ch:
                 masked_id = f"***{str(uid)[-4:]}"
-                channel_post = f"```text\n╔════ 🟢 𝗡𝗘𝗪 𝗢𝗥𝗗𝗘𝗥 ════╗\n║ 👤 𝗜𝗗: {masked_id}\n║ 🚀 𝗦𝗲𝗿𝘃𝗶𝗰𝗲 𝗜𝗗: {draft['sid']}\n║ 💵 𝗖𝗼𝘀𝘁: ${draft['cost']:.3f}\n╚════════════════════╝\n```"
+                user_currency = u.get("currency", "BDT")
+                formatted_cost = fmt_curr(draft['cost'], user_currency)
+                channel_post = f"```text\n╔════ 🟢 𝗡𝗘𝗪 𝗢𝗥𝗗𝗘𝗥 ════╗\n║ 👤 𝗜𝗗: {masked_id}\n║ 🚀 𝗦𝗲𝗿𝘃𝗶𝗰𝗲 𝗜𝗗: {draft['sid']}\n║ 💵 𝗖𝗼𝘀𝘁: {formatted_cost}\n╚════════════════════╝\n```"
                 try: bot.send_message(proof_ch, channel_post, parse_mode="Markdown")
                 except: pass
         else:
