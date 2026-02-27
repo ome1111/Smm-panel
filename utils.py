@@ -117,10 +117,11 @@ def get_settings():
     return s
 
 def update_settings_cache(key, value):
-    global local_settings_cache
+    global local_settings_cache, last_settings_update
     s = get_settings()
     s[key] = value
     local_settings_cache = s # Update local memory instantly
+    last_settings_update = time.time() # 🔥 FIX: Update the timestamp
     try: redis_client.setex("settings_cache", 60, json.dumps(s))
     except: pass
 
