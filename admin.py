@@ -2,6 +2,7 @@ import json
 import time
 import logging
 import io
+from datetime import datetime
 from telebot import types
 
 # 🔥 redis_client ও অন্যান্য ডেটাবেস কালেকশন ইম্পোর্ট
@@ -36,6 +37,17 @@ def admin_panel(message):
         types.InlineKeyboardButton("⚙️ Settings", callback_data="ADM_SETTINGS"),
         types.InlineKeyboardButton("💎 Points Setup", callback_data="ADM_POINTS")
     )
+    
+    # 🔥 NEW POWER FEATURES
+    markup.add(
+        types.InlineKeyboardButton("📅 Daily Report", callback_data="ADM_DAILY"),
+        types.InlineKeyboardButton("🎧 Open Tickets", callback_data="ADM_TICKETS")
+    )
+    markup.add(
+        types.InlineKeyboardButton("🛠 Toggle Maintenance", callback_data="ADM_MAINT"),
+        types.InlineKeyboardButton("🧹 Clear Cache/Spam", callback_data="ADM_CLEAR")
+    )
+    
     # 🔥 Instant Sync & Deposit History
     markup.add(
         types.InlineKeyboardButton("🔄 Instant API Sync", callback_data="ADM_SYNC"),
@@ -54,6 +66,56 @@ def admin_callbacks(call):
         bal = sum(u.get('balance', 0) for u in users_col.find())
         spt = sum(u.get('spent', 0) for u in users_col.find())
         bot.send_message(uid, f"📈 **FINANCIAL REPORT**\n━━━━━━━━━━━━━━━━━━━━\n💰 **Bot Net Worth:** `${bal:.2f}`\n💸 **Total Sales:** `${spt:.2f}`", parse_mode="Markdown")
+        bot.answer_callback_query(call.id)
+        
+    elif call.data == "ADM_DAILY":
+        # আজকের দিনের রিপোর্ট ক্যালকুলেশন
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        new_users = users_col.count_documents({"joined": {"$gte": today}})
+        today_orders = list(orders_col.find({"date": {"$gte": today}}))
+        today_sales = sum(o.get('cost', 0) for o in today_orders)
+        
+        report_text = f"📅 **DAILY REPORT ({today.strftime('%Y-%m-%d')})**\n━━━━━━━━━━━━━━━━━━━━\n👥 **New Users Today:** `{new_users}`\n🛍️ **Orders Placed Today:** `{len(today_orders)}`\n💸 **Total Sales Today:** `${today_sales:.3f}`\n━━━━━━━━━━━━━━━━━━━━"
+        bot.send_message(uid, report_text, parse_mode="Markdown")
+        bot.answer_callback_query(call.id)
+        
+    elif call.data == "ADM_TICKETS":
+        # ওপেন সাপোর্ট টিকিটগুলো দেখানো
+        tickets = list(tickets_col.find({"status": "open"}))
+        if not tickets:
+            bot.answer_callback_query(call.id, "✅ No pending tickets!", show_alert=True)
+            return
+            
+        bot.answer_callback_query(call.id)
+        bot.send_message(uid, f"🎧 **Showing {len(tickets)} Open Tickets:**\n_To reply, just Swipe Right (Reply) on the specific ticket message._", parse_mode="Markdown")
+        
+        for t in tickets:
+            markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton("❌ Close Ticket", callback_data=f"CLOSE_TICKET|{t['_id']}"))
+            
+            safe_msg = escape_md(t.get('msg', 'No Message Provided'))
+            msg_text = f"📩 **PENDING TICKET**\n🆔 ID: `{t['uid']}`\n🎫 Ticket: `{t['_id']}`\n📅 Date: `{t.get('date', datetime.now()).strftime('%Y-%m-%d %H:%M')}`\n\n💬 **Message:**\n{safe_msg}\n\n_Reply to this exact message to send an answer directly._"
+            bot.send_message(uid, msg_text, reply_markup=markup, parse_mode="Markdown")
+            
+    elif call.data == "ADM_MAINT":
+        s = get_settings()
+        current_status = s.get("maintenance", False)
+        new_status = not current_status
+        
+        config_col.update_one({"_id": "settings"}, {"$set": {"maintenance": new_status}}, upsert=True)
+        from utils import update_settings_cache
+        update_settings_cache("maintenance", new_status)
+        
+        status_text = "🔴 ENABLED (Bot is Offline)" if new_status else "🟢 DISABLED (Bot is Live)"
+        bot.send_message(uid, f"🛠 **MAINTENANCE MODE:** {status_text}\n_Users can{'not' if new_status else ''} place orders now._", parse_mode="Markdown")
+        bot.answer_callback_query(call.id)
+        
+    elif call.data == "ADM_CLEAR":
+        # Redis স্প্যাম ক্যাশ ক্লিন
+        keys = redis_client.keys("*cache*") + redis_client.keys("spam_*") + redis_client.keys("blocked_*")
+        if keys:
+            redis_client.delete(*keys)
+        bot.send_message(uid, "🧹 **System Cache & Anti-Spam Blocks Cleared Successfully!**", parse_mode="Markdown")
         bot.answer_callback_query(call.id)
         
     elif call.data == "ADM_GHOST":
@@ -92,7 +154,6 @@ def admin_callbacks(call):
                 s = get_settings()
                 ext_apis = s.get("external_apis", [])
                 
-                # Fetch external APIs
                 for i, ext in enumerate(ext_apis):
                     ext_url = ext.get('url')
                     ext_key = ext.get('key')
@@ -120,7 +181,6 @@ def admin_callbacks(call):
             logging.error(f"Instant Sync Error: {e}")
             bot.edit_message_text(f"❌ **System Error during sync:**\n`{str(e)}`", uid, msg.message_id, parse_mode="Markdown")
             
-    # 🔥 NEW & IMPROVED: Deposit History as TXT File
     elif call.data == "ADM_DEP_HIST":
         bot.answer_callback_query(call.id, "Generating File...")
         
@@ -133,7 +193,6 @@ def admin_callbacks(call):
         if not valid_list:
             return bot.send_message(uid, "📭 **History is empty.**", parse_mode="Markdown")
 
-        # একটি টেক্সট স্ট্রিং তৈরি করা
         report = "NEXUS SMM - FULL DEPOSIT HISTORY\n"
         report += "="*75 + "\n\n"
         report += f"{'Index':<6} | {'User ID':<15} | {'Amount':<10} | {'TrxID':<25} | {'Status'}\n"
@@ -151,7 +210,6 @@ def admin_callbacks(call):
         report += f"Total Records: {len(valid_list)}\n"
         report += "Generated on: " + time.strftime('%Y-%m-%d %H:%M:%S')
 
-        # মেমোরিতে ফাইল তৈরি করা (ডিস্ক স্পেস বাঁচানোর জন্য)
         output = io.BytesIO(report.encode('utf-8'))
         output.name = "deposit_history.txt"
         
