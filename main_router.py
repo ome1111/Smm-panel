@@ -404,13 +404,17 @@ def fetch_orders_page(chat_id, page=0, filter_type="all"):
     query = {"uid": chat_id}
     if filter_type == "subs": query["is_sub"] = True
     
-    all_orders = list(orders_col.find(query).sort("_id", -1))
-    if not all_orders: return "📭 No orders found." if filter_type == "all" else "📭 No active subscriptions found.", None
+    # 🔥 FIX: Use count_documents and skip/limit for massive speed boost!
+    total_orders = orders_col.count_documents(query)
     
-    start, end = page * 3, page * 3 + 3
-    page_orders = all_orders[start:end]
+    if total_orders == 0:
+        return "📭 No orders found." if filter_type == "all" else "📭 No active subscriptions found.", None
+    
+    start = page * 3
+    page_orders = list(orders_col.find(query).sort("_id", -1).skip(start).limit(3))
+    
     title = "📦 **YOUR ORDERS**" if filter_type == "all" else "🔄 **ACTIVE SUBSCRIPTIONS**"
-    txt = f"{title} (Page {page+1}/{math.ceil(len(all_orders)/3)})\n━━━━━━━━━━━━━━━━━━━━\n"
+    txt = f"{title} (Page {page+1}/{math.ceil(total_orders/3)})\n━━━━━━━━━━━━━━━━━━━━\n"
     markup = types.InlineKeyboardMarkup(row_width=2)
     
     if filter_type == "all":
@@ -448,7 +452,7 @@ def fetch_orders_page(chat_id, page=0, filter_type="all"):
             
     nav = []
     if page > 0: nav.append(types.InlineKeyboardButton("⬅️ Prev", callback_data=f"MYORD|{page-1}|{filter_type}"))
-    if end < len(all_orders): nav.append(types.InlineKeyboardButton("Next ➡️", callback_data=f"MYORD|{page+1}|{filter_type}"))
+    if start + 3 < total_orders: nav.append(types.InlineKeyboardButton("Next ➡️", callback_data=f"MYORD|{page+1}|{filter_type}"))
     if filter_type == "subs": nav.append(types.InlineKeyboardButton("🔙 All Orders", callback_data="MYORD|0|all"))
     if nav: markup.row(*nav)
     return txt, markup
@@ -1314,4 +1318,3 @@ def cancel_ord(call):
     bot.answer_callback_query(call.id)
     clear_user_session(call.message.chat.id)
     safe_edit_message("🚫 **Order Cancelled.**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
-
