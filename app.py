@@ -635,25 +635,21 @@ def redis_action(action):
     msg = ""
     try:
         if action == 'clear_cache':
-            # Clear all cached API and user data
             keys = redis_client.keys("*cache*")
             if keys: redis_client.delete(*keys)
             msg = "✅ Redis Cache Cleared Successfully! The bot will fetch fresh API data."
             
         elif action == 'release_locks':
-            # Release cron job and background process locks
             keys = redis_client.keys("*lock*")
             if keys: redis_client.delete(*keys)
             msg = "🔓 All Background Locks Released! Stuck tasks will resume now."
             
         elif action == 'reset_spam':
-            # Clear Anti-spam blocks
             keys = redis_client.keys("spam_*") + redis_client.keys("blocked_*")
             if keys: redis_client.delete(*keys)
             msg = "🛡️ Anti-Spam Blocks Reset! All users can use the bot normally."
             
         elif action == 'clear_sessions':
-            # Clear user current state/sessions in telegram bot
             keys = redis_client.keys("session_*")
             if keys: redis_client.delete(*keys)
             msg = "🚪 All Active Bot Sessions Cleared! Users will be sent back to main menu."
@@ -661,7 +657,6 @@ def redis_action(action):
         else:
             msg = "❌ Invalid Redis Action!"
             
-        # Send confirmation to admin telegram
         bot.send_message(ADMIN_ID, f"🛠 **PRO TOOL EXECUTED**\n━━━━━━━━━━━━━━━━━━━━\n**Action:** `{action}`\n**Status:** {msg}", parse_mode="Markdown")
         
     except Exception as e:
@@ -706,7 +701,6 @@ def add_transaction():
             )
             return jsonify({"status": "success", "msg": f"Auto Added: Trx {trx}, Amt {amt}"})
         else:
-            # 🔥 FIX: Added Admin Alert for Unrecognized SMS Formats
             try:
                 bot.send_message(ADMIN_ID, f"⚠️ **Unrecognized SMS Received:**\n`{sms_text}`\n_Could not extract TrxID or Amount. Check your local payment app format._", parse_mode="Markdown")
             except: pass
@@ -769,7 +763,6 @@ def smm_webhook():
 # ==========================================
 @app.route('/cryptomus_webhook', methods=['POST'])
 def cryptomus_webhook():
-    """Cryptomus Auto-Payment IPN Listener"""
     try:
         raw_data = request.get_data()
         if not raw_data: return "No data", 400
@@ -786,7 +779,6 @@ def cryptomus_webhook():
         
         dict_data.pop('sign', None)
         
-        # Cryptomus Strict Hash Validation
         encoded_data = base64.b64encode(json.dumps(dict_data, separators=(',', ':'), ensure_ascii=False).encode('utf-8')).decode('utf-8')
         expected_sign = hashlib.md5((encoded_data + api_key).encode('utf-8')).hexdigest()
         
@@ -807,7 +799,6 @@ def cryptomus_webhook():
             try: bot.send_message(uid, f"✅ **CRYPTOMUS DEPOSIT SUCCESS!**\nAmount: `${amt}` added to your wallet.", parse_mode="Markdown")
             except: pass
             
-            # 🔥 NEW: Admin Notification for Cryptomus Deposit
             try: bot.send_message(ADMIN_ID, f"🔔 **CRYPTO DEPOSIT:** User `{uid}` added `${amt}` via Cryptomus!", parse_mode="Markdown")
             except: pass
             
@@ -819,7 +810,6 @@ def cryptomus_webhook():
 
 @app.route('/coinpayments_ipn', methods=['POST'])
 def coinpayments_ipn():
-    """CoinPayments Auto-Payment IPN Listener"""
     try:
         s = utils.get_settings()
         ipn_secret = s.get('coinpayments_priv', '')
@@ -849,7 +839,6 @@ def coinpayments_ipn():
             try: bot.send_message(uid, f"✅ **COINPAYMENTS DEPOSIT SUCCESS!**\nAmount: `${amt}` added to your wallet.", parse_mode="Markdown")
             except: pass
             
-            # 🔥 NEW: Admin Notification for CoinPayments Deposit
             try: bot.send_message(ADMIN_ID, f"🔔 **CRYPTO DEPOSIT:** User `{uid}` added `${amt}` via CoinPayments!", parse_mode="Markdown")
             except: pass
             
@@ -861,7 +850,6 @@ def coinpayments_ipn():
 
 @app.route('/nowpayments_ipn', methods=['POST'])
 def nowpayments_ipn():
-    """NowPayments Auto-Payment IPN Listener"""
     try:
         s = utils.get_settings()
         ipn_secret = s.get('nowpayments_ipn', '')
@@ -891,7 +879,6 @@ def nowpayments_ipn():
             try: bot.send_message(uid, f"✅ **NOWPAYMENTS DEPOSIT SUCCESS!**\nAmount: `${amt}` added to your wallet.", parse_mode="Markdown")
             except: pass
             
-            # 🔥 NEW: Admin Notification for NowPayments Deposit
             try: bot.send_message(ADMIN_ID, f"🔔 **CRYPTO DEPOSIT:** User `{uid}` added `${amt}` via NowPayments!", parse_mode="Markdown")
             except: pass
             
@@ -903,7 +890,6 @@ def nowpayments_ipn():
 
 @app.route('/payeer_ipn', methods=['POST'])
 def payeer_ipn():
-    """Payeer Auto-Payment IPN Listener"""
     try:
         s = utils.get_settings()
         secret = s.get('payeer_secret', '')
@@ -927,8 +913,6 @@ def payeer_ipn():
             
             if request.form.get('m_sign') == sign_hash and request.form.get('m_status') == 'success':
                 order_id = request.form.get('m_orderid')
-                
-                # 🔥 Fix: Payeer User ID Extraction using Split instead of -3 index for better safety
                 uid = int(str(order_id).split('_')[0]) 
                 
                 amt = float(request.form.get('m_amount'))
@@ -944,7 +928,6 @@ def payeer_ipn():
                 try: bot.send_message(uid, f"✅ **PAYEER DEPOSIT SUCCESS!**\nAmount: `${amt}` added to your wallet.", parse_mode="Markdown")
                 except: pass
                 
-                # 🔥 NEW: Admin Notification for Payeer Deposit
                 try: bot.send_message(ADMIN_ID, f"🔔 **CRYPTO DEPOSIT:** User `{uid}` added `${amt}` via Payeer!", parse_mode="Markdown")
                 except: pass
                 
@@ -956,6 +939,5 @@ def payeer_ipn():
         return str(e), 500
 
 if __name__ == '__main__':
-    # Render assigns dynamic port on runtime
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
