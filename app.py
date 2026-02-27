@@ -86,16 +86,24 @@ def auto_fake_proof_cron():
             if not proof_channel:
                 continue
 
-            # 🔥 MONGODB LOCK (Upstash Redis এর লিমিট বাঁচানোর জন্য)
+            # 🔥 MONGODB LOCK FIX: Duplicate Key Error Prevention
             now = time.time()
-            lock_res = config_col.update_one(
-                {"_id": "sys_locks", "$or": [{"fake_proof": {"$lt": now}}, {"fake_proof": {"$exists": False}}]},
-                {"$set": {"fake_proof": now + 40}},
+            
+            # ১. ডেটাবেসে sys_locks না থাকলে তৈরি করে নিবে
+            config_col.update_one(
+                {"_id": "sys_locks"}, 
+                {"$setOnInsert": {"fake_proof": 0}}, 
                 upsert=True
             )
             
+            # ২. এরপর লক করার চেষ্টা করবে (upsert ছাড়া)
+            lock_res = config_col.update_one(
+                {"_id": "sys_locks", "$or": [{"fake_proof": {"$lt": now}}, {"fake_proof": {"$exists": False}}]},
+                {"$set": {"fake_proof": now + 40}}
+            )
+            
             # যদি অন্য কোনো Worker আগে লক করে ফেলে, তবে এটি স্কিপ করবে
-            if not lock_res.upserted_id and lock_res.modified_count == 0:
+            if lock_res.modified_count == 0:
                 continue 
 
             dep_freq = s.get('fake_dep_freq', 2)
