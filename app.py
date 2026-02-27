@@ -136,13 +136,20 @@ def auto_fake_proof_cron():
                     
                 if cost_usd < 0.01: cost_usd = 0.12 
                 
+                curr_choice = random.choices(["USD", "BDT", "INR"], weights=[30, 50, 20])[0]
+                if curr_choice == "USD":
+                    display_cost = f"${round(cost_usd, 3)}"
+                elif curr_choice == "BDT":
+                    display_cost = f"৳{round(cost_usd * 120, 2)}"
+                else:
+                    display_cost = f"₹{round(cost_usd * 83, 2)}"
+                
                 fake_uid = str(random.randint(1000000, 9999999))
                 masked_id = f"***{fake_uid[-4:]}"
                 
-                # Get the service ID, fallback to a random number if cache is empty
                 sid = srv.get('service', str(random.randint(10, 500)))
                 
-                msg = f"```text\n╔════ 🟢 𝗡𝗘𝗪 𝗢𝗥𝗗𝗘𝗥 ════╗\n║ 👤 𝗜𝗗: {masked_id}\n║ 🚀 𝗦𝗲𝗿𝘃𝗶𝗰𝗲 𝗜𝗗: {sid}\n║ 💵 𝗖𝗼𝘀𝘁: ${cost_usd:.3f}\n╚════════════════════╝\n```"
+                msg = f"```text\n╔════ 🟢 𝗡𝗘𝗪 𝗢𝗥𝗗𝗘𝗥 ════╗\n║ 👤 𝗜𝗗: {masked_id}\n║ 🚀 𝗦𝗲𝗿𝘃𝗶𝗰𝗲 𝗜𝗗: {sid}\n║ 💵 𝗖𝗼𝘀𝘁: {display_cost}\n╚════════════════════╝\n```"
                 bot.send_message(proof_channel, msg, parse_mode="Markdown")
 
         except Exception as e:
