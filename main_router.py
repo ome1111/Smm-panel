@@ -456,7 +456,11 @@ def fetch_orders_page(chat_id, page=0, filter_type="all"):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("INSTANT_REFILL|"))
 def process_instant_refill(call):
     if is_button_locked(call.from_user.id, call.id): return
-    oid = call.data.split("|")[1]
+    try:
+        oid = int(call.data.split("|")[1]) # 🔥 FIX: Type Casting to Integer
+    except ValueError:
+        return bot.answer_callback_query(call.id, "❌ Invalid Order ID.", show_alert=True)
+        
     res = api.send_refill(oid)
     if res and 'refill' in res: bot.answer_callback_query(call.id, f"✅ Auto-Refill Triggered! Task ID: {res['refill']}", show_alert=True)
     else: bot.answer_callback_query(call.id, "❌ Refill not available or requested too early.", show_alert=True)
@@ -1201,7 +1205,15 @@ def process_bulk_background(uid, drafts, message_id, pre_deducted_cost):
             if res and 'order' in res:
                 success_count += 1
                 successful_cost += d['cost']
-                pts = int(float(d['cost']) * float(s.get("points_per_usd", 100)))
+                
+                # 🔥 FIX: Safe Math Calculation
+                try:
+                    cost_val = float(d.get('cost', 0))
+                    pts_rate = float(s.get("points_per_usd", 100))
+                    pts = int(cost_val * pts_rate)
+                except (ValueError, TypeError):
+                    pts = 0
+                    
                 points_earned += pts
                 orders_col.insert_one({"oid": res['order'], "uid": uid, "sid": d['sid'], "link": d['link'], "qty": d['qty'], "cost": d['cost'], "status": "pending", "date": datetime.now()})
                 
