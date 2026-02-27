@@ -128,42 +128,21 @@ def auto_fake_proof_cron():
                 cached_services = utils.get_cached_services()
                 if cached_services:
                     srv = random.choice(cached_services)
-                    srv_name = utils.clean_service_name(srv['name'])
                     base_rate = float(srv.get('rate', 0.5))
                     cost_usd = (base_rate / 1000) * qty * 1.2
                 else:
-                    srv_name = "Premium Service ⚡"
                     cost_usd = (random.uniform(s.get('fake_order_min', 0.5), s.get('fake_order_max', 10.0)) / 1000) * qty
                     srv = {}
                     
                 if cost_usd < 0.01: cost_usd = 0.12 
                 
-                curr_choice = random.choices(["USD", "BDT", "INR"], weights=[30, 50, 20])[0]
-                if curr_choice == "USD":
-                    display_cost = f"${round(cost_usd, 3)}"
-                elif curr_choice == "BDT":
-                    display_cost = f"৳{round(cost_usd * 120, 2)}"
-                else:
-                    display_cost = f"₹{round(cost_usd * 83, 2)}"
-
-                short_srv = srv_name[:22] + ".." if len(srv_name) > 22 else srv_name
                 fake_uid = str(random.randint(1000000, 9999999))
                 masked_id = f"***{fake_uid[-4:]}"
                 
-                fake_oid = random.randint(350000, 999999)
+                # Get the service ID, fallback to a random number if cache is empty
+                sid = srv.get('service', str(random.randint(10, 500)))
                 
-                platform = utils.identify_platform(srv.get('category', ''))
-                if "Instagram" in platform: base_link = "https://instagram.com/p/"
-                elif "Facebook" in platform: base_link = "https://facebook.com/"
-                elif "YouTube" in platform: base_link = "https://youtube.com/watch?v="
-                elif "TikTok" in platform: base_link = "https://tiktok.com/@user/video/"
-                elif "Telegram" in platform: base_link = "https://t.me/"
-                else: base_link = "https://link.to/"
-                
-                random_hash = ''.join(random.choices("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=8))
-                masked_link = f"{base_link}{random_hash[:4]}..."
-                
-                msg = f"```text\n╔════ 🟢 𝗡𝗘𝗪 𝗢𝗥𝗗𝗘𝗥 ════╗\n║ 🆔 𝗢𝗿𝗱𝗲𝗿: #{fake_oid}\n║ 👤 𝗨𝘀𝗲𝗿: {masked_id}\n║ 🚀 𝗦𝗲𝗿𝘃𝗶𝗰𝗲: {short_srv}\n║ 🔗 𝗟𝗶𝗻𝗸: {masked_link}\n║ 📦 𝗤𝘁𝘆: {qty}\n║ 💵 𝗖𝗼𝘀𝘁: {display_cost}\n╚════════════════════╝\n```"
+                msg = f"```text\n╔════ 🟢 𝗡𝗘𝗪 𝗢𝗥𝗗𝗘𝗥 ════╗\n║ 👤 𝗜𝗗: {masked_id}\n║ 🚀 𝗦𝗲𝗿𝘃𝗶𝗰𝗲 𝗜𝗗: {sid}\n║ 💵 𝗖𝗼𝘀𝘁: ${cost_usd:.3f}\n╚════════════════════╝\n```"
                 bot.send_message(proof_channel, msg, parse_mode="Markdown")
 
         except Exception as e:
