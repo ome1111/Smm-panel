@@ -91,8 +91,9 @@ def place_order(service, link=None, quantity=None, username=None, min=None, max=
 
 def check_order_status(order_id):
     try:
-        # 🔥 Fetch order from DB to know which panel it belongs to
-        order = orders_col.find_one({"oid": order_id})
+        # 🔥 FIX: Ensure order_id is cast properly based on how it's saved
+        search_query = int(order_id) if str(order_id).isdigit() else order_id
+        order = orders_col.find_one({"oid": search_query})
         sid = str(order.get("sid", "")) if order else ""
         
         if sid.startswith("ext_"):
@@ -119,7 +120,9 @@ def check_order_status(order_id):
 
 def send_refill(order_id):
     try:
-        order = orders_col.find_one({"oid": order_id})
+        # 🔥 FIX: Ensure order_id is cast properly
+        search_query = int(order_id) if str(order_id).isdigit() else order_id
+        order = orders_col.find_one({"oid": search_query})
         sid = str(order.get("sid", "")) if order else ""
         
         if sid.startswith("ext_"):
