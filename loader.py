@@ -55,6 +55,7 @@ config_col = db['settings']
 tickets_col = db['tickets']
 vouchers_col = db['vouchers']
 logs_col = db['logs'] 
+scheduled_col = db['scheduled_orders'] # 🔥 NEW: Custom Drip-Feed Collection
 
 # ==========================================
 # 4. REDIS CONNECTION (FAST CACHE ENGINE - OPTIMIZED)
@@ -77,6 +78,9 @@ try:
     users_col.create_index([("spent", DESCENDING)])
     users_col.create_index([("ref_earnings", DESCENDING)])
     vouchers_col.create_index([("code", ASCENDING)], unique=True)
+    
+    # 🔥 NEW: Indexing for fast background background drip-feed loop
+    scheduled_col.create_index([("status", ASCENDING), ("next_run", ASCENDING)])
     
     logging.info("✅ Database Indexing Applied Successfully! Lightning Fast Mode ON 🚀")
 except Exception as e:
