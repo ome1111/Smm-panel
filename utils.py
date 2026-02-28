@@ -16,6 +16,7 @@ import logging
 import traceback
 from datetime import datetime, timedelta
 from bson import json_util
+from pymongo import ReturnDocument # 🔥 NEW: For MongoDB Atomic Lock
 
 # ASCII Encoding Fix for Server Logs
 if sys.stdout.encoding != 'utf-8':
@@ -624,3 +625,103 @@ def create_payeer_payment(amount, order_id, merchant_id, secret_key):
     
     url = f"https://payeer.com/merchant/?m_shop={merchant_id}&m_orderid={order_id}&m_amount={amount_str}&m_curr=USD&m_desc={desc}&m_sign={sign}"
     return url
+
+# ==========================================
+# 🔥 CUSTOM DRIP-FEED ENGINE (MONGODB ATOMIC LOCKING)
+# ==========================================
+def custom_drip_feed_cron():
+    """
+    এই ফাংশনটি প্রতি ১ মিনিট পরপর ডাটাবেস চেক করবে।
+    MongoDB-এর Atomic Lock ব্যবহার করা হয়েছে, তাই Redis ছাড়াই 
+    একাধিক ওয়ার্কার ক্র্যাশ বা ডুপ্লিকেট অর্ডার প্লেস করবে না।
+    """
+    # ফাংশনের ভেতরে ইমপোর্ট করা হচ্ছে যাতে Circular Import Error না হয়
+    from loader import scheduled_col, orders_col, bot
+    import api
+    
+    # বট স্টার্ট হওয়ার পর ১০ সেকেন্ড অপেক্ষা করবে, যাতে ডাটাবেস কানেকশন ঠিকমতো সেটেল হয়
+    time.sleep(10)
+    
+    while True:
+        try:
+            now = datetime.now()
+            
+            # MongoDB Atomic Lock: এমন অর্ডার খুঁজবে যার সময় হয়েছে এবং যা অন্য কোনো ওয়ার্কার লক করেনি
+            # find_one_and_update নিশ্চিত করে যে একই সময়ে ২টি ওয়ার্কার একই অর্ডার পাবে না
+            task = scheduled_col.find_one_and_update(
+                {
+                    "status": "active",
+                    "next_run": {"$lte": now},
+                    "$or": [
+                        {"locked": {"$ne": True}},
+                        {"lock_expire": {"$lt": now}} # যদি কোনো ওয়ার্কার ক্র্যাশ করে, তবে ২ মিনিট পর লক খুলে যাবে
+                    ]
+                },
+                {"$set": {"locked": True, "lock_expire": now + timedelta(minutes=2)}},
+                return_document=ReturnDocument.AFTER
+            )
+            
+            if not task:
+                # যদি কোনো পেন্ডিং কাজ না থাকে, তবে ১ মিনিট ঘুমিয়ে থাকবে
+                time.sleep(60)
+                continue
+                
+            # --- আমরা টাস্ক পেয়েছি এবং এটি লকড! এবার মেইন প্যানেলে অর্ডার পাঠাব ---
+            uid = task["uid"]
+            sid = task["sid"]
+            link = task["link"]
+            qty = task["qty_per_run"]
+            
+            # মেইন প্যানেলে সিঙ্গেল অর্ডার প্লেস করা
+            res = api.place_order(sid, link=link, quantity=qty)
+            
+            if res and 'order' in res:
+                # মেইন orders কালেকশনে সেভ করা (যাতে ইউজার তার অর্ডারে দেখতে পারে)
+                orders_col.insert_one({
+                    "oid": res['order'], 
+                    "uid": uid, 
+                    "sid": sid, 
+                    "link": link, 
+                    "qty": qty, 
+                    "cost": task.get('cost_per_run', 0), 
+                    "status": "pending", 
+                    "date": datetime.now(),
+                    "is_drip_child": True # এটি দিয়ে বোঝা যাবে যে এটি অটোমেটিক ড্রিপ-ফিড থেকে এসেছে
+                })
+                
+                runs_left = task.get("runs_left", 1) - 1
+                
+                if runs_left > 0:
+                    # আরও রান বাকি আছে, তাই পরবর্তী সময় সেট করে লক আনলক করা
+                    next_run_time = now + timedelta(minutes=task.get("interval", 15))
+                    scheduled_col.update_one(
+                        {"_id": task["_id"]},
+                        {"$set": {"runs_left": runs_left, "next_run": next_run_time, "locked": False}}
+                    )
+                else:
+                    # সবগুলো রান শেষ! স্ট্যাটাস কমপ্লিট করে দেওয়া
+                    scheduled_col.update_one(
+                        {"_id": task["_id"]},
+                        {"$set": {"runs_left": 0, "status": "completed", "locked": False}}
+                    )
+                    # ইউজারকে মেসেজ দেওয়া
+                    try:
+                        bot.send_message(
+                            uid, 
+                            f"✅ **AUTO-ORDER COMPLETED!**\nআপনার `{link}` লিংকের সবগুলো ({task.get('runs_total', 1)} বার) অর্ডার সফলভাবে পাঠানো শেষ হয়েছে।", 
+                            parse_mode="Markdown"
+                        )
+                    except Exception: 
+                        pass
+                        
+            else:
+                # API ফেইল করলে লক আনলক করে দেওয়া, যাতে পরের মিনিটে আবার ট্রাই করে
+                scheduled_col.update_one({"_id": task["_id"]}, {"$set": {"locked": False}})
+                
+        except Exception as e:
+            logging.error(f"Custom Drip Feed Error: {e}")
+            time.sleep(30) # এরর হলে ৩০ সেকেন্ড অপেক্ষা করে আবার ট্রাই করবে
+
+# থ্রেড চালু করা (Daemon=True দেওয়ার কারণে মেইন সার্ভার বন্ধ হলে এটিও নিজে থেকে বন্ধ হয়ে যাবে)
+threading.Thread(target=custom_drip_feed_cron, daemon=True).start()
+
