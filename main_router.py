@@ -11,7 +11,8 @@ from telebot import types
 from bson.objectid import ObjectId
 
 # 🔥 loader এবং নির্দিষ্ট utils ফাংশন ইম্পোর্ট (Memory Optimization)
-from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, redis_client
+# NEW: scheduled_col ইম্পোর্ট করা হলো
+from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, redis_client, scheduled_col
 from config import *
 import api
 from utils import (escape_md, get_settings, get_currency_rates, fmt_curr,
@@ -329,7 +330,6 @@ def info_card(call):
            f"💰 **Price:** `{fmt_curr(rate, curr)}` / 1000\n📉 **Min:** {s.get('min','0')} | 📈 **Max:** {s.get('max','0')}\n"
            f"⏱ **Live Avg Time:** `{escape_md(avg_time)}`⚡️\n━━━━━━━━━━━━━━━━━━━━")
     
-    # 🔥 FIX: Custom Drip-Feed button is now showing for ALL services
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(types.InlineKeyboardButton("🚀 Normal Order", callback_data=f"TYPE|{sid}|normal"))
     markup.add(types.InlineKeyboardButton("💧 Drip-Feed (Auto-Repeat)", callback_data=f"TYPE|{sid}|drip"))
@@ -397,64 +397,157 @@ def reorder_callback(call):
 # 5. UNIVERSAL BUTTONS & PROFILE
 # ==========================================
 def fetch_orders_page(chat_id, page=0, filter_type="all"):
+    """
+    🔥 NEW: Smart Filter and Clean History Logic
+    """
     user = get_cached_user(chat_id) or {}
     curr = user.get("currency", "BDT")
     
-    query = {"uid": chat_id}
-    if filter_type == "subs": query["is_sub"] = True
-    
-    # 🔥 FIX: Use count_documents and skip/limit for massive speed boost!
-    total_orders = orders_col.count_documents(query)
-    
-    if total_orders == 0:
-        return "📭 No orders found." if filter_type == "all" else "📭 No active subscriptions found.", None
-    
-    start = page * 3
-    page_orders = list(orders_col.find(query).sort("_id", -1).skip(start).limit(3))
-    
-    title = "📦 **YOUR ORDERS**" if filter_type == "all" else "🔄 **ACTIVE SUBSCRIPTIONS**"
+    if filter_type == "drip":
+        query = {"uid": chat_id}
+        total_orders = scheduled_col.count_documents(query)
+        
+        if total_orders == 0:
+            return "📭 No active Drip-Feeds found.", None
+        
+        start = page * 3
+        page_orders = list(scheduled_col.find(query).sort("_id", -1).skip(start).limit(3))
+        title = "💧 **YOUR DRIP-FEEDS**"
+    else:
+        query = {"uid": chat_id}
+        if filter_type == "subs": 
+            query["is_sub"] = True
+        else: # "all" orders
+            query["is_sub"] = {"$ne": True}
+            # 🔥 Hide Child Orders (Clean History)
+            query["is_drip_child"] = {"$ne": True} 
+            
+        total_orders = orders_col.count_documents(query)
+        if total_orders == 0:
+            return "📭 No orders found." if filter_type == "all" else "📭 No active subscriptions found.", None
+        
+        start = page * 3
+        page_orders = list(orders_col.find(query).sort("_id", -1).skip(start).limit(3))
+        title = "📦 **YOUR ORDERS**" if filter_type == "all" else "🔄 **ACTIVE SUBSCRIPTIONS**"
+
     txt = f"{title} (Page {page+1}/{math.ceil(total_orders/3)})\n━━━━━━━━━━━━━━━━━━━━\n"
     markup = types.InlineKeyboardMarkup(row_width=2)
     
+    # 🔥 NEW: Multi-Tab Navigation
     if filter_type == "all":
-        markup.add(types.InlineKeyboardButton("🔄 View Active Subs", callback_data="MYORD|0|subs"))
-        
+        markup.row(
+            types.InlineKeyboardButton("🔄 Subs", callback_data="MYORD|0|subs"),
+            types.InlineKeyboardButton("💧 Drip-Feeds", callback_data="MYORD|0|drip")
+        )
+    elif filter_type == "subs":
+        markup.row(
+            types.InlineKeyboardButton("📦 All Orders", callback_data="MYORD|0|all"),
+            types.InlineKeyboardButton("💧 Drip-Feeds", callback_data="MYORD|0|drip")
+        )
+    elif filter_type == "drip":
+        markup.row(
+            types.InlineKeyboardButton("📦 All Orders", callback_data="MYORD|0|all"),
+            types.InlineKeyboardButton("🔄 Subs", callback_data="MYORD|0|subs")
+        )
+
     for o in page_orders:
-        st = str(o.get('status', 'pending')).lower()
-        st_emoji = "⏳"
-        if st == "completed": st_emoji = "✅"
-        elif st in ["canceled", "refunded", "fail"]: st_emoji = "❌"
-        elif st in ["in progress", "processing"]: st_emoji = "🔄"
-        elif st == "partial": st_emoji = "⚠️"
-        
-        remains = o.get('remains', o.get('qty', 0))
-        qty = o.get('qty', 0)
-        p_bar, delivered = generate_progress_bar(remains, qty)
-        
-        txt += f"🆔 `{o.get('oid', 'N/A')}` | 💰 `{fmt_curr(o.get('cost', 0), curr)}`\n"
-        if o.get("is_sub"):
-            txt += f"👤 Target: {escape_md(str(o.get('username', 'N/A')))}\n"
-            txt += f"📸 Posts: {o.get('posts', 0)} | Qty/Post: {qty}\n"
-        else:
-            safe_link = escape_md(str(o.get('link', 'N/A'))[:25])
-            txt += f"🔗 {safe_link}...\n"
+        if filter_type == "drip":
+            # 💧 Smart UI For Drip-Feeds
+            st = str(o.get('status', 'active')).lower()
+            st_emoji = "🟢" if st == "active" else "✅" if st == "completed" else "❌"
             
-        txt += f"🏷 Status: {st_emoji} {st.upper()}\n"
-        if st in ['in progress', 'processing', 'pending'] and not o.get("is_sub"):
-            txt += f"📊 Progress: `{p_bar}`\n✅ Delivered: {delivered} / {qty}\n"
-        txt += "\n"
-        
-        row_btns = [types.InlineKeyboardButton(f"🔁 Reorder", callback_data=f"REORDER|{o.get('sid', 0)}")]
-        if st in ['completed', 'partial'] and not o.get("is_shadow") and not o.get("is_sub"):
-            row_btns.append(types.InlineKeyboardButton(f"🔄 Refill", callback_data=f"INSTANT_REFILL|{o.get('oid', 0)}"))
-        markup.row(*row_btns)
+            total_runs = o.get('runs_total', 1)
+            runs_left = o.get('runs_left', 0)
+            runs_done = total_runs - runs_left
+            
+            safe_link = escape_md(str(o.get('link', 'N/A'))[:25])
+            cost_str = fmt_curr(o.get('cost_per_run', 0) * total_runs, curr)
+            
+            txt += f"💧 **ID:** `{o.get('_id')}` | 💰 `{cost_str}`\n"
+            txt += f"🔗 {safe_link}...\n"
+            txt += f"📦 Qty/Run: {o.get('qty_per_run', 0)} | ⏱ Interval: {o.get('interval', 0)}m\n"
+            txt += f"🔄 Runs: {runs_done} / {total_runs} Completed\n"
+            txt += f"🏷 Status: {st_emoji} {st.upper()}\n\n"
+            
+            row_btns = []
+            if st == "active":
+                row_btns.append(types.InlineKeyboardButton(f"❌ Stop Drip-Feed", callback_data=f"STOP_DRIP|{o['_id']}"))
+            if row_btns:
+                markup.row(*row_btns)
+                
+        else:
+            # Normal Order & Sub UI
+            st = str(o.get('status', 'pending')).lower()
+            st_emoji = "⏳"
+            if st == "completed": st_emoji = "✅"
+            elif st in ["canceled", "refunded", "fail"]: st_emoji = "❌"
+            elif st in ["in progress", "processing"]: st_emoji = "🔄"
+            elif st == "partial": st_emoji = "⚠️"
+            
+            remains = o.get('remains', o.get('qty', 0))
+            qty = o.get('qty', 0)
+            p_bar, delivered = generate_progress_bar(remains, qty)
+            
+            txt += f"🆔 `{o.get('oid', 'N/A')}` | 💰 `{fmt_curr(o.get('cost', 0), curr)}`\n"
+            if o.get("is_sub"):
+                txt += f"👤 Target: {escape_md(str(o.get('username', 'N/A')))}\n"
+                txt += f"📸 Posts: {o.get('posts', 0)} | Qty/Post: {qty}\n"
+            else:
+                safe_link = escape_md(str(o.get('link', 'N/A'))[:25])
+                txt += f"🔗 {safe_link}...\n"
+                
+            txt += f"🏷 Status: {st_emoji} {st.upper()}\n"
+            if st in ['in progress', 'processing', 'pending'] and not o.get("is_sub"):
+                txt += f"📊 Progress: `{p_bar}`\n✅ Delivered: {delivered} / {qty}\n"
+            txt += "\n"
+            
+            row_btns = [types.InlineKeyboardButton(f"🔁 Reorder", callback_data=f"REORDER|{o.get('sid', 0)}")]
+            if st in ['completed', 'partial'] and not o.get("is_shadow") and not o.get("is_sub"):
+                row_btns.append(types.InlineKeyboardButton(f"🔄 Refill", callback_data=f"INSTANT_REFILL|{o.get('oid', 0)}"))
+            markup.row(*row_btns)
             
     nav = []
     if page > 0: nav.append(types.InlineKeyboardButton("⬅️ Prev", callback_data=f"MYORD|{page-1}|{filter_type}"))
     if start + 3 < total_orders: nav.append(types.InlineKeyboardButton("Next ➡️", callback_data=f"MYORD|{page+1}|{filter_type}"))
-    if filter_type == "subs": nav.append(types.InlineKeyboardButton("🔙 All Orders", callback_data="MYORD|0|all"))
     if nav: markup.row(*nav)
+    
     return txt, markup
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("STOP_DRIP|"))
+def stop_drip_feed(call):
+    """
+    🔥 NEW: Cancel Drip-Feed and Auto-Refund Remaining Runs
+    """
+    if is_button_locked(call.from_user.id, call.id): return
+    bot.answer_callback_query(call.id)
+    
+    try:
+        drip_id = ObjectId(call.data.split("|")[1])
+    except:
+        return bot.answer_callback_query(call.id, "❌ Invalid ID.", show_alert=True)
+        
+    uid = call.message.chat.id
+    
+    task = scheduled_col.find_one({"_id": drip_id, "uid": uid})
+    if not task:
+        return bot.send_message(uid, "❌ Task not found.")
+        
+    if task.get("status") != "active":
+        return bot.send_message(uid, "❌ This Drip-Feed is already completed or stopped.")
+        
+    runs_left = task.get("runs_left", 0)
+    cost_per_run = task.get("cost_per_run", 0)
+    
+    refund_amount = runs_left * cost_per_run
+    
+    scheduled_col.update_one({"_id": drip_id}, {"$set": {"status": "stopped", "runs_left": 0}})
+    
+    if refund_amount > 0:
+        users_col.update_one({"_id": uid}, {"$inc": {"balance": refund_amount, "spent": -refund_amount}})
+        clear_cached_user(uid)
+        
+    curr = get_cached_user(uid).get("currency", "BDT")
+    safe_edit_message(f"✅ **DRIP-FEED STOPPED!**\nRemaining runs cancelled.\n💰 Refunded: `{fmt_curr(refund_amount, curr)}`", uid, call.message.message_id, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("INSTANT_REFILL|"))
 def process_instant_refill(call):
@@ -647,7 +740,6 @@ def got_payment(message):
         try: bot.send_message(uid, f"✅ **STARS DEPOSIT SUCCESS!**\nAmount: `${amt_usd:.2f}` has been securely added to your wallet.", parse_mode="Markdown")
         except: pass
 
-        # 🔥 NEW: Admin Notification for Telegram Stars Deposit
         try: bot.send_message(ADMIN_ID, f"🔔 **STARS DEPOSIT:** User `{uid}` added `${amt_usd:.2f}` via Telegram Stars!", parse_mode="Markdown")
         except: pass
 
@@ -805,7 +897,6 @@ def universal_router(message):
                         time.sleep(0.05)
                     except: pass
             
-            # 🔥 FIX: ThreadPoolExecutor ব্যবহার করা হয়েছে
             order_executor.submit(execute_bc)
             return
             
@@ -875,7 +966,6 @@ def universal_router(message):
             user_trx = text.upper().strip()
             trx_data = config_col.find_one({"_id": "transactions", "valid_list.trx": user_trx})
             
-            # 🔥 NEW: Live Chat Button on Invalid TRX ID
             if not trx_data:
                 markup = types.InlineKeyboardMarkup()
                 markup.add(types.InlineKeyboardButton("💬 Live Chat", callback_data="NEW_TICKET"))
@@ -1181,7 +1271,6 @@ def final_ord(call):
         
         safe_edit_message("⏳ **Processing Bulk Orders... Please wait.**", uid, call.message.message_id, parse_mode="Markdown")
         
-        # 🔥 FIX: ThreadPoolExecutor ব্যবহার করা হয়েছে 
         order_executor.submit(process_bulk_background, uid, drafts, call.message.message_id, total_cost)
     else:
         draft = session_data.get('draft')
@@ -1198,7 +1287,6 @@ def final_ord(call):
         
         safe_edit_message("⏳ **Processing your order securely... Please wait.**", uid, call.message.message_id, parse_mode="Markdown")
         
-        # 🔥 FIX: ThreadPoolExecutor ব্যবহার করা হয়েছে
         order_executor.submit(process_order_background, uid, draft, call.message.message_id, cost)
 
 def process_bulk_background(uid, drafts, message_id, pre_deducted_cost):
@@ -1215,7 +1303,6 @@ def process_bulk_background(uid, drafts, message_id, pre_deducted_cost):
                 success_count += 1
                 successful_cost += d['cost']
                 
-                # 🔥 FIX: Safe Math Calculation
                 try:
                     cost_val = float(d.get('cost', 0))
                     pts_rate = float(s.get("points_per_usd", 100))
@@ -1258,7 +1345,6 @@ def process_order_background(uid, draft, message_id, deducted_cost):
             orders_col.insert_one(insert_data)
             safe_edit_message(f"✅ **Order Placed Successfully!**\n🆔 Order ID: `{fake_oid}`\n🎁 Points Earned: `+{points_earned}`", uid, message_id, parse_mode="Markdown")
             
-            # 🔥 NEW: Admin Notification for Shadow Order
             try:
                 link_or_user = draft.get('link') or draft.get('username') or 'N/A'
                 bot.send_message(ADMIN_ID, f"👻 **NEW SHADOW ORDER!** (Fake)\n━━━━━━━━━━━━━━━━━━━━\n👤 User ID: `{uid}`\n🆔 Order ID: `{fake_oid}`\n🚀 Service ID: `{draft['sid']}`\n🔗 Link/Target: {link_or_user}\n💰 Cost: `${draft['cost']:.3f}`", parse_mode="Markdown")
@@ -1275,9 +1361,6 @@ def process_order_background(uid, draft, message_id, deducted_cost):
             return
 
         if o_type == "drip":
-            # 🔥 NEW: API এর ডিফল্ট ড্রিপফিডের বদলে আমাদের কাস্টম ড্রিপফিড ডাটাবেসে সেভ হবে
-            from loader import scheduled_col
-            
             cost_per_run = float(draft['cost']) / float(draft['runs'])
             
             scheduled_col.insert_one({
@@ -1290,7 +1373,7 @@ def process_order_background(uid, draft, message_id, deducted_cost):
                 "interval": draft['interval'],
                 "cost_per_run": cost_per_run,
                 "status": "active",
-                "next_run": datetime.now(), # প্রথম রান সাথে সাথেই শুরু হবে
+                "next_run": datetime.now(), 
                 "locked": False
             })
             
@@ -1321,7 +1404,6 @@ def process_order_background(uid, draft, message_id, deducted_cost):
             orders_col.insert_one(insert_data)
             safe_edit_message(f"✅ **Order Placed Successfully!**\n🆔 Order ID: `{res['order']}`\n🎁 Points Earned: `+{points_earned}`", uid, message_id, parse_mode="Markdown")
             
-            # 🔥 NEW: Admin Notification for Real Order
             try:
                 link_or_user = draft.get('link') or draft.get('username') or 'N/A'
                 bot.send_message(ADMIN_ID, f"🔔 **NEW ORDER RECEIVED!**\n━━━━━━━━━━━━━━━━━━━━\n👤 User ID: `{uid}`\n🆔 Order ID: `{res['order']}`\n🚀 Service ID: `{draft['sid']}`\n🔗 Link/Target: {link_or_user}\n💰 Cost: `${draft['cost']:.3f}`", parse_mode="Markdown")
