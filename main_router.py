@@ -805,8 +805,8 @@ def universal_router(message):
                         time.sleep(0.05)
                     except: pass
             
-            # 🔥 CHANGED: Direct function call instead of order_executor.submit
-            execute_bc()
+            # 🔥 FIX: ThreadPoolExecutor ব্যবহার করা হয়েছে
+            order_executor.submit(execute_bc)
             return
             
         elif step == "awaiting_ghost_uid":
@@ -1181,8 +1181,8 @@ def final_ord(call):
         
         safe_edit_message("⏳ **Processing Bulk Orders... Please wait.**", uid, call.message.message_id, parse_mode="Markdown")
         
-        # 🔥 CHANGED: Direct function call instead of order_executor.submit
-        process_bulk_background(uid, drafts, call.message.message_id, total_cost)
+        # 🔥 FIX: ThreadPoolExecutor ব্যবহার করা হয়েছে 
+        order_executor.submit(process_bulk_background, uid, drafts, call.message.message_id, total_cost)
     else:
         draft = session_data.get('draft')
         if not draft: return bot.send_message(uid, "❌ Session expired. Please try again.")
@@ -1198,8 +1198,8 @@ def final_ord(call):
         
         safe_edit_message("⏳ **Processing your order securely... Please wait.**", uid, call.message.message_id, parse_mode="Markdown")
         
-        # 🔥 CHANGED: Direct function call instead of order_executor.submit
-        process_order_background(uid, draft, call.message.message_id, cost)
+        # 🔥 FIX: ThreadPoolExecutor ব্যবহার করা হয়েছে
+        order_executor.submit(process_order_background, uid, draft, call.message.message_id, cost)
 
 def process_bulk_background(uid, drafts, message_id, pre_deducted_cost):
     try:
@@ -1275,7 +1275,36 @@ def process_order_background(uid, draft, message_id, deducted_cost):
             return
 
         if o_type == "drip":
-            res = api.place_order(draft['sid'], link=draft['link'], quantity=draft['qty'], runs=draft['runs'], interval=draft['interval'])
+            # 🔥 NEW: API এর ডিফল্ট ড্রিপফিডের বদলে আমাদের কাস্টম ড্রিপফিড ডাটাবেসে সেভ হবে
+            from loader import scheduled_col
+            
+            cost_per_run = float(draft['cost']) / float(draft['runs'])
+            
+            scheduled_col.insert_one({
+                "uid": uid,
+                "sid": draft['sid'],
+                "link": draft['link'],
+                "qty_per_run": draft['qty'],
+                "runs_total": draft['runs'],
+                "runs_left": draft['runs'],
+                "interval": draft['interval'],
+                "cost_per_run": cost_per_run,
+                "status": "active",
+                "next_run": datetime.now(), # প্রথম রান সাথে সাথেই শুরু হবে
+                "locked": False
+            })
+            
+            users_col.update_one({"_id": uid}, {"$inc": {"spent": deducted_cost, "points": points_earned}})
+            clear_cached_user(uid)
+            
+            safe_edit_message(f"✅ **Auto-Repeat (Drip-Feed) Started!**\nআপনার অর্ডারটি আমাদের সিস্টেমে শিডিউল করা হয়েছে। প্রতি {draft['interval']} মিনিট পরপর {draft['qty']} কোয়ান্টিটি করে মোট {draft['runs']} বার স্বয়ংক্রিয়ভাবে অর্ডার পাঠানো হবে।\n🎁 Points Earned: `+{points_earned}`", uid, message_id, parse_mode="Markdown")
+            
+            try:
+                bot.send_message(ADMIN_ID, f"🔔 **NEW SCHEDULED ORDER!**\n👤 User: `{uid}`\n🚀 Service: `{draft['sid']}`\n🔗 Link: {draft['link']}\n📦 Setup: {draft['qty']} x {draft['runs']} runs (Every {draft['interval']} mins)", parse_mode="Markdown")
+            except: pass
+            
+            return
+            
         elif o_type == "sub":
             res = api.place_order(draft['sid'], username=draft['username'], min=draft['qty'], max=draft['qty'], posts=draft['posts'], delay=draft['delay'])
         else:
@@ -1323,3 +1352,4 @@ def cancel_ord(call):
     bot.answer_callback_query(call.id)
     clear_user_session(call.message.chat.id)
     safe_edit_message("🚫 **Order Cancelled.**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+
