@@ -329,10 +329,10 @@ def info_card(call):
            f"💰 **Price:** `{fmt_curr(rate, curr)}` / 1000\n📉 **Min:** {s.get('min','0')} | 📈 **Max:** {s.get('max','0')}\n"
            f"⏱ **Live Avg Time:** `{escape_md(avg_time)}`⚡️\n━━━━━━━━━━━━━━━━━━━━")
     
+    # 🔥 FIX: Custom Drip-Feed button is now showing for ALL services
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(types.InlineKeyboardButton("🚀 Normal Order", callback_data=f"TYPE|{sid}|normal"))
-    if str(s.get('dripfeed', 'False')).lower() == 'true':
-        markup.add(types.InlineKeyboardButton("💧 Drip-Feed (Organic)", callback_data=f"TYPE|{sid}|drip"))
+    markup.add(types.InlineKeyboardButton("💧 Drip-Feed (Auto-Repeat)", callback_data=f"TYPE|{sid}|drip"))
     markup.add(types.InlineKeyboardButton("🔄 Auto-Subscription (Posts)", callback_data=f"TYPE|{sid}|sub"))
     
     markup.add(types.InlineKeyboardButton("⭐ Fav", callback_data=f"FAV_ADD|{sid}"))
@@ -1352,4 +1352,3 @@ def cancel_ord(call):
     bot.answer_callback_query(call.id)
     clear_user_session(call.message.chat.id)
     safe_edit_message("🚫 **Order Cancelled.**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
-
