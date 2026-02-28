@@ -797,14 +797,16 @@ def universal_router(message):
     if str(uid) == str(ADMIN_ID):
         if step == "awaiting_bc":
             clear_user_session(uid)
-            bot.send_message(uid, "✅ Broadcast task queued and started!")
+            bot.send_message(uid, "✅ Broadcast task started!")
             def execute_bc():
                 for tu in users_col.find({"is_fake": {"$ne": True}}):
                     try: 
                         bot.send_message(tu["_id"], f"📢 **BROADCAST**\n━━━━━━━━━━━━\n{text}", parse_mode="Markdown")
                         time.sleep(0.05)
                     except: pass
-            order_executor.submit(execute_bc)
+            
+            # 🔥 CHANGED: Direct function call instead of order_executor.submit
+            execute_bc()
             return
             
         elif step == "awaiting_ghost_uid":
@@ -1177,8 +1179,10 @@ def final_ord(call):
         clear_cached_user(uid)
         clear_user_session(uid)
         
-        safe_edit_message("⏳ **Processing Bulk Orders in the background... Please wait.**", uid, call.message.message_id, parse_mode="Markdown")
-        order_executor.submit(process_bulk_background, uid, drafts, call.message.message_id, total_cost)
+        safe_edit_message("⏳ **Processing Bulk Orders... Please wait.**", uid, call.message.message_id, parse_mode="Markdown")
+        
+        # 🔥 CHANGED: Direct function call instead of order_executor.submit
+        process_bulk_background(uid, drafts, call.message.message_id, total_cost)
     else:
         draft = session_data.get('draft')
         if not draft: return bot.send_message(uid, "❌ Session expired. Please try again.")
@@ -1192,8 +1196,10 @@ def final_ord(call):
         clear_cached_user(uid)
         clear_user_session(uid)
         
-        safe_edit_message("⏳ **Processing your order securely in the background... Please wait.**", uid, call.message.message_id, parse_mode="Markdown")
-        order_executor.submit(process_order_background, uid, draft, call.message.message_id, cost)
+        safe_edit_message("⏳ **Processing your order securely... Please wait.**", uid, call.message.message_id, parse_mode="Markdown")
+        
+        # 🔥 CHANGED: Direct function call instead of order_executor.submit
+        process_order_background(uid, draft, call.message.message_id, cost)
 
 def process_bulk_background(uid, drafts, message_id, pre_deducted_cost):
     try:
