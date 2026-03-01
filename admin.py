@@ -2,6 +2,8 @@ import json
 import time
 import logging
 import io
+import random
+import string
 from datetime import datetime
 from telebot import types
 
@@ -19,6 +21,25 @@ def set_admin_step(uid, step):
     session = {"step": step}
     redis_client.setex(f"session_{uid}", 3600, json.dumps(session))
 
+def get_admin_session(uid):
+    try:
+        data = redis_client.get(f"session_{uid}")
+        return json.loads(data) if data else {}
+    except:
+        return {}
+
+def update_admin_session(uid, updates):
+    try:
+        session = get_admin_session(uid)
+        session.update(updates)
+        redis_client.setex(f"session_{uid}", 3600, json.dumps(session))
+    except:
+        pass
+
+def clear_admin_session(uid):
+    try: redis_client.delete(f"session_{uid}")
+    except: pass
+
 # ==========================================
 # 6. GOD MODE ADMIN COMMANDS
 # ==========================================
@@ -27,6 +48,7 @@ def admin_panel(message):
     # সিকিউরিটি চেক: শুধু অ্যাডমিন ঢুকতে পারবে
     if str(message.chat.id) != str(ADMIN_ID): 
         return
+    clear_admin_session(message.chat.id)
         
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
@@ -38,7 +60,7 @@ def admin_panel(message):
         types.InlineKeyboardButton("💎 Points Setup", callback_data="ADM_POINTS")
     )
     
-    # 🔥 NEW POWER FEATURES
+    # 🔥 Exisiting Power Features
     markup.add(
         types.InlineKeyboardButton("📅 Daily Report", callback_data="ADM_DAILY"),
         types.InlineKeyboardButton("🎧 Open Tickets", callback_data="ADM_TICKETS")
@@ -47,11 +69,19 @@ def admin_panel(message):
         types.InlineKeyboardButton("🛠 Toggle Maintenance", callback_data="ADM_MAINT"),
         types.InlineKeyboardButton("🧹 Clear Cache/Spam", callback_data="ADM_CLEAR")
     )
-    
-    # 🔥 Instant Sync & Deposit History
     markup.add(
         types.InlineKeyboardButton("🔄 Instant API Sync", callback_data="ADM_SYNC"),
-        types.InlineKeyboardButton("💳 Deposit History (TXT)", callback_data="ADM_DEP_HIST")
+        types.InlineKeyboardButton("💳 Deposit History", callback_data="ADM_DEP_HIST")
+    )
+    
+    # 🔥 NEW EXCLUSIVE FEATURES 🔥
+    markup.add(
+        types.InlineKeyboardButton("🛑 User Control (Ban)", callback_data="ADM_USER_CTRL"),
+        types.InlineKeyboardButton("🎟️ Create Voucher", callback_data="ADM_NEW_VOUCHER")
+    )
+    markup.add(
+        types.InlineKeyboardButton("📦 Track Order API", callback_data="ADM_TRACK_ORD"),
+        types.InlineKeyboardButton("🗑️ Delete User", callback_data="ADM_DEL_USER")
     )
     
     bot.send_message(message.chat.id, f"👑 **BOSS DASHBOARD**\nUsers: `{users_col.count_documents({})}` | Orders: `{orders_col.count_documents({})}`", reply_markup=markup, parse_mode="Markdown")
@@ -69,7 +99,6 @@ def admin_callbacks(call):
         bot.answer_callback_query(call.id)
         
     elif call.data == "ADM_DAILY":
-        # আজকের দিনের রিপোর্ট ক্যালকুলেশন
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         new_users = users_col.count_documents({"joined": {"$gte": today}})
         today_orders = list(orders_col.find({"date": {"$gte": today}}))
@@ -80,7 +109,6 @@ def admin_callbacks(call):
         bot.answer_callback_query(call.id)
         
     elif call.data == "ADM_TICKETS":
-        # ওপেন সাপোর্ট টিকিটগুলো দেখানো
         tickets = list(tickets_col.find({"status": "open"}))
         if not tickets:
             bot.answer_callback_query(call.id, "✅ No pending tickets!", show_alert=True)
@@ -111,7 +139,6 @@ def admin_callbacks(call):
         bot.answer_callback_query(call.id)
         
     elif call.data == "ADM_CLEAR":
-        # Redis স্প্যাম ক্যাশ ক্লিন
         keys = redis_client.keys("*cache*") + redis_client.keys("spam_*") + redis_client.keys("blocked_*")
         if keys:
             redis_client.delete(*keys)
@@ -219,6 +246,129 @@ def admin_callbacks(call):
             caption="📂 **Full Deposit History Report**\n\nএখানে আপনার ডাটাবেসের সব ডিপোজিট হিস্ট্রি দেওয়া হলো।",
             parse_mode="Markdown"
         )
+
+    # 🔥 NEW LOGIC START 🔥
+    elif call.data == "ADM_NEW_VOUCHER":
+        bot.answer_callback_query(call.id)
+        set_admin_step(uid, "adm_voucher_amt")
+        bot.send_message(uid, "🎟️ **VOUCHER GENERATOR**\n\nEnter the amount (USD) for the voucher:\n_(e.g., 1.5)_", parse_mode="Markdown")
+
+    elif call.data == "ADM_USER_CTRL":
+        bot.answer_callback_query(call.id)
+        set_admin_step(uid, "adm_user_ctrl")
+        bot.send_message(uid, "🛑 **USER CONTROL**\n\nEnter the Target **User ID** to manage their account status (Ban/Shadow Ban/Unban):", parse_mode="Markdown")
+
+    elif call.data == "ADM_TRACK_ORD":
+        bot.answer_callback_query(call.id)
+        set_admin_step(uid, "adm_track_ord")
+        bot.send_message(uid, "📦 **TRACK API ORDER**\n\nEnter the **Order ID** to fetch live status directly from the Main Provider API:", parse_mode="Markdown")
+
+    elif call.data == "ADM_DEL_USER":
+        bot.answer_callback_query(call.id)
+        set_admin_step(uid, "adm_del_user")
+        bot.send_message(uid, "🗑️ **DELETE USER**\n\n⚠️ Enter the **User ID** you want to completely erase from the database:", parse_mode="Markdown")
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("U_ACTION|"))
+def user_action_controls(call):
+    uid = call.message.chat.id
+    if str(uid) != str(ADMIN_ID): return bot.answer_callback_query(call.id, "❌ Denied")
+    
+    parts = call.data.split("|")
+    action = parts[1]
+    target_id = int(parts[2])
+    
+    if action == "SHADOW_BAN":
+        users_col.update_one({"_id": target_id}, {"$set": {"shadow_banned": True}})
+        clear_cached_user(target_id)
+        bot.answer_callback_query(call.id, "✅ User Shadow Banned!", show_alert=True)
+        bot.edit_message_text(f"🛑 **Status:** Shadow Banned 👻", uid, call.message.message_id, parse_mode="Markdown")
+        
+    elif action == "UNBAN":
+        users_col.update_one({"_id": target_id}, {"$set": {"shadow_banned": False}})
+        redis_client.delete(f"blocked_{target_id}") # Remove normal spam ban if any
+        clear_cached_user(target_id)
+        bot.answer_callback_query(call.id, "✅ User Unbanned!", show_alert=True)
+        bot.edit_message_text(f"✅ **Status:** Normal User 🟢", uid, call.message.message_id, parse_mode="Markdown")
+
+# ==========================================
+# 🔥 CATCHING ADMIN TEXT INPUTS
+# ==========================================
+@bot.message_handler(func=lambda m: str(m.chat.id) == str(ADMIN_ID) and get_admin_session(m.chat.id).get("step") in ["adm_voucher_amt", "adm_voucher_limit", "adm_user_ctrl", "adm_track_ord", "adm_del_user"])
+def process_admin_inputs(message):
+    uid = message.chat.id
+    text = message.text.strip()
+    session = get_admin_session(uid)
+    step = session.get("step")
+
+    if step == "adm_voucher_amt":
+        try:
+            amt = float(text)
+            update_admin_session(uid, {"step": "adm_voucher_limit", "temp_v_amt": amt})
+            bot.send_message(uid, f"💰 **Amount:** `${amt}`\n\n🔢 **Enter usage limit:**\n_(How many users can claim this? e.g., 10)_", parse_mode="Markdown")
+        except:
+            bot.send_message(uid, "❌ Invalid Amount. Send numbers only.")
+
+    elif step == "adm_voucher_limit":
+        try:
+            limit = int(text)
+            amt = session.get("temp_v_amt", 1.0)
+            clear_admin_session(uid)
+            
+            # Generate Random 8-character code
+            code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+            
+            vouchers_col.insert_one({"code": code, "amount": amt, "limit": limit, "used_by": []})
+            bot.send_message(uid, f"✅ **VOUCHER CREATED!**\n━━━━━━━━━━━━━━━━━━━━\n🎟️ Code: `{code}`\n💰 Value: `${amt}`\n👥 Limit: `{limit}` users\n━━━━━━━━━━━━━━━━━━━━\n_Users can claim this from the Voucher menu._", parse_mode="Markdown")
+        except:
+            bot.send_message(uid, "❌ Invalid Limit. Send numbers only.")
+
+    elif step == "adm_user_ctrl":
+        clear_admin_session(uid)
+        try:
+            target = int(text)
+            tu = users_col.find_one({"_id": target})
+            if not tu:
+                return bot.send_message(uid, "❌ User not found.")
+                
+            markup = types.InlineKeyboardMarkup(row_width=2)
+            markup.add(
+                types.InlineKeyboardButton("👻 Shadow Ban", callback_data=f"U_ACTION|SHADOW_BAN|{target}"),
+                types.InlineKeyboardButton("🟢 Unban / Normal", callback_data=f"U_ACTION|UNBAN|{target}")
+            )
+            
+            is_shadow = "Yes 👻" if tu.get('shadow_banned') else "No 🟢"
+            bot.send_message(uid, f"👤 **USER CONTROL**\n🆔 `{target}`\n📛 Name: {escape_md(tu.get('name'))}\n💰 Bal: `${tu.get('balance', 0):.3f}`\n\n🛑 **Shadow Banned:** {is_shadow}\n\nSelect action:", reply_markup=markup, parse_mode="Markdown")
+        except:
+            bot.send_message(uid, "❌ Invalid User ID.")
+
+    elif step == "adm_track_ord":
+        clear_admin_session(uid)
+        try:
+            bot.send_message(uid, f"⏳ Contacting API for Order `{text}`...")
+            res = api.check_order_status(text)
+            
+            if res and 'status' in res:
+                st = res['status'].upper()
+                remains = res.get('remains', 'N/A')
+                bot.send_message(uid, f"📦 **API RESPONSE:**\n━━━━━━━━━━━━━━━━━━━━\n🆔 Order ID: `{text}`\n📊 Status: **{st}**\n📉 Remains: `{remains}`\n\n_Raw:_ `{json.dumps(res)}`", parse_mode="Markdown")
+            else:
+                bot.send_message(uid, f"❌ **API Error:** Could not track order.\nResponse: `{res}`", parse_mode="Markdown")
+        except Exception as e:
+            bot.send_message(uid, f"❌ Error: {e}")
+
+    elif step == "adm_del_user":
+        clear_admin_session(uid)
+        try:
+            target = int(text)
+            tu = users_col.find_one({"_id": target})
+            if not tu:
+                return bot.send_message(uid, "❌ User not found.")
+                
+            users_col.delete_one({"_id": target})
+            clear_cached_user(target)
+            bot.send_message(uid, f"✅ **SUCCESS!**\nUser `{target}` has been completely deleted from the database.", parse_mode="Markdown")
+        except:
+            bot.send_message(uid, "❌ Invalid User ID.")
 
 # ==========================================
 # 🔥 ADD/REMOVE BALANCE DIRECTLY FROM BOT
