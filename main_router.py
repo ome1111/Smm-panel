@@ -11,7 +11,6 @@ from telebot import types
 from bson.objectid import ObjectId
 
 # 🔥 loader এবং নির্দিষ্ট utils ফাংশন ইম্পোর্ট (Memory Optimization)
-# NEW: scheduled_col ইম্পোর্ট করা হলো
 from loader import bot, users_col, orders_col, config_col, tickets_col, vouchers_col, redis_client, scheduled_col
 from config import *
 import api
@@ -397,9 +396,6 @@ def reorder_callback(call):
 # 5. UNIVERSAL BUTTONS & PROFILE
 # ==========================================
 def fetch_orders_page(chat_id, page=0, filter_type="all"):
-    """
-    🔥 NEW: Smart Filter and Clean History Logic
-    """
     user = get_cached_user(chat_id) or {}
     curr = user.get("currency", "BDT")
     
@@ -417,9 +413,8 @@ def fetch_orders_page(chat_id, page=0, filter_type="all"):
         query = {"uid": chat_id}
         if filter_type == "subs": 
             query["is_sub"] = True
-        else: # "all" orders
+        else:
             query["is_sub"] = {"$ne": True}
-            # 🔥 Hide Child Orders (Clean History)
             query["is_drip_child"] = {"$ne": True} 
             
         total_orders = orders_col.count_documents(query)
@@ -433,7 +428,6 @@ def fetch_orders_page(chat_id, page=0, filter_type="all"):
     txt = f"{title} (Page {page+1}/{math.ceil(total_orders/3)})\n━━━━━━━━━━━━━━━━━━━━\n"
     markup = types.InlineKeyboardMarkup(row_width=2)
     
-    # 🔥 NEW: Multi-Tab Navigation
     if filter_type == "all":
         markup.row(
             types.InlineKeyboardButton("🔄 Subs", callback_data="MYORD|0|subs"),
@@ -452,7 +446,6 @@ def fetch_orders_page(chat_id, page=0, filter_type="all"):
 
     for o in page_orders:
         if filter_type == "drip":
-            # 💧 Smart UI For Drip-Feeds
             st = str(o.get('status', 'active')).lower()
             st_emoji = "🟢" if st == "active" else "✅" if st == "completed" else "❌"
             
@@ -476,7 +469,6 @@ def fetch_orders_page(chat_id, page=0, filter_type="all"):
                 markup.row(*row_btns)
                 
         else:
-            # Normal Order & Sub UI
             st = str(o.get('status', 'pending')).lower()
             st_emoji = "⏳"
             if st == "completed": st_emoji = "✅"
@@ -515,9 +507,6 @@ def fetch_orders_page(chat_id, page=0, filter_type="all"):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("STOP_DRIP|"))
 def stop_drip_feed(call):
-    """
-    🔥 NEW: Cancel Drip-Feed and Auto-Refund Remaining Runs
-    """
     if is_button_locked(call.from_user.id, call.id): return
     bot.answer_callback_query(call.id)
     
@@ -527,17 +516,12 @@ def stop_drip_feed(call):
         return bot.answer_callback_query(call.id, "❌ Invalid ID.", show_alert=True)
         
     uid = call.message.chat.id
-    
     task = scheduled_col.find_one({"_id": drip_id, "uid": uid})
-    if not task:
-        return bot.send_message(uid, "❌ Task not found.")
-        
-    if task.get("status") != "active":
-        return bot.send_message(uid, "❌ This Drip-Feed is already completed or stopped.")
+    if not task: return bot.send_message(uid, "❌ Task not found.")
+    if task.get("status") != "active": return bot.send_message(uid, "❌ This Drip-Feed is already completed or stopped.")
         
     runs_left = task.get("runs_left", 0)
     cost_per_run = task.get("cost_per_run", 0)
-    
     refund_amount = runs_left * cost_per_run
     
     scheduled_col.update_one({"_id": drip_id}, {"$set": {"status": "stopped", "runs_left": 0}})
@@ -838,7 +822,20 @@ def universal_buttons(message):
         
     elif message.text == "📝 Bulk Order":
         update_user_session(uid, {"step": "awaiting_bulk_order"})
-        bot.send_message(uid, "📝 **BULK ORDER PROCESSING**\nSend your orders in this exact format (One order per line):\n`ServiceID | Link | Quantity`\n\n**Example:**\n`102 | https://ig.com/p/1 | 1000`\n`55 | https://fb.com/p/2 | 500`", parse_mode="Markdown")
+        
+        # 🔥 NEW: Auto Link Generator Button
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("🛠️ TG Auto Link Generator", callback_data="AUTO_BULK_GEN"))
+        
+        bot.send_message(uid, "📝 **BULK ORDER PROCESSING**\nSend your orders in this exact format (One order per line):\n`ServiceID | Link | Quantity`\n\n**Example:**\n`102 | https://ig.com/p/1 | 1000`\n`55 | https://fb.com/p/2 | 500`\n\n_অথবা নিচের Auto Generator টুলটি ব্যবহার করুন!_", reply_markup=markup, parse_mode="Markdown")
+
+@bot.callback_query_handler(func=lambda c: c.data == "AUTO_BULK_GEN")
+def auto_bulk_gen_start(call):
+    if is_button_locked(call.from_user.id, call.id): return
+    bot.answer_callback_query(call.id)
+    uid = call.message.chat.id
+    update_user_session(uid, {"step": "awaiting_auto_bulk_link"})
+    safe_edit_message("🛠️ **TG AUTO LINK GENERATOR**\n\nআপনার টেলিগ্রাম চ্যানেলের একদম শেষ (Latest) পোস্টের লিংকটি দিন।\n_(যেমন: https://t.me/mychannel/150)_", uid, call.message.message_id, parse_mode="Markdown", disable_web_page_preview=True)
 
 def send_media_to_admin(msg_obj, admin_text):
     try:
@@ -958,7 +955,82 @@ def universal_router(message):
                     markup.add(types.InlineKeyboardButton(f"📁 {cat[:35]}", callback_data=f"CAT|{idx}|0|all"))
                 return bot.send_message(uid, f"✨ **Magic Link Detected!**\n📍 Platform: **{escape_md(platform)}**\n📂 Choose Category for your link:", reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
 
-    if step == "awaiting_trx":
+    # 🔥 NEW: Auto Bulk Generator Logic
+    if step == "awaiting_auto_bulk_link":
+        if not re.match(r'^(https?://t\.me/).+/\d+$', text, re.IGNORECASE):
+            return bot.send_message(uid, "❌ **INVALID LINK!**\nসঠিক টেলিগ্রাম পোস্ট লিংক দিন। (যেমন: https://t.me/mychannel/150)", parse_mode="Markdown", disable_web_page_preview=True)
+        
+        parts = text.rsplit('/', 1)
+        base_link = parts[0]
+        try:
+            last_id = int(parts[1])
+        except ValueError:
+            return bot.send_message(uid, "❌ লিংকের শেষে সঠিক আইডি থাকতে হবে।")
+            
+        update_user_session(uid, {"step": "awaiting_auto_bulk_count", "temp_base_link": base_link, "temp_last_id": last_id})
+        return bot.send_message(uid, "🔢 **কতগুলো পোস্ট?**\nশেষ কতগুলো পোস্টে আপনি অর্ডার নিতে চান? (যেমন: 10)", parse_mode="Markdown")
+        
+    elif step == "awaiting_auto_bulk_count":
+        try:
+            count = int(text)
+            if count < 1 or count > 100:
+                return bot.send_message(uid, "⚠️ দয়া করে 1 থেকে 100 এর মধ্যে একটি সংখ্যা দিন।")
+            update_user_session(uid, {"step": "awaiting_auto_bulk_service", "temp_post_count": count})
+            return bot.send_message(uid, "🚀 **সার্ভিস এবং কোয়ান্টিটি:**\nএবার Service ID এবং Quantity স্পেস দিয়ে লিখুন।\n_(যেমন: 102 500)_", parse_mode="Markdown")
+        except ValueError:
+            return bot.send_message(uid, "⚠️ শুধুমাত্র সংখ্যা লিখুন।")
+            
+    elif step == "awaiting_auto_bulk_service":
+        try:
+            parts = text.strip().split()
+            if len(parts) != 2:
+                return bot.send_message(uid, "❌ ভুল ফরম্যাট! দয়া করে ServiceID এবং Quantity স্পেস দিয়ে লিখুন। (যেমন: 102 500)")
+            
+            sid = parts[0]
+            qty = int(parts[1])
+            services = get_cached_services()
+            s = next((x for x in services if str(x.get('service', '0')) == str(sid)), None)
+            
+            if not s: return bot.send_message(uid, "❌ Service Not Found! সঠিক সার্ভিস আইডি দিন।")
+            
+            base_link = session_data.get("temp_base_link")
+            last_id = session_data.get("temp_last_id")
+            count = session_data.get("temp_post_count")
+            
+            start_id = max(1, last_id - count + 1)
+            
+            bulk_draft = []
+            total_cost = 0.0
+            rate = calculate_price(s.get('rate', 0.0), u.get('spent', 0), u.get('custom_discount', 0))
+            cost_per_order = (rate / 1000) * qty
+            
+            preview_text = "✅ **Auto Generated Bulk Orders:**\n```text\n"
+            
+            for i in range(start_id, last_id + 1):
+                link = f"{base_link}/{i}"
+                bulk_draft.append({"sid": sid, "link": link, "qty": qty, "cost": cost_per_order})
+                total_cost += cost_per_order
+                if len(bulk_draft) <= 5 or i == last_id:
+                    preview_text += f"{sid} | {link} | {qty}\n"
+                elif len(bulk_draft) == 6:
+                    preview_text += "...\n"
+                    
+            preview_text += "```\n"
+            
+            curr = u.get("currency", "BDT")
+            if u.get('balance', 0) < total_cost: 
+                return bot.send_message(uid, f"❌ **INSUFFICIENT FUNDS!**\nNeed: `{fmt_curr(total_cost, curr)}`", parse_mode="Markdown")
+            
+            update_user_session(uid, {"draft_bulk": bulk_draft, "total_bulk_cost": total_cost, "step": ""})
+            markup = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("✅ CONFIRM BULK", callback_data="PLACE_BULK"), types.InlineKeyboardButton("❌ CANCEL", callback_data="CANCEL_ORD"))
+            
+            safe_preview = preview_text + f"\n📦 Total Orders: {len(bulk_draft)}\n💰 Total Cost: `{fmt_curr(total_cost, curr)}`\n━━━━━━━━━━━━━━━━━━━━\n⚠️ **Note:** যদি চ্যানেল থেকে কোনো পোস্ট ডিলিট করা হয়ে থাকে, তবে ওই ইনভ্যালিড লিংকগুলোর অর্ডার অটো-ক্যানসেল হবে এবং টাকা আপনার মূল ব্যালেন্সে সাথে সাথে রিফান্ড হয়ে যাবে!\n\n**Confirm Processing?**"
+            
+            return bot.send_message(uid, safe_preview, reply_markup=markup, parse_mode="Markdown", disable_web_page_preview=True)
+        except ValueError:
+            return bot.send_message(uid, "⚠️ Quantity অবশ্যই সংখ্যা হতে হবে।")
+
+    elif step == "awaiting_trx":
         method_name = str(session_data.get("temp_dep_method", "Manual")).lower()
         is_local_auto = any(x in method_name for x in ['bkash', 'nagad', 'rocket', 'upay', 'bdt'])
 
