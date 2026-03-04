@@ -10,6 +10,7 @@ import hmac
 import math
 import traceback
 import logging
+import urllib.parse
 from io import StringIO
 from datetime import datetime
 from flask import Flask, request, render_template, redirect, url_for, session, jsonify, Response
@@ -99,7 +100,7 @@ def auto_fake_proof_cron():
             if lock_res.modified_count == 0:
                 continue 
 
-            # বাংলাদেশ সময় বের করা (Asia/Dhaka is set in loader.py)
+            # বাংলাদেশ সময় বের করা
             hour = datetime.now().hour
             
             # অ্যাডমিন প্যানেল থেকে সেট করা বেস ফ্রিকোয়েন্সি
@@ -108,11 +109,9 @@ def auto_fake_proof_cron():
 
             # 🕒 SMART TIME MULTIPLIER (BD TIME)
             if 0 <= hour < 8:
-                # রাত ১২টা থেকে সকাল ৮টা: পোস্ট হওয়ার স্পিড মাত্র ১০% করে দেওয়া হলো (খুব রেয়ারলি পোস্ট হবে)
                 dep_freq = base_dep_freq * 0.10
                 ord_freq = base_ord_freq * 0.10
             else:
-                # সকাল ৮টা থেকে রাত ১২টা: নরমাল স্পিড, তবে মানুষের মতো র‍্যান্ডম ভ্যারিয়েশন থাকবে
                 dep_freq = base_dep_freq * random.uniform(0.8, 1.2)
                 ord_freq = base_ord_freq * random.uniform(0.8, 1.2)
 
@@ -134,7 +133,6 @@ def auto_fake_proof_cron():
                 fake_uid = str(random.randint(1000000, 9999999))
                 masked_id = f"***{fake_uid[-4:]}"
                 
-                # EXACT ORIGINAL FORMAT
                 msg = f"```text\n╔══ 💰 𝗡𝗘𝗪 𝗗𝗘𝗣𝗢𝗦𝗜𝗧 ══╗\n║ 👤 𝗜𝗗: {masked_id}\n║ 🏦 𝗠𝗲𝘁𝗵𝗼𝗱: {method}\n║ 💵 𝗔𝗺𝗼𝘂𝗻𝘁: {display_amt}\n║ ✅ 𝗦𝘁𝗮𝘁𝘂𝘀: Approved\n╚════════════════════╝\n```"
                 bot.send_message(proof_channel, msg, parse_mode="Markdown")
 
@@ -165,7 +163,6 @@ def auto_fake_proof_cron():
                 fake_uid = str(random.randint(1000000, 9999999))
                 masked_id = f"***{fake_uid[-4:]}"
                 
-                # EXACT ORIGINAL FORMAT
                 msg = f"```text\n╔════ 🟢 𝗡𝗘𝗪 𝗢𝗥𝗗𝗘𝗥 ════╗\n║ 👤 𝗜𝗗: {masked_id}\n║ 🚀 𝗦𝗲𝗿𝘃𝗶𝗰𝗲 𝗜𝗗: {sid}\n║ 💵 𝗖𝗼𝘀𝘁: {display_cost}\n╚════════════════════╝\n```"
                 bot.send_message(proof_channel, msg, parse_mode="Markdown")
 
@@ -179,7 +176,6 @@ threading.Thread(target=auto_fake_proof_cron, daemon=True).start()
 # 3. ADMIN WEB PANEL ROUTES (GOD MODE)
 # ==========================================
 def get_dashboard_stats():
-    # Use utils fast cache
     s = utils.get_settings()
     u_count = users_col.count_documents({})
     bal = sum(u.get('balance', 0) for u in users_col.find())
@@ -294,10 +290,8 @@ def save_service_order():
 def save_settings():
     if 'admin' not in session: return redirect(url_for('login'))
     
-    # 🟢 FIX 1: Fetch existing settings first to prevent overwriting hidden/telegram-configured data
     current_settings = config_col.find_one({"_id": "settings"}) or {}
     
-    # Update with new values from the form
     current_settings.update({
         "profit_margin": float(request.form.get('profit_margin', 20.0)),
         "channels": [c.strip() for c in request.form.get('channels', '').split(',') if c.strip()],
@@ -343,7 +337,6 @@ def save_settings():
         "stars_active": 'stars_active' in request.form,
     })
     
-    # 1. Payment Gateways
     payments = []
     pay_names = request.form.getlist('pay_name[]')
     pay_rates = request.form.getlist('pay_rate[]')
@@ -354,7 +347,6 @@ def save_settings():
             payments.append({"name": pay_names[i].strip(), "rate": float(pay_rates[i]), "address": pay_addrs[i].strip()})
     current_settings["payments"] = payments
 
-    # 2. Profit Tiers
     profit_tiers = []
     tier_mins = request.form.getlist('tier_min[]')
     tier_maxs = request.form.getlist('tier_max[]')
@@ -369,7 +361,6 @@ def save_settings():
             })
     current_settings["profit_tiers"] = profit_tiers
 
-    # 3. External APIs (Hybrid Mode Fix)
     external_apis = []
     ext_urls = request.form.getlist('ext_api_url[]')
     ext_keys = request.form.getlist('ext_api_key[]')
@@ -385,14 +376,12 @@ def save_settings():
             })
     current_settings["external_apis"] = external_apis
 
-    # Database Update
     config_col.update_one({"_id": "settings"}, {"$set": current_settings}, upsert=True)
     utils.local_settings_cache = current_settings
     utils.last_settings_update = time.time()
     
     try: 
         redis_client.setex("settings_cache", 60, json.dumps(current_settings))
-        # Clear services cache so external APIs are fetched on the next order request
         redis_client.delete("services_cache")
     except: pass
     
@@ -632,7 +621,6 @@ def clear_logs():
     logs_col.delete_many({})
     return redirect(url_for('index'))
 
-
 # ==========================================
 # 🔥 ADDED: REDIS ACTION ROUTES (FIX FOR PRO TOOLS 404)
 # ==========================================
@@ -643,33 +631,28 @@ def redis_action(action):
     msg = ""
     try:
         if action == 'clear_cache':
-            # Clear all cached API and user data
             keys = redis_client.keys("*cache*")
             if keys: redis_client.delete(*keys)
-            msg = "✅ Redis Cache Cleared Successfully! The bot will fetch fresh API data."
+            msg = "✅ Redis Cache Cleared Successfully!"
             
         elif action == 'release_locks':
-            # Release cron job and background process locks
             keys = redis_client.keys("*lock*")
             if keys: redis_client.delete(*keys)
-            msg = "🔓 All Background Locks Released! Stuck tasks will resume now."
+            msg = "🔓 All Background Locks Released!"
             
         elif action == 'reset_spam':
-            # Clear Anti-spam blocks
             keys = redis_client.keys("spam_*") + redis_client.keys("blocked_*")
             if keys: redis_client.delete(*keys)
-            msg = "🛡️ Anti-Spam Blocks Reset! All users can use the bot normally."
+            msg = "🛡️ Anti-Spam Blocks Reset!"
             
         elif action == 'clear_sessions':
-            # Clear user current state/sessions in telegram bot
             keys = redis_client.keys("session_*")
             if keys: redis_client.delete(*keys)
-            msg = "🚪 All Active Bot Sessions Cleared! Users will be sent back to main menu."
+            msg = "🚪 All Active Bot Sessions Cleared!"
             
         else:
             msg = "❌ Invalid Redis Action!"
             
-        # Send confirmation to admin telegram
         bot.send_message(ADMIN_ID, f"🛠 **PRO TOOL EXECUTED**\n━━━━━━━━━━━━━━━━━━━━\n**Action:** `{action}`\n**Status:** {msg}", parse_mode="Markdown")
         
     except Exception as e:
@@ -679,7 +662,6 @@ def redis_action(action):
         
     return redirect(url_for('index'))
 
-
 # ==========================================
 # 8. LOCAL AUTO PAYMENT WEBHOOK API (For MacroDroid)
 # ==========================================
@@ -687,7 +669,6 @@ def redis_action(action):
 def add_transaction():
     secret = request.args.get('secret') or (request.json.get('secret') if request.is_json else None)
     
-    # 🔥 Hardcoded Secret Fix (Environment Variable Base)
     auto_pay_secret = os.environ.get('AUTO_PAY_SECRET', 'NEXUS_AUTO_PASS_123')
     
     if secret != auto_pay_secret:
@@ -700,11 +681,7 @@ def add_transaction():
 
     try:
         # 🔥 Ultra-Flexible Regex for bKash/Nagad/Rocket/Upay SMS
-        # Catches: TrxID, TxnID, Txn Id, Trx ID, Txn, Trans ID, etc.
         trx_match = re.search(r'(?i)(?:TrxID|TxnID|Txn\s*Id|Trx\s*ID|Trx|Txn|Trans\s*ID|ID)\s*[:\-\.]?\s*([A-Z0-9]{7,15})', sms_text)
-        
-        # Catches: Tk 50, Tk. 50.00, Tk50, Amount: 50, Amount: Tk 50.00
-        # Retrieves the *first* matched amount (which is almost always the received amount, not the fee/balance)
         amt_match = re.search(r'(?i)(?:Tk[\s\.]*|Amount[\s:]*(?:Tk[\s\.]*)?|Received[\s:]*(?:Tk[\s\.]*)?)([\d,]+(?:\.\d{1,2})?)', sms_text)
         
         if trx_match and amt_match:
@@ -718,9 +695,8 @@ def add_transaction():
             )
             return jsonify({"status": "success", "msg": f"Auto Added: Trx {trx}, Amt {amt}"})
         else:
-            # 🔥 FIX: Added Admin Alert for Unrecognized SMS Formats
             try:
-                bot.send_message(ADMIN_ID, f"⚠️ **Unrecognized SMS Received:**\n`{sms_text}`\n_Could not extract TrxID or Amount. Check your local payment app format._", parse_mode="Markdown")
+                bot.send_message(ADMIN_ID, f"⚠️ **Unrecognized SMS Received:**\n`{sms_text}`\n_Could not extract TrxID or Amount._", parse_mode="Markdown")
             except: pass
             
             return jsonify({"status": "ignored", "msg": "TrxID or Amount not found in SMS"}), 200
@@ -732,7 +708,7 @@ def add_transaction():
 
 
 # ==========================================
-# 🔥 9. NEW: SMM PANEL WEBHOOK (Instant Status Sync)
+# 9. SMM PANEL WEBHOOK (Instant Status Sync)
 # ==========================================
 @app.route('/smm_webhook', methods=['POST', 'GET'])
 def smm_webhook():
@@ -766,13 +742,12 @@ def smm_webhook():
                     cost_str = utils.fmt_curr(o['cost'], curr)
                     users_col.update_one({"_id": o['uid']}, {"$inc": {"balance": o['cost'], "spent": -o['cost']}})
                     utils.clear_cached_user(o['uid'])
-                    try: bot.send_message(o['uid'], f"💰 **ORDER REFUNDED!**\nOrder `{o['oid']}` failed or canceled by server. `{cost_str}` has been added back to your balance.", parse_mode="Markdown")
+                    try: bot.send_message(o['uid'], f"💰 **ORDER REFUNDED!**\nOrder `{o['oid']}` failed or canceled. `{cost_str}` has been added back.", parse_mode="Markdown")
                     except: pass
                     
         return "OK", 200
     except Exception as e:
         logging.error(f"SMM Webhook Error: {e}")
-        logs_col.insert_one({"error": str(traceback.format_exc()), "source": "SMM Webhook", "date": datetime.now()})
         return "Error", 500
 
 
@@ -781,7 +756,6 @@ def smm_webhook():
 # ==========================================
 @app.route('/cryptomus_webhook', methods=['POST'])
 def cryptomus_webhook():
-    """Cryptomus Auto-Payment IPN Listener"""
     try:
         raw_data = request.get_data()
         if not raw_data: return "No data", 400
@@ -798,7 +772,6 @@ def cryptomus_webhook():
         
         dict_data.pop('sign', None)
         
-        # Cryptomus Strict Hash Validation
         encoded_data = base64.b64encode(json.dumps(dict_data, separators=(',', ':'), ensure_ascii=False).encode('utf-8')).decode('utf-8')
         expected_sign = hashlib.md5((encoded_data + api_key).encode('utf-8')).hexdigest()
         
@@ -809,8 +782,7 @@ def cryptomus_webhook():
             amt = float(dict_data.get('amount'))
             trx = dict_data.get('uuid')
             
-            if config_col.find_one({"_id": "transactions", "valid_list.trx": trx}):
-                return "Already processed", 200
+            if config_col.find_one({"_id": "transactions", "valid_list.trx": trx}): return "Already processed", 200
                 
             config_col.update_one({"_id": "transactions"}, {"$push": {"valid_list": {"trx": trx, "amt": amt, "status": "used", "user": uid}}}, upsert=True)
             users_col.update_one({"_id": uid}, {"$inc": {"balance": amt}})
@@ -819,19 +791,12 @@ def cryptomus_webhook():
             try: bot.send_message(uid, f"✅ **CRYPTOMUS DEPOSIT SUCCESS!**\nAmount: `${amt}` added to your wallet.", parse_mode="Markdown")
             except: pass
             
-            # 🔥 NEW: Admin Notification for Cryptomus Deposit
-            try: bot.send_message(ADMIN_ID, f"🔔 **CRYPTO DEPOSIT:** User `{uid}` added `${amt}` via Cryptomus!", parse_mode="Markdown")
-            except: pass
-            
         return "OK", 200
     except Exception as e:
-        logging.error(f"Cryptomus Webhook Error: {e}")
-        logs_col.insert_one({"error": str(traceback.format_exc()), "source": "Cryptomus", "date": datetime.now()})
         return str(e), 500
 
 @app.route('/coinpayments_ipn', methods=['POST'])
 def coinpayments_ipn():
-    """CoinPayments Auto-Payment IPN Listener"""
     try:
         s = utils.get_settings()
         ipn_secret = s.get('coinpayments_priv', '')
@@ -851,8 +816,7 @@ def coinpayments_ipn():
             amt = float(request.form.get('amount1', 0)) 
             trx = request.form.get('txn_id')
             
-            if config_col.find_one({"_id": "transactions", "valid_list.trx": trx}):
-                return "Already processed", 200
+            if config_col.find_one({"_id": "transactions", "valid_list.trx": trx}): return "Already processed", 200
                 
             config_col.update_one({"_id": "transactions"}, {"$push": {"valid_list": {"trx": trx, "amt": amt, "status": "used", "user": uid}}}, upsert=True)
             users_col.update_one({"_id": uid}, {"$inc": {"balance": amt}})
@@ -861,19 +825,12 @@ def coinpayments_ipn():
             try: bot.send_message(uid, f"✅ **COINPAYMENTS DEPOSIT SUCCESS!**\nAmount: `${amt}` added to your wallet.", parse_mode="Markdown")
             except: pass
             
-            # 🔥 NEW: Admin Notification for CoinPayments Deposit
-            try: bot.send_message(ADMIN_ID, f"🔔 **CRYPTO DEPOSIT:** User `{uid}` added `${amt}` via CoinPayments!", parse_mode="Markdown")
-            except: pass
-            
         return "OK", 200
     except Exception as e:
-        logging.error(f"CoinPayments Webhook Error: {e}")
-        logs_col.insert_one({"error": str(traceback.format_exc()), "source": "CoinPayments", "date": datetime.now()})
         return str(e), 500
 
 @app.route('/nowpayments_ipn', methods=['POST'])
 def nowpayments_ipn():
-    """NowPayments Auto-Payment IPN Listener"""
     try:
         s = utils.get_settings()
         ipn_secret = s.get('nowpayments_ipn', '')
@@ -893,8 +850,7 @@ def nowpayments_ipn():
             amt = float(data.get('price_amount'))
             trx = str(data.get('payment_id'))
             
-            if config_col.find_one({"_id": "transactions", "valid_list.trx": trx}):
-                return "Already processed", 200
+            if config_col.find_one({"_id": "transactions", "valid_list.trx": trx}): return "Already processed", 200
                 
             config_col.update_one({"_id": "transactions"}, {"$push": {"valid_list": {"trx": trx, "amt": amt, "status": "used", "user": uid}}}, upsert=True)
             users_col.update_one({"_id": uid}, {"$inc": {"balance": amt}})
@@ -903,19 +859,12 @@ def nowpayments_ipn():
             try: bot.send_message(uid, f"✅ **NOWPAYMENTS DEPOSIT SUCCESS!**\nAmount: `${amt}` added to your wallet.", parse_mode="Markdown")
             except: pass
             
-            # 🔥 NEW: Admin Notification for NowPayments Deposit
-            try: bot.send_message(ADMIN_ID, f"🔔 **CRYPTO DEPOSIT:** User `{uid}` added `${amt}` via NowPayments!", parse_mode="Markdown")
-            except: pass
-            
         return "OK", 200
     except Exception as e:
-        logging.error(f"NowPayments Webhook Error: {e}")
-        logs_col.insert_one({"error": str(traceback.format_exc()), "source": "NowPayments", "date": datetime.now()})
         return str(e), 500
 
 @app.route('/payeer_ipn', methods=['POST'])
 def payeer_ipn():
-    """Payeer Auto-Payment IPN Listener"""
     try:
         s = utils.get_settings()
         secret = s.get('payeer_secret', '')
@@ -939,15 +888,11 @@ def payeer_ipn():
             
             if request.form.get('m_sign') == sign_hash and request.form.get('m_status') == 'success':
                 order_id = request.form.get('m_orderid')
-                
-                # 🔥 Fix: Payeer User ID Extraction using Split instead of -3 index for better safety
                 uid = int(str(order_id).split('_')[0]) 
-                
                 amt = float(request.form.get('m_amount'))
                 trx = request.form.get('m_operation_id')
                 
-                if config_col.find_one({"_id": "transactions", "valid_list.trx": trx}):
-                    return "Already processed", 200
+                if config_col.find_one({"_id": "transactions", "valid_list.trx": trx}): return "Already processed", 200
                     
                 config_col.update_one({"_id": "transactions"}, {"$push": {"valid_list": {"trx": trx, "amt": amt, "status": "used", "user": uid}}}, upsert=True)
                 users_col.update_one({"_id": uid}, {"$inc": {"balance": amt}})
@@ -956,18 +901,99 @@ def payeer_ipn():
                 try: bot.send_message(uid, f"✅ **PAYEER DEPOSIT SUCCESS!**\nAmount: `${amt}` added to your wallet.", parse_mode="Markdown")
                 except: pass
                 
-                # 🔥 NEW: Admin Notification for Payeer Deposit
-                try: bot.send_message(ADMIN_ID, f"🔔 **CRYPTO DEPOSIT:** User `{uid}` added `${amt}` via Payeer!", parse_mode="Markdown")
-                except: pass
-                
                 return "success", 200
         return "error", 400
     except Exception as e:
-        logging.error(f"Payeer Webhook Error: {e}")
-        logs_col.insert_one({"error": str(traceback.format_exc()), "source": "Payeer", "date": datetime.now()})
         return str(e), 500
 
+
+# ==========================================
+# 🔥 ADSGRAM REWARD SYSTEM (SECURE & PROFESSIONAL)
+# ==========================================
+
+# Telegram Data Verification (Hack Protection)
+def verify_telegram_webapp_data(init_data, token):
+    try:
+        parsed_data = dict(urllib.parse.parse_qsl(init_data))
+        if 'hash' not in parsed_data: return False
+        
+        hash_val = parsed_data.pop('hash')
+        data_check_string = '\n'.join(f"{k}={v}" for k, v in sorted(parsed_data.items()))
+        secret_key = hmac.new(b"WebAppData", token.encode(), hashlib.sha256).digest()
+        calculated_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+        
+        return calculated_hash == hash_val
+    except:
+        return False
+
+# WebApp পেজ লোড করার রাউট
+@app.route('/watch_ads')
+def watch_ads():
+    return render_template('adsgram.html')
+
+# অ্যাড দেখার পর ব্যালেন্স দেওয়ার রাউট (With Cooldown Lock)
+@app.route('/api/adsgram_reward', methods=['POST'])
+def adsgram_reward():
+    try:
+        data = request.json
+        init_data = data.get('initData')
+        uid = int(data.get('user_id', 0))
+
+        if not init_data or not uid:
+            return jsonify({"status": "error", "msg": "Invalid Request!"}), 400
+
+        # 🛡️ ১. Telegram Security Check
+        if not verify_telegram_webapp_data(init_data, BOT_TOKEN):
+            return jsonify({"status": "error", "msg": "Security Failed! Fake Request Detected."}), 403
+
+        # 🛡️ ২. Redis Spam Lock (Prevent multiple rapid clicks)
+        lock_key = f"ad_lock_{uid}"
+        if redis_client.get(lock_key):
+            return jsonify({"status": "error", "msg": "Processing... please wait."}), 429
+        redis_client.setex(lock_key, 5, "locked")
+
+        # 🛡️ ৩. Server-Side Cooldown Check
+        user = users_col.find_one({"_id": uid})
+        if not user:
+            return jsonify({"status": "error", "msg": "User not found!"}), 404
+
+        last_ad_time = user.get("last_ad_time", 0)
+        current_time = time.time()
+        cooldown_seconds = 300 # ৫ মিনিট
+
+        if current_time - last_ad_time < cooldown_seconds:
+            remaining = int(cooldown_seconds - (current_time - last_ad_time))
+            return jsonify({"status": "error", "msg": f"Please wait {remaining} seconds."}), 429
+
+        # 💰 ৪. Reward Calculation
+        REWARD_AMOUNT = 0.005 # ইউজারের ব্যালেন্সে কত যোগ হবে
+        
+        # ডাটাবেস আপডেট
+        users_col.update_one(
+            {"_id": uid}, 
+            {
+                "$inc": {"balance": REWARD_AMOUNT, "total_ads_watched": 1, "earned_from_ads": REWARD_AMOUNT},
+                "$set": {"last_ad_time": current_time}
+            }
+        )
+        utils.clear_cached_user(uid)
+
+        # 🔔 ৫. Bot Notification
+        try:
+            bot.send_message(
+                uid, 
+                f"🎉 **REWARD EARNED!**\n\nYou successfully watched an ad!\n**Reward:** `+${REWARD_AMOUNT}`\n\n_You can watch the next ad in 5 minutes._", 
+                parse_mode="Markdown"
+            )
+        except: pass
+
+        return jsonify({"status": "success", "msg": f"Successfully added ${REWARD_AMOUNT}!"})
+        
+    except Exception as e:
+        logging.error(f"Adsgram Reward Error: {e}")
+        return jsonify({"status": "error", "msg": "Server Error!"}), 500
+
+
 if __name__ == '__main__':
-    # Render assigns dynamic port on runtime
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
