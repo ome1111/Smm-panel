@@ -741,13 +741,23 @@ def universal_buttons(message):
     
     elif message.text == "💰 Deposit":
         update_user_session(uid, {"step": "awaiting_deposit_amt"})
-        bot.send_message(uid, f"💵 **Enter Deposit Amount ({curr}):**\n_(e.g. 100)_", parse_mode="Markdown")
+        markup = types.InlineKeyboardMarkup()
+        
+        # 🔥 NEW: Adsgram WebApp Button under Deposit
+        ad_url = f"{BASE_URL.rstrip('/')}/watch_ads"
+        markup.add(types.InlineKeyboardButton("📺 Watch Video & Earn Free Funds", web_app=types.WebAppInfo(url=ad_url)))
+        
+        bot.send_message(uid, f"💵 **Enter Deposit Amount ({curr}):**\n_(e.g. 100)_\n\n_Or click the button below to earn free funds!_", reply_markup=markup, parse_mode="Markdown")
     
     elif message.text == "👤 Profile":
         tier = u.get('tier_override') if u.get('tier_override') else get_user_tier(u.get('spent', 0))[0]
         markup = types.InlineKeyboardMarkup(row_width=3)
         markup.add(types.InlineKeyboardButton("🟢 BDT", callback_data="SET_CURR|BDT"), types.InlineKeyboardButton("🟠 INR", callback_data="SET_CURR|INR"), types.InlineKeyboardButton("🔵 USD", callback_data="SET_CURR|USD"))
         markup.add(types.InlineKeyboardButton(f"🎁 Redeem Points ({u.get('points', 0)} pts)", callback_data="REDEEM_POINTS"))
+        
+        # 🔥 NEW: Adsgram WebApp Button under Profile
+        ad_url = f"{BASE_URL.rstrip('/')}/watch_ads"
+        markup.add(types.InlineKeyboardButton("📺 Watch Video & Earn", web_app=types.WebAppInfo(url=ad_url)))
         
         safe_name = escape_md(str(message.from_user.first_name)[:12])
         safe_tier = escape_md(tier)
