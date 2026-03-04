@@ -699,9 +699,13 @@ def add_transaction():
         return jsonify({"status": "error", "msg": "No SMS text provided"}), 400
 
     try:
-        # 🔥 Better Regex for bKash/Nagad/Rocket SMS
-        trx_match = re.search(r'(?i)(?:TrxID|TxnID|Txn Id|Trx|ID)\s*[:\-]?\s*([A-Z0-9]{8,15})', sms_text)
-        amt_match = re.search(r'(?i)(?:Tk\s+|Amount:\s*Tk\s+)([\d,]+\.\d{2})', sms_text)
+        # 🔥 Ultra-Flexible Regex for bKash/Nagad/Rocket/Upay SMS
+        # Catches: TrxID, TxnID, Txn Id, Trx ID, Txn, Trans ID, etc.
+        trx_match = re.search(r'(?i)(?:TrxID|TxnID|Txn\s*Id|Trx\s*ID|Trx|Txn|Trans\s*ID|ID)\s*[:\-\.]?\s*([A-Z0-9]{7,15})', sms_text)
+        
+        # Catches: Tk 50, Tk. 50.00, Tk50, Amount: 50, Amount: Tk 50.00
+        # Retrieves the *first* matched amount (which is almost always the received amount, not the fee/balance)
+        amt_match = re.search(r'(?i)(?:Tk[\s\.]*|Amount[\s:]*(?:Tk[\s\.]*)?|Received[\s:]*(?:Tk[\s\.]*)?)([\d,]+(?:\.\d{1,2})?)', sms_text)
         
         if trx_match and amt_match:
             trx = trx_match.group(1).upper()
