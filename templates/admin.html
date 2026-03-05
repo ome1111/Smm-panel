@@ -474,6 +474,56 @@
                     </div>
                 </div>
 
+                <div class="glass-card p-6 border-t-4 border-yellow-500">
+                    <h3 class="text-xl font-bold text-yellow-400 border-b border-slate-700/50 pb-3 mb-4"><i class="fas fa-ad"></i> WebApp Ad Networks (Earnings & Rewards Setup)</h3>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6 bg-slate-800/30 p-4 rounded-lg border border-slate-700/50">
+                        <div class="md:col-span-3">
+                            <h4 class="text-white font-bold mb-2">📹 1. Monetag Settings</h4>
+                            <label class="block text-xs text-slate-400 mb-1">Monetag Native Script (Rewarded/Interstitial)</label>
+                            <textarea name="ad_monetag_script" rows="2" placeholder="<script src='...' data-zone='...' async></script>" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-3 text-white data-font outline-none focus:border-yellow-500 transition">{{ s.get('ad_monetag_script', '') }}</textarea>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-slate-400 font-bold mb-1">Reward Per Ad ($)</label>
+                            <input type="number" step="0.001" name="reward_monetag" value="{{ s.get('reward_monetag', 0.005) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white data-font outline-none focus:border-emerald-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-slate-400 font-bold mb-1">Cooldown (Seconds)</label>
+                            <input type="number" name="cooldown_monetag" value="{{ s.get('cooldown_monetag', 300) }}" placeholder="e.g. 300 = 5 Mins" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white data-font outline-none focus:border-rose-500">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6 bg-slate-800/30 p-4 rounded-lg border border-slate-700/50">
+                        <div class="md:col-span-3">
+                            <h4 class="text-white font-bold mb-2">⚡ 2. Adsterra Settings</h4>
+                            <label class="block text-xs text-slate-400 mb-1">Adsterra Direct Link</label>
+                            <input type="url" name="ad_adsterra" value="{{ s.get('ad_adsterra', '') }}" placeholder="https://..." class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-3 text-white data-font outline-none focus:border-yellow-500 transition">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-slate-400 font-bold mb-1">Reward Per Click ($)</label>
+                            <input type="number" step="0.001" name="reward_adsterra" value="{{ s.get('reward_adsterra', 0.003) }}" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white data-font outline-none focus:border-emerald-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-slate-400 font-bold mb-1">Cooldown (Seconds)</label>
+                            <input type="number" name="cooldown_adsterra" value="{{ s.get('cooldown_adsterra', 180) }}" placeholder="e.g. 180 = 3 Mins" class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-2 text-white data-font outline-none focus:border-rose-500">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-800/30 p-4 rounded-lg border border-slate-700/50">
+                        <div class="col-span-1 md:col-span-2">
+                            <h4 class="text-white font-bold mb-2">🖼️ 3. Banner Ads (Passive Income)</h4>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-slate-400 font-bold mb-1">Top Banner Ad (HTML/Script)</label>
+                            <textarea name="ad_banner_top" rows="3" placeholder="Paste Banner Script..." class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-3 text-white data-font outline-none focus:border-yellow-500 transition">{{ s.get('ad_banner_top', '') }}</textarea>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-slate-400 font-bold mb-1">Bottom Banner Ad (HTML/Script)</label>
+                            <textarea name="ad_banner_bottom" rows="3" placeholder="Paste Banner Script..." class="w-full bg-slate-900 border border-slate-700 rounded px-4 py-3 text-white data-font outline-none focus:border-yellow-500 transition">{{ s.get('ad_banner_bottom', '') }}</textarea>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="glass-card p-6">
                     <div class="flex items-center justify-between mb-4 border-b border-slate-700/50 pb-3">
                         <h3 class="text-xl font-bold text-white"><i class="fas fa-layer-group text-sky-400"></i> Dynamic Profit Tiers</h3>
