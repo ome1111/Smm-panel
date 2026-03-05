@@ -28,24 +28,14 @@ import admin
 import main_router
 
 app = Flask(__name__)
-# 🔥 FIX: Aligned SECRET_KEY with config.py to prevent session decoding mismatches
 app.secret_key = os.environ.get('SECRET_KEY', 'super_secret_key_123')
-
-# 🔥 ADMIN PANEL SECURITY (Cookie Theft Protection)
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
-# ==========================================
-# 🚀 RENDER HEALTH CHECK (PORT TIMEOUT FIX)
-# ==========================================
 @app.route('/health')
 def health_check():
-    """Render uses this to verify if the app is running properly and bind the port."""
     return "OK", 200
 
-# ==========================================
-# 1. WEBHOOK FAST ENGINE (10x Speed & Memory Leak Fixed)
-# ==========================================
 @app.route(f"/{BOT_TOKEN}", methods=['POST'])
 def webhook():
     if request.headers.get('content-type') == 'application/json':
@@ -62,13 +52,10 @@ def manual_set_webhook():
     RENDER_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://smm-panel-g8ab.onrender.com')
     success = bot.set_webhook(url=f"{RENDER_URL.rstrip('/')}/{BOT_TOKEN}")
     if success:
-        return "<h1>✅ Webhook Connected Successfully!</h1><p>Your Bot is now LIVE and running fast with Redis Cache & Async Workers!</p>"
+        return "<h1>✅ Webhook Connected Successfully!</h1><p>Your Bot is now LIVE!</p>"
     else:
         return "<h1>❌ Webhook Connection Failed!</h1><p>Check Render Logs.</p>"
 
-# ==========================================
-# 2. CYBER BOX AUTO ENGINE (MongoDB Distributed Lock) - SMART TIME SYNC
-# ==========================================
 def auto_fake_proof_cron():
     while True:
         try:
@@ -282,9 +269,15 @@ def save_settings():
         "stars_rate": int(request.form.get('stars_rate', 50)),
         "stars_active": 'stars_active' in request.form,
         
-        # 🔥 MULTI-AD NETWORKS DATA (From Admin Panel)
+        # 🔥 MULTI-AD NETWORKS DATA & REWARDS (Dynamic Control)
         "ad_monetag_script": request.form.get('ad_monetag_script', '').strip(),
+        "reward_monetag": float(request.form.get('reward_monetag', 0.005)),
+        "cooldown_monetag": int(request.form.get('cooldown_monetag', 300)),
+        
         "ad_adsterra": request.form.get('ad_adsterra', '').strip(),
+        "reward_adsterra": float(request.form.get('reward_adsterra', 0.003)),
+        "cooldown_adsterra": int(request.form.get('cooldown_adsterra', 180)),
+        
         "ad_banner_top": request.form.get('ad_banner_top', '').strip(),
         "ad_banner_bottom": request.form.get('ad_banner_bottom', '').strip(),
     })
@@ -606,7 +599,7 @@ def smm_webhook():
         return "Error", 500
 
 # ==========================================
-# 🔥 WEBAPP & MULTI-REWARD SYSTEM (High CPM)
+# 🔥 WEBAPP & MULTI-REWARD SYSTEM (Dynamic Custom Rewards)
 # ==========================================
 def verify_telegram_webapp_data(init_data, token):
     try:
@@ -622,7 +615,6 @@ def verify_telegram_webapp_data(init_data, token):
 
 @app.route('/watch_ads')
 def watch_ads():
-    # Pass admin settings (ad links/scripts) to the frontend template
     s = config_col.find_one({"_id": "settings"}) or {}
     return render_template('earn.html', settings=s)
 
@@ -632,7 +624,7 @@ def multi_reward():
         data = request.json
         init_data = data.get('initData')
         uid = int(data.get('user_id', 0))
-        network = data.get('network', 'monetag') # monetag or adsterra
+        network = data.get('network', 'monetag')
 
         if not init_data or not uid:
             return jsonify({"status": "error", "msg": "Invalid Request!"}), 400
@@ -645,10 +637,11 @@ def multi_reward():
             return jsonify({"status": "error", "msg": "Processing... please wait."}), 429
         redis_client.setex(lock_key, 5, "locked")
 
-        # 💰 High CPM Rewards
+        # 💰 Fetch Dynamic Rewards from DB instead of Hardcoded
+        s = config_col.find_one({"_id": "settings"}) or {}
         rewards = {
-            "monetag":  {"amount": 0.005, "cooldown": 300}, # 5 min
-            "adsterra": {"amount": 0.003, "cooldown": 180}  # 3 min
+            "monetag":  {"amount": float(s.get("reward_monetag", 0.005)), "cooldown": int(s.get("cooldown_monetag", 300))},
+            "adsterra": {"amount": float(s.get("reward_adsterra", 0.003)), "cooldown": int(s.get("cooldown_adsterra", 180))}
         }
         
         if network not in rewards: 
@@ -684,9 +677,7 @@ def multi_reward():
         logging.error(f"Multi-Reward Error: {e}")
         return jsonify({"status": "error", "msg": "Server Error!"}), 500
 
-# ==========================================
-# 10. GLOBAL CRYPTO PAYMENT WEBHOOKS
-# ==========================================
+# Webhooks for Crypto
 @app.route('/cryptomus_webhook', methods=['POST'])
 def cryptomus_webhook():
     try:
