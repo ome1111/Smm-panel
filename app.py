@@ -28,14 +28,25 @@ import admin
 import main_router
 
 app = Flask(__name__)
+# 🔥 FIX: Aligned SECRET_KEY with config.py to prevent session decoding mismatches
 app.secret_key = os.environ.get('SECRET_KEY', 'super_secret_key_123')
+
+# 🔥 ADMIN PANEL SECURITY (Cookie Theft Protection)
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+# app.config['SESSION_COOKIE_SECURE'] = True  # (Render-এ HTTPS থাকলে এটি Enable করতে পারেন)
 
+# ==========================================
+# 🚀 RENDER HEALTH CHECK (PORT TIMEOUT FIX)
+# ==========================================
 @app.route('/health')
 def health_check():
+    """Render uses this to verify if the app is running properly and bind the port."""
     return "OK", 200
 
+# ==========================================
+# 1. WEBHOOK FAST ENGINE (10x Speed & Memory Leak Fixed)
+# ==========================================
 @app.route(f"/{BOT_TOKEN}", methods=['POST'])
 def webhook():
     if request.headers.get('content-type') == 'application/json':
@@ -52,13 +63,17 @@ def manual_set_webhook():
     RENDER_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://smm-panel-g8ab.onrender.com')
     success = bot.set_webhook(url=f"{RENDER_URL.rstrip('/')}/{BOT_TOKEN}")
     if success:
-        return "<h1>✅ Webhook Connected Successfully!</h1><p>Your Bot is now LIVE!</p>"
+        return "<h1>✅ Webhook Connected Successfully!</h1><p>Your Bot is now LIVE and running fast with Redis Cache & Async Workers!</p>"
     else:
         return "<h1>❌ Webhook Connection Failed!</h1><p>Check Render Logs.</p>"
 
+# ==========================================
+# 2. CYBER BOX AUTO ENGINE (MongoDB Distributed Lock) - SMART TIME SYNC
+# ==========================================
 def auto_fake_proof_cron():
     while True:
         try:
+            # 45 সেকেন্ড পর পর চেক করবে
             time.sleep(45)
             s = config_col.find_one({"_id": "settings"})
             if not s or not s.get('fake_proof_status', False):
@@ -68,26 +83,43 @@ def auto_fake_proof_cron():
             if not proof_channel:
                 continue
 
+            # 🔥 MONGODB LOCK FIX: Duplicate Key Error Prevention
             now = time.time()
-            config_col.update_one({"_id": "sys_locks"}, {"$setOnInsert": {"fake_proof": 0}}, upsert=True)
+            
+            config_col.update_one(
+                {"_id": "sys_locks"}, 
+                {"$setOnInsert": {"fake_proof": 0}}, 
+                upsert=True
+            )
+            
             lock_res = config_col.update_one(
                 {"_id": "sys_locks", "$or": [{"fake_proof": {"$lt": now}}, {"fake_proof": {"$exists": False}}]},
                 {"$set": {"fake_proof": now + 40}}
             )
-            if lock_res.modified_count == 0: continue 
+            
+            if lock_res.modified_count == 0:
+                continue 
 
+            # বাংলাদেশ সময় বের করা
             hour = datetime.now().hour
+            
+            # অ্যাডমিন প্যানেল থেকে সেট করা বেস ফ্রিকোয়েন্সি
             base_dep_freq = s.get('fake_dep_freq', 2)
             base_ord_freq = s.get('fake_ord_freq', 3)
 
+            # 🕒 SMART TIME MULTIPLIER (BD TIME)
             if 0 <= hour < 8:
-                dep_freq, ord_freq = base_dep_freq * 0.10, base_ord_freq * 0.10
+                dep_freq = base_dep_freq * 0.10
+                ord_freq = base_ord_freq * 0.10
             else:
-                dep_freq, ord_freq = base_dep_freq * random.uniform(0.8, 1.2), base_ord_freq * random.uniform(0.8, 1.2)
+                dep_freq = base_dep_freq * random.uniform(0.8, 1.2)
+                ord_freq = base_ord_freq * random.uniform(0.8, 1.2)
 
+            # 💰 ORIGINAL FORMAT FAKE DEPOSIT GENERATOR
             if random.random() < (dep_freq / 60): 
                 gateways = ["bKash Auto", "Nagad Express", "Binance Pay", "USDT TRC20", "PerfectMoney"]
                 method = random.choice(gateways)
+                
                 is_crypto = any(x in method.lower() for x in ['usdt', 'binance', 'crypto', 'btc', 'pm', 'perfect'])
                 
                 if is_crypto:
@@ -99,11 +131,16 @@ def auto_fake_proof_cron():
                     display_amt = f"{curr_sym}{amt}"
                 
                 fake_uid = str(random.randint(1000000, 9999999))
-                msg = f"```text\n╔══ 💰 𝗡𝗘𝗪 𝗗𝗘𝗣𝗢𝗦𝗜𝗧 ══╗\n║ 👤 𝗜𝗗: ***{fake_uid[-4:]}\n║ 🏦 𝗠𝗲𝘁𝗵𝗼𝗱: {method}\n║ 💵 𝗔𝗺𝗼𝘂𝗻𝘁: {display_amt}\n║ ✅ 𝗦𝘁𝗮𝘁𝘂𝘀: Approved\n╚════════════════════╝\n```"
+                masked_id = f"***{fake_uid[-4:]}"
+                
+                # EXACT ORIGINAL FORMAT
+                msg = f"```text\n╔══ 💰 𝗡𝗘𝗪 𝗗𝗘𝗣𝗢𝗦𝗜𝗧 ══╗\n║ 👤 𝗜𝗗: {masked_id}\n║ 🏦 𝗠𝗲𝘁𝗵𝗼𝗱: {method}\n║ 💵 𝗔𝗺𝗼𝘂𝗻𝘁: {display_amt}\n║ ✅ 𝗦𝘁𝗮𝘁𝘂𝘀: Approved\n╚════════════════════╝\n```"
                 bot.send_message(proof_channel, msg, parse_mode="Markdown")
 
+            # 🛒 ORIGINAL FORMAT FAKE ORDER GENERATOR
             if random.random() < (ord_freq / 60):
                 qty = random.choice([500, 1000, 2000, 3000, 5000, 10000, 20000, 50000]) 
+                
                 cached_services = utils.get_cached_services()
                 if cached_services:
                     srv = random.choice(cached_services)
@@ -115,20 +152,31 @@ def auto_fake_proof_cron():
                     sid = str(random.randint(10, 500))
                     
                 if cost_usd < 0.01: cost_usd = 0.12 
+                
                 curr_choice = random.choices(["USD", "BDT", "INR"], weights=[30, 50, 20])[0]
-                if curr_choice == "USD": display_cost = f"${round(cost_usd, 3)}"
-                elif curr_choice == "BDT": display_cost = f"৳{round(cost_usd * 120, 2)}"
-                else: display_cost = f"₹{round(cost_usd * 83, 2)}"
+                if curr_choice == "USD":
+                    display_cost = f"${round(cost_usd, 3)}"
+                elif curr_choice == "BDT":
+                    display_cost = f"৳{round(cost_usd * 120, 2)}"
+                else:
+                    display_cost = f"₹{round(cost_usd * 83, 2)}"
                 
                 fake_uid = str(random.randint(1000000, 9999999))
-                msg = f"```text\n╔════ 🟢 𝗡𝗘𝗪 𝗢𝗥𝗗𝗘𝗥 ════╗\n║ 👤 𝗜𝗗: ***{fake_uid[-4:]}\n║ 🚀 𝗦𝗲𝗿𝘃𝗶𝗰𝗲 𝗜𝗗: {sid}\n║ 💵 𝗖𝗼𝘀𝘁: {display_cost}\n╚════════════════════╝\n```"
+                masked_id = f"***{fake_uid[-4:]}"
+                
+                # EXACT ORIGINAL FORMAT
+                msg = f"```text\n╔════ 🟢 𝗡𝗘𝗪 𝗢𝗥𝗗𝗘𝗥 ════╗\n║ 👤 𝗜𝗗: {masked_id}\n║ 🚀 𝗦𝗲𝗿𝘃𝗶𝗰𝗲 𝗜𝗗: {sid}\n║ 💵 𝗖𝗼𝘀𝘁: {display_cost}\n╚════════════════════╝\n```"
                 bot.send_message(proof_channel, msg, parse_mode="Markdown")
 
         except Exception as e:
             logging.error(f"Fake Proof Error: {e}")
+            pass
 
 threading.Thread(target=auto_fake_proof_cron, daemon=True).start()
 
+# ==========================================
+# 3. ADMIN WEB PANEL ROUTES (GOD MODE)
+# ==========================================
 def get_dashboard_stats():
     s = utils.get_settings()
     u_count = users_col.count_documents({})
@@ -148,10 +196,12 @@ def index():
     total_pages = math.ceil(total_users / per_page)
     
     users = list(users_col.find().sort("spent", -1).skip((page - 1) * per_page).limit(per_page))
+    
     stats = get_dashboard_stats()
     orders = list(orders_col.find().sort("_id", -1).limit(100))
     tickets = list(tickets_col.find().sort("_id", -1))
     vouchers = list(vouchers_col.find().sort("_id", -1))
+    
     system_logs = list(logs_col.find().sort("date", -1).limit(50))
     
     services = utils.get_cached_services()
@@ -160,8 +210,11 @@ def index():
     saved_orders_doc = config_col.find_one({"_id": "service_orders"}) or {}
     saved_service_orders = saved_orders_doc.get("orders", {})
     
+    services_json = json.dumps(services)
+    saved_service_orders_json = json.dumps(saved_service_orders)
+
     return render_template('admin.html', **stats, users=users, orders=orders, tickets=tickets, vouchers=vouchers, 
-                           unique_categories=unique_categories, services_json=json.dumps(services), saved_service_orders=json.dumps(saved_service_orders),
+                           unique_categories=unique_categories, services_json=services_json, saved_service_orders=saved_service_orders_json,
                            page=page, total_pages=total_pages, system_logs=system_logs)
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -180,7 +233,10 @@ def login():
             
         fails = redis_client.incr(f"login_fails_{ip}")
         redis_client.expire(f"login_fails_{ip}", 300)
-        if fails >= 5: redis_client.setex(lock_key, 300, "locked")
+        
+        if fails >= 5:
+            redis_client.setex(lock_key, 300, "locked")
+            
         return render_template('login.html', error="Wrong Password!")
     return render_template('login.html')
 
@@ -198,11 +254,16 @@ def export_csv():
     cw.writerow(['User ID', 'Name', 'Balance ($)', 'Spent ($)', 'Currency', 'Referral Earnings ($)', 'Joined Date', 'Last Active', 'Is Fake User'])
     
     for u in users:
-        jd = u.get('joined', 'N/A')
-        la = u.get('last_active', 'N/A')
-        if isinstance(jd, datetime): jd = jd.strftime("%Y-%m-%d %H:%M")
-        if isinstance(la, datetime): la = la.strftime("%Y-%m-%d %H:%M")
-        cw.writerow([u.get('_id', 'N/A'), str(u.get('name', 'N/A')), round(u.get('balance', 0.0), 3), round(u.get('spent', 0.0), 3), u.get('currency', 'USD'), round(u.get('ref_earnings', 0.0), 3), jd, la, "Yes" if u.get('is_fake', False) else "No"])
+        joined_date = u.get('joined', 'N/A')
+        if isinstance(joined_date, datetime): joined_date = joined_date.strftime("%Y-%m-%d %H:%M")
+        last_active = u.get('last_active', 'N/A')
+        if isinstance(last_active, datetime): last_active = last_active.strftime("%Y-%m-%d %H:%M")
+            
+        cw.writerow([
+            u.get('_id', 'N/A'), str(u.get('name', 'N/A')), round(u.get('balance', 0.0), 3),
+            round(u.get('spent', 0.0), 3), u.get('currency', 'USD'), round(u.get('ref_earnings', 0.0), 3),
+            joined_date, last_active, "Yes" if u.get('is_fake', False) else "No"
+        ])
         
     output = Response(si.getvalue(), mimetype='text/csv')
     output.headers["Content-Disposition"] = f"attachment; filename=nexus_users_{datetime.now().strftime('%Y%m%d')}.csv"
@@ -211,7 +272,8 @@ def export_csv():
 @app.route('/save_best_choice', methods=['POST'])
 def save_best_choice():
     if 'admin' not in session: return redirect(url_for('login'))
-    sids = [s.strip() for s in request.form.get('best_choice_sids', '').split(',') if s.strip()]
+    raw_sids = request.form.get('best_choice_sids', '')
+    sids = [s.strip() for s in raw_sids.split(',') if s.strip()]
     config_col.update_one({"_id": "settings"}, {"$set": {"best_choice_sids": sids}}, upsert=True)
     utils.update_settings_cache("best_choice_sids", sids)
     return redirect(url_for('index'))
@@ -220,8 +282,10 @@ def save_best_choice():
 def save_service_order():
     if 'admin' not in session: return jsonify({"status": "error", "msg": "Unauthorized"})
     data = request.json
-    if data.get('category') and data.get('order'):
-        config_col.update_one({"_id": "service_orders"}, {"$set": {f"orders.{data.get('category')}": data.get('order')}}, upsert=True)
+    cat = data.get('category')
+    order = data.get('order')
+    if cat and order:
+        config_col.update_one({"_id": "service_orders"}, {"$set": {f"orders.{cat}": order}}, upsert=True)
     return jsonify({"status": "success"})
 
 @app.route('/settings', methods=['POST'])
@@ -254,22 +318,27 @@ def save_settings():
         "reward_top1": float(request.form.get('reward_top1', 10.0)),
         "reward_top2": float(request.form.get('reward_top2', 5.0)),
         "reward_top3": float(request.form.get('reward_top3', 2.0)),
+        
         "cryptomus_merchant": request.form.get('cryptomus_merchant', '').strip(),
         "cryptomus_api": request.form.get('cryptomus_api', '').strip(),
         "cryptomus_active": 'cryptomus_active' in request.form,
+        
         "coinpayments_pub": request.form.get('coinpayments_pub', '').strip(),
         "coinpayments_priv": request.form.get('coinpayments_priv', '').strip(),
         "coinpayments_active": 'coinpayments_active' in request.form,
+        
         "nowpayments_api": request.form.get('nowpayments_api', '').strip(),
         "nowpayments_ipn": request.form.get('nowpayments_ipn', '').strip(),
         "nowpayments_active": 'nowpayments_active' in request.form,
+        
         "payeer_merchant": request.form.get('payeer_merchant', '').strip(),
         "payeer_secret": request.form.get('payeer_secret', '').strip(),
         "payeer_active": 'payeer_active' in request.form,
+        
         "stars_rate": int(request.form.get('stars_rate', 50)),
         "stars_active": 'stars_active' in request.form,
-        
-        # 🔥 MULTI-AD NETWORKS DATA & REWARDS (Dynamic Control)
+
+        # 🔥 NEW: AD NETWORKS SETTINGS (Added dynamically)
         "ad_monetag_script": request.form.get('ad_monetag_script', '').strip(),
         "reward_monetag": float(request.form.get('reward_monetag', 0.005)),
         "cooldown_monetag": int(request.form.get('cooldown_monetag', 300)),
@@ -283,25 +352,42 @@ def save_settings():
     })
     
     payments = []
-    pay_names, pay_rates, pay_addrs = request.form.getlist('pay_name[]'), request.form.getlist('pay_rate[]'), request.form.getlist('pay_address[]')
+    pay_names = request.form.getlist('pay_name[]')
+    pay_rates = request.form.getlist('pay_rate[]')
+    pay_addrs = request.form.getlist('pay_address[]')
+    
     for i in range(len(pay_names)):
         if pay_names[i].strip():
             payments.append({"name": pay_names[i].strip(), "rate": float(pay_rates[i]), "address": pay_addrs[i].strip()})
     current_settings["payments"] = payments
 
     profit_tiers = []
-    tier_mins, tier_maxs, tier_margins = request.form.getlist('tier_min[]'), request.form.getlist('tier_max[]'), request.form.getlist('tier_margin[]')
+    tier_mins = request.form.getlist('tier_min[]')
+    tier_maxs = request.form.getlist('tier_max[]')
+    tier_margins = request.form.getlist('tier_margin[]')
+    
     for i in range(len(tier_mins)):
         if tier_mins[i].strip() and tier_maxs[i].strip() and tier_margins[i].strip():
-            profit_tiers.append({"min": float(tier_mins[i]), "max": float(tier_maxs[i]), "margin": float(tier_margins[i])})
+            profit_tiers.append({
+                "min": float(tier_mins[i]),
+                "max": float(tier_maxs[i]),
+                "margin": float(tier_margins[i])
+            })
     current_settings["profit_tiers"] = profit_tiers
 
     external_apis = []
-    ext_urls, ext_keys, ext_srvs = request.form.getlist('ext_api_url[]'), request.form.getlist('ext_api_key[]'), request.form.getlist('ext_api_services[]')
+    ext_urls = request.form.getlist('ext_api_url[]')
+    ext_keys = request.form.getlist('ext_api_key[]')
+    ext_srvs = request.form.getlist('ext_api_services[]')
+
     for i in range(len(ext_urls)):
         if ext_urls[i].strip() and ext_keys[i].strip():
             srv_list = [sid.strip() for sid in ext_srvs[i].split(',') if sid.strip()]
-            external_apis.append({"url": ext_urls[i].strip(), "key": ext_keys[i].strip(), "services": srv_list})
+            external_apis.append({
+                "url": ext_urls[i].strip(),
+                "key": ext_keys[i].strip(),
+                "services": srv_list
+            })
     current_settings["external_apis"] = external_apis
 
     config_col.update_one({"_id": "settings"}, {"$set": current_settings}, upsert=True)
@@ -361,12 +447,21 @@ def remove_fake_users():
 @app.route('/smart_cleanup')
 def smart_cleanup():
     if 'admin' not in session: return redirect(url_for('login'))
+    
     t_del = tickets_col.delete_many({"status": "closed"}).deleted_count
     o_del = orders_col.delete_many({"status": {"$in": ["canceled", "fail", "refunded"]}}).deleted_count
-    v_del = sum(1 for v in vouchers_col.find() if len(v.get('used_by', [])) >= v.get('limit', 1) and vouchers_col.delete_one({"_id": v["_id"]}))
+    
+    v_del = 0
+    for v in vouchers_col.find():
+        if len(v.get('used_by', [])) >= v.get('limit', 1):
+            vouchers_col.delete_one({"_id": v["_id"]})
+            v_del += 1
             
-    try: bot.send_message(ADMIN_ID, f"🧹 **SMART CLEANUP COMPLETE**\n━━━━━━━━━━━━━━━━━━━━\n🗑️ Tickets: `{t_del}`\n🗑️ Orders: `{o_del}`\n🗑️ Vouchers: `{v_del}`", parse_mode="Markdown")
+    try:
+        report = f"🧹 **SMART CLEANUP COMPLETE**\n━━━━━━━━━━━━━━━━━━━━\n🗑️ Closed Tickets Deleted: `{t_del}`\n🗑️ Failed/Canceled Orders: `{o_del}`\n🗑️ Used Vouchers Removed: `{v_del}`\n\n✅ Database is now fresh, fast & optimized!"
+        bot.send_message(ADMIN_ID, report, parse_mode="Markdown")
     except: pass
+    
     return redirect(url_for('index'))
 
 @app.route('/delete_user/<int:uid>')
@@ -540,43 +635,93 @@ def clear_logs():
     logs_col.delete_many({})
     return redirect(url_for('index'))
 
+# ==========================================
+# 🔥 ADDED: REDIS ACTION ROUTES (PRO TOOLS)
+# ==========================================
 @app.route('/redis_action/<action>')
 def redis_action(action):
     if 'admin' not in session: return redirect(url_for('login'))
+    
+    msg = ""
     try:
-        if action == 'clear_cache': redis_client.delete(*redis_client.keys("*cache*")) if redis_client.keys("*cache*") else None
-        elif action == 'release_locks': redis_client.delete(*redis_client.keys("*lock*")) if redis_client.keys("*lock*") else None
-        elif action == 'reset_spam': redis_client.delete(*(redis_client.keys("spam_*") + redis_client.keys("blocked_*"))) if (redis_client.keys("spam_*") + redis_client.keys("blocked_*")) else None
-        elif action == 'clear_sessions': redis_client.delete(*redis_client.keys("session_*")) if redis_client.keys("session_*") else None
-        bot.send_message(ADMIN_ID, f"🛠 **PRO TOOL EXECUTED**\nAction: `{action}`", parse_mode="Markdown")
+        if action == 'clear_cache':
+            keys = redis_client.keys("*cache*")
+            if keys: redis_client.delete(*keys)
+            msg = "✅ Redis Cache Cleared Successfully!"
+            
+        elif action == 'release_locks':
+            keys = redis_client.keys("*lock*")
+            if keys: redis_client.delete(*keys)
+            msg = "🔓 All Background Locks Released!"
+            
+        elif action == 'reset_spam':
+            keys = redis_client.keys("spam_*") + redis_client.keys("blocked_*")
+            if keys: redis_client.delete(*keys)
+            msg = "🛡️ Anti-Spam Blocks Reset!"
+            
+        elif action == 'clear_sessions':
+            keys = redis_client.keys("session_*")
+            if keys: redis_client.delete(*keys)
+            msg = "🚪 All Active Bot Sessions Cleared!"
+            
+        else:
+            msg = "❌ Invalid Redis Action!"
+            
+        bot.send_message(ADMIN_ID, f"🛠 **PRO TOOL EXECUTED**\n━━━━━━━━━━━━━━━━━━━━\n**Action:** `{action}`\n**Status:** {msg}", parse_mode="Markdown")
+        
     except Exception as e:
-        logging.error(f"Redis Action Error: {e}")
+        logging.error(f"Redis Action Error ({action}): {e}")
+        try: bot.send_message(ADMIN_ID, f"❌ **Redis Error:** `{e}`", parse_mode="Markdown")
+        except: pass
+        
     return redirect(url_for('index'))
 
+# ==========================================
+# 8. LOCAL AUTO PAYMENT WEBHOOK API 
+# ==========================================
 @app.route('/api/add_transaction', methods=['POST', 'GET'])
 def add_transaction():
     secret = request.args.get('secret') or (request.json.get('secret') if request.is_json else None)
-    if secret != os.environ.get('AUTO_PAY_SECRET', 'NEXUS_AUTO_PASS_123'):
+    
+    auto_pay_secret = os.environ.get('AUTO_PAY_SECRET', 'NEXUS_AUTO_PASS_123')
+    
+    if secret != auto_pay_secret:
         return jsonify({"status": "error", "msg": "Wrong Secret Key!"}), 403
 
     sms_text = request.args.get('sms') or (request.json.get('sms') if request.is_json else "")
-    if not sms_text: return jsonify({"status": "error", "msg": "No SMS text provided"}), 400
+    
+    if not sms_text:
+        return jsonify({"status": "error", "msg": "No SMS text provided"}), 400
 
     try:
         trx_match = re.search(r'(?i)(?:TrxID|TxnID|Txn\s*Id|Trx\s*ID|Trx|Txn|Trans\s*ID|ID)\s*[:\-\.]?\s*([A-Z0-9]{7,15})', sms_text)
         amt_match = re.search(r'(?i)(?:Tk[\s\.]*|Amount[\s:]*(?:Tk[\s\.]*)?|Received[\s:]*(?:Tk[\s\.]*)?)([\d,]+(?:\.\d{1,2})?)', sms_text)
         
         if trx_match and amt_match:
-            trx, amt = trx_match.group(1).upper(), float(amt_match.group(1).replace(',', ''))
-            config_col.update_one({"_id": "transactions"}, {"$push": {"valid_list": {"trx": trx, "amt": amt, "status": "unused"}}}, upsert=True)
+            trx = trx_match.group(1).upper()
+            amt = float(amt_match.group(1).replace(',', ''))
+            
+            config_col.update_one(
+                {"_id": "transactions"}, 
+                {"$push": {"valid_list": {"trx": trx, "amt": amt, "status": "unused"}}}, 
+                upsert=True
+            )
             return jsonify({"status": "success", "msg": f"Auto Added: Trx {trx}, Amt {amt}"})
         else:
-            try: bot.send_message(ADMIN_ID, f"⚠️ **Unrecognized SMS:**\n`{sms_text}`", parse_mode="Markdown")
+            try:
+                bot.send_message(ADMIN_ID, f"⚠️ **Unrecognized SMS Received:**\n`{sms_text}`\n_Could not extract TrxID or Amount._", parse_mode="Markdown")
             except: pass
-            return jsonify({"status": "ignored", "msg": "TrxID or Amount not found"}), 200
+            
+            return jsonify({"status": "ignored", "msg": "TrxID or Amount not found in SMS"}), 200
+            
     except Exception as e:
+        logging.error(f"Local Auto Pay Error: {e}")
+        logs_col.insert_one({"error": str(traceback.format_exc()), "source": "Local Auto Pay", "date": datetime.now()})
         return jsonify({"status": "error", "msg": str(e)})
 
+# ==========================================
+# 9. SMM PANEL WEBHOOK (Instant Status Sync)
+# ==========================================
 @app.route('/smm_webhook', methods=['POST', 'GET'])
 def smm_webhook():
     try:
@@ -591,15 +736,35 @@ def smm_webhook():
             o = orders_col.find_one({"oid": int(order_id)})
             if o and o.get('status') != new_status and not o.get('is_shadow'):
                 orders_col.update_one({"_id": o["_id"]}, {"$set": {"status": new_status}})
+                
+                st_emoji = "⏳"
+                if new_status == "completed": st_emoji = "✅"
+                elif new_status in ["canceled", "refunded", "fail"]: st_emoji = "❌"
+                elif new_status in ["in progress", "processing"]: st_emoji = "🔄"
+                elif new_status == "partial": st_emoji = "⚠️"
+                
+                try:
+                    msg = f"🔔 **ORDER UPDATE!**\n━━━━━━━━━━━━━━━━━━━━\n🆔 Order ID: `{o['oid']}`\n🔗 Link: {str(o.get('link', 'N/A'))[:25]}...\n📦 Status: {st_emoji} **{new_status.upper()}**"
+                    bot.send_message(o['uid'], msg, parse_mode="Markdown")
+                except: pass
+                
                 if new_status in ['canceled', 'refunded', 'fail']:
+                    u = utils.get_cached_user(o['uid'])
+                    curr = u.get("currency", "BDT") if u else "BDT"
+                    cost_str = utils.fmt_curr(o['cost'], curr)
                     users_col.update_one({"_id": o['uid']}, {"$inc": {"balance": o['cost'], "spent": -o['cost']}})
                     utils.clear_cached_user(o['uid'])
+                    try: bot.send_message(o['uid'], f"💰 **ORDER REFUNDED!**\nOrder `{o['oid']}` failed or canceled by server. `{cost_str}` has been added back to your balance.", parse_mode="Markdown")
+                    except: pass
+                    
         return "OK", 200
     except Exception as e:
+        logging.error(f"SMM Webhook Error: {e}")
+        logs_col.insert_one({"error": str(traceback.format_exc()), "source": "SMM Webhook", "date": datetime.now()})
         return "Error", 500
 
 # ==========================================
-# 🔥 WEBAPP & MULTI-REWARD SYSTEM (Dynamic Custom Rewards)
+# 🔥 NEW: WEBAPP & MULTI-REWARD SYSTEM (Dynamic Custom Rewards)
 # ==========================================
 def verify_telegram_webapp_data(init_data, token):
     try:
@@ -637,7 +802,6 @@ def multi_reward():
             return jsonify({"status": "error", "msg": "Processing... please wait."}), 429
         redis_client.setex(lock_key, 5, "locked")
 
-        # 💰 Fetch Dynamic Rewards from DB instead of Hardcoded
         s = config_col.find_one({"_id": "settings"}) or {}
         rewards = {
             "monetag":  {"amount": float(s.get("reward_monetag", 0.005)), "cooldown": int(s.get("cooldown_monetag", 300))},
@@ -677,12 +841,15 @@ def multi_reward():
         logging.error(f"Multi-Reward Error: {e}")
         return jsonify({"status": "error", "msg": "Server Error!"}), 500
 
-# Webhooks for Crypto
+# ==========================================
+# 10. GLOBAL CRYPTO PAYMENT WEBHOOKS
+# ==========================================
 @app.route('/cryptomus_webhook', methods=['POST'])
 def cryptomus_webhook():
     try:
         raw_data = request.get_data()
         if not raw_data: return "No data", 400
+        
         try: dict_data = json.loads(raw_data)
         except: return "Invalid JSON", 400
         
@@ -692,6 +859,7 @@ def cryptomus_webhook():
         
         sign = dict_data.get('sign')
         if not sign: return "No signature", 400
+        
         dict_data.pop('sign', None)
         
         encoded_data = base64.b64encode(json.dumps(dict_data, separators=(',', ':'), ensure_ascii=False).encode('utf-8')).decode('utf-8')
@@ -704,16 +872,24 @@ def cryptomus_webhook():
             amt = float(dict_data.get('amount'))
             trx = dict_data.get('uuid')
             
-            if config_col.find_one({"_id": "transactions", "valid_list.trx": trx}): return "Already processed", 200
+            if config_col.find_one({"_id": "transactions", "valid_list.trx": trx}):
+                return "Already processed", 200
+                
             config_col.update_one({"_id": "transactions"}, {"$push": {"valid_list": {"trx": trx, "amt": amt, "status": "used", "user": uid}}}, upsert=True)
             users_col.update_one({"_id": uid}, {"$inc": {"balance": amt}})
             utils.clear_cached_user(uid)
+            
             try: bot.send_message(uid, f"✅ **CRYPTOMUS DEPOSIT SUCCESS!**\nAmount: `${amt}` added to your wallet.", parse_mode="Markdown")
             except: pass
+            
             try: bot.send_message(ADMIN_ID, f"🔔 **CRYPTO DEPOSIT:** User `{uid}` added `${amt}` via Cryptomus!", parse_mode="Markdown")
             except: pass
+            
         return "OK", 200
-    except Exception as e: return str(e), 500
+    except Exception as e:
+        logging.error(f"Cryptomus Webhook Error: {e}")
+        logs_col.insert_one({"error": str(traceback.format_exc()), "source": "Cryptomus", "date": datetime.now()})
+        return str(e), 500
 
 @app.route('/coinpayments_ipn', methods=['POST'])
 def coinpayments_ipn():
@@ -736,16 +912,24 @@ def coinpayments_ipn():
             amt = float(request.form.get('amount1', 0)) 
             trx = request.form.get('txn_id')
             
-            if config_col.find_one({"_id": "transactions", "valid_list.trx": trx}): return "Already processed", 200
+            if config_col.find_one({"_id": "transactions", "valid_list.trx": trx}):
+                return "Already processed", 200
+                
             config_col.update_one({"_id": "transactions"}, {"$push": {"valid_list": {"trx": trx, "amt": amt, "status": "used", "user": uid}}}, upsert=True)
             users_col.update_one({"_id": uid}, {"$inc": {"balance": amt}})
             utils.clear_cached_user(uid)
+            
             try: bot.send_message(uid, f"✅ **COINPAYMENTS DEPOSIT SUCCESS!**\nAmount: `${amt}` added to your wallet.", parse_mode="Markdown")
             except: pass
+            
             try: bot.send_message(ADMIN_ID, f"🔔 **CRYPTO DEPOSIT:** User `{uid}` added `${amt}` via CoinPayments!", parse_mode="Markdown")
             except: pass
+            
         return "OK", 200
-    except Exception as e: return str(e), 500
+    except Exception as e:
+        logging.error(f"CoinPayments Webhook Error: {e}")
+        logs_col.insert_one({"error": str(traceback.format_exc()), "source": "CoinPayments", "date": datetime.now()})
+        return str(e), 500
 
 @app.route('/nowpayments_ipn', methods=['POST'])
 def nowpayments_ipn():
@@ -768,16 +952,24 @@ def nowpayments_ipn():
             amt = float(data.get('price_amount'))
             trx = str(data.get('payment_id'))
             
-            if config_col.find_one({"_id": "transactions", "valid_list.trx": trx}): return "Already processed", 200
+            if config_col.find_one({"_id": "transactions", "valid_list.trx": trx}):
+                return "Already processed", 200
+                
             config_col.update_one({"_id": "transactions"}, {"$push": {"valid_list": {"trx": trx, "amt": amt, "status": "used", "user": uid}}}, upsert=True)
             users_col.update_one({"_id": uid}, {"$inc": {"balance": amt}})
             utils.clear_cached_user(uid)
+            
             try: bot.send_message(uid, f"✅ **NOWPAYMENTS DEPOSIT SUCCESS!**\nAmount: `${amt}` added to your wallet.", parse_mode="Markdown")
             except: pass
+            
             try: bot.send_message(ADMIN_ID, f"🔔 **CRYPTO DEPOSIT:** User `{uid}` added `${amt}` via NowPayments!", parse_mode="Markdown")
             except: pass
+            
         return "OK", 200
-    except Exception as e: return str(e), 500
+    except Exception as e:
+        logging.error(f"NowPayments Webhook Error: {e}")
+        logs_col.insert_one({"error": str(traceback.format_exc()), "source": "NowPayments", "date": datetime.now()})
+        return str(e), 500
 
 @app.route('/payeer_ipn', methods=['POST'])
 def payeer_ipn():
@@ -788,31 +980,46 @@ def payeer_ipn():
         
         if request.form.get('m_operation_id') and request.form.get('m_sign'):
             arHash = [
-                request.form.get('m_operation_id'), request.form.get('m_operation_ps'),
-                request.form.get('m_operation_date'), request.form.get('m_operation_pay_date'),
-                request.form.get('m_shop'), request.form.get('m_orderid'),
-                request.form.get('m_amount'), request.form.get('m_curr'),
-                request.form.get('m_desc'), request.form.get('m_status'), secret
+                request.form.get('m_operation_id'),
+                request.form.get('m_operation_ps'),
+                request.form.get('m_operation_date'),
+                request.form.get('m_operation_pay_date'),
+                request.form.get('m_shop'),
+                request.form.get('m_orderid'),
+                request.form.get('m_amount'),
+                request.form.get('m_curr'),
+                request.form.get('m_desc'),
+                request.form.get('m_status'),
+                secret
             ]
             sign_hash = hashlib.sha256(':'.join(arHash).encode('utf-8')).hexdigest().upper()
             
             if request.form.get('m_sign') == sign_hash and request.form.get('m_status') == 'success':
                 order_id = request.form.get('m_orderid')
                 uid = int(str(order_id).split('_')[0]) 
+                
                 amt = float(request.form.get('m_amount'))
                 trx = request.form.get('m_operation_id')
                 
-                if config_col.find_one({"_id": "transactions", "valid_list.trx": trx}): return "Already processed", 200
+                if config_col.find_one({"_id": "transactions", "valid_list.trx": trx}):
+                    return "Already processed", 200
+                    
                 config_col.update_one({"_id": "transactions"}, {"$push": {"valid_list": {"trx": trx, "amt": amt, "status": "used", "user": uid}}}, upsert=True)
                 users_col.update_one({"_id": uid}, {"$inc": {"balance": amt}})
                 utils.clear_cached_user(uid)
+                
                 try: bot.send_message(uid, f"✅ **PAYEER DEPOSIT SUCCESS!**\nAmount: `${amt}` added to your wallet.", parse_mode="Markdown")
                 except: pass
+                
                 try: bot.send_message(ADMIN_ID, f"🔔 **CRYPTO DEPOSIT:** User `{uid}` added `${amt}` via Payeer!", parse_mode="Markdown")
                 except: pass
+                
                 return "success", 200
         return "error", 400
-    except Exception as e: return str(e), 500
+    except Exception as e:
+        logging.error(f"Payeer Webhook Error: {e}")
+        logs_col.insert_one({"error": str(traceback.format_exc()), "source": "Payeer", "date": datetime.now()})
+        return str(e), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
