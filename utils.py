@@ -344,7 +344,11 @@ def auto_sync_orders_cron():
                         update_data = {"status": new_status, "remains": remains}
                         orders_col.update_one({"_id": o["_id"]}, {"$set": update_data})
                         
-                        if new_status != old_status and new_status != 'error':
+                                                if new_status != old_status and new_status != 'error':
+                            # ডাবল রিফান্ড ব্লক করা হলো
+                            if old_status in ['canceled', 'refunded', 'fail'] and new_status in ['canceled', 'refunded', 'fail']:
+                                continue
+                                
                             st_emoji = "⏳"
                             if new_status == "completed": st_emoji = "✅"
                             elif new_status in ["canceled", "refunded", "fail"]: st_emoji = "❌"
@@ -357,14 +361,28 @@ def auto_sync_orders_cron():
                                 bot.send_message(o['uid'], msg, parse_mode="Markdown")
                             except: pass
                             
-                            if new_status in ['canceled', 'refunded', 'fail']:
-                                u = get_cached_user(o['uid'])
-                                curr = u.get("currency", "BDT") if u else "BDT"
+                            u = get_cached_user(o['uid'])
+                            curr = u.get("currency", "BDT") if u else "BDT"
+                            
+                            # ফুল রিফান্ড
+                            if new_status in ['canceled', 'refunded', 'fail'] and old_status not in ['canceled', 'refunded', 'fail', 'partial']:
                                 cost_str = fmt_curr(o['cost'], curr)
                                 users_col.update_one({"_id": o['uid']}, {"$inc": {"balance": o['cost'], "spent": -o['cost']}})
                                 clear_cached_user(o['uid'])
-                                try: bot.send_message(o['uid'], f"💰 **ORDER REFUNDED!**\nOrder `{o['oid']}` failed or canceled by server. `{cost_str}` has been added back to your balance.", parse_mode="Markdown")
+                                try: bot.send_message(o['uid'], f"💰 **ORDER CANCELLED!**\nOrder `{o['oid']}` failed. `{cost_str}` has been refunded.", parse_mode="Markdown")
                                 except: pass
+                                
+                            # পার্শিয়াল রিফান্ড (কতটুকু বাকি তার উপর ভিত্তি করে)
+                            elif new_status == "partial" and old_status != "partial":
+                                qty = float(o.get('qty', 1))
+                                if remains > 0 and qty > 0:
+                                    refund_amount = (remains / qty) * o['cost']
+                                    refund_str = fmt_curr(refund_amount, curr)
+                                    users_col.update_one({"_id": o['uid']}, {"$inc": {"balance": refund_amount, "spent": -refund_amount}})
+                                    clear_cached_user(o['uid'])
+                                    try: bot.send_message(o['uid'], f"⚠️ **PARTIAL REFUND!**\nOrder `{o['oid']}` was partially completed. `{refund_str}` refunded for {int(remains)} remaining quantity.", parse_mode="Markdown")
+                                    except: pass
+
                 except Exception as e:
                     logging.error(f"Orders Sync Inner Error: {e}")
         except Exception as e: 
