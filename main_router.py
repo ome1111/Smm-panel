@@ -106,6 +106,10 @@ def process_new_user_bonuses(uid):
 
 @bot.message_handler(commands=['start'])
 def start(message):
+    # এই ২ লাইন যোগ করুন
+    if message.chat.type != 'private':
+        return
+
     uid = message.chat.id
     user = get_cached_user(uid)
     args = message.text.split()
@@ -863,6 +867,10 @@ def send_media_to_admin(msg_obj, admin_text):
 # ==========================================
 @bot.message_handler(content_types=['text', 'photo', 'document'])
 def universal_router(message):
+    # এই ২ লাইন যোগ করুন
+    if message.chat.type != 'private':
+        return
+
     uid = message.chat.id
     text = message.text.strip() if message.text else message.caption.strip() if message.caption else "📸 [Media/Screenshot attached]"
     
