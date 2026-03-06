@@ -150,10 +150,12 @@
             <div class="glass-card p-6">
                 <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
                     <h2 class="text-2xl font-bold flex items-center gap-2"><i class="fas fa-users-cog text-sky-400"></i> User Management</h2>
-                    <div class="relative w-full md:w-64">
-                        <input type="text" id="userSearchInput" onkeyup="searchUsers()" placeholder="Search ID or Name..." class="w-full bg-slate-900 border border-slate-700 rounded-full px-4 py-2 pl-10 text-white outline-none focus:border-sky-500 transition">
+                           <form action="/" method="GET" class="relative w-full md:w-64">
+                        <input type="text" name="search" value="{{ search_query }}" placeholder="Search ID or Name..." class="w-full bg-slate-900 border border-slate-700 rounded-full px-4 py-2 pl-10 text-white outline-none focus:border-sky-500 transition">
                         <i class="fas fa-search absolute left-4 top-3 text-slate-500"></i>
-                    </div>
+                        <button type="submit" class="hidden"></button>
+                    </form>
+
                 </div>
                 
                 <div class="overflow-x-auto rounded-lg border border-slate-700/50">
@@ -773,23 +775,7 @@
             event.currentTarget.classList.add('active');
         }
 
-        // Search Users function 
-        function searchUsers() {
-            let input = document.getElementById("userSearchInput").value.toLowerCase();
-            let table = document.querySelector("#tab-users table");
-            let tr = table.getElementsByTagName("tr");
-            for (let i = 1; i < tr.length; i++) {
-                let td = tr[i].getElementsByTagName("td")[0];
-                if (td) {
-                    let txtValue = td.textContent || td.innerText;
-                    if (txtValue.toLowerCase().indexOf(input) > -1) {
-                        tr[i].style.display = "";
-                    } else {
-                        tr[i].style.display = "none";
-                    }
-                }       
-            }
-        }
+        
 
         // Modal Functions
         function openEditModal(uid, bal, spent, ref, points, discount, tier) {
