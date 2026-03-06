@@ -61,8 +61,8 @@ scheduled_col = db['scheduled_orders'] # 🔥 NEW: Custom Drip-Feed Collection
 # 4. REDIS CONNECTION (FAST CACHE ENGINE - OPTIMIZED)
 # ==========================================
 try:
-    # 🔥 max_connections কমিয়ে ৫ করা হয়েছে লিমিট বাঁচানোর জন্য
-    redis_pool = redis.ConnectionPool.from_url(REDIS_URL, decode_responses=True, max_connections=5)
+    # 🔥 max_connections বাড়িয়ে 50 করা হলো ThreadPool এর সাথে ম্যাচ করার জন্য
+    redis_pool = redis.ConnectionPool.from_url(REDIS_URL, decode_responses=True, max_connections=50)
     redis_client = redis.Redis(connection_pool=redis_pool)
     redis_client.ping()
     logging.info("✅ Redis Engine Connected Successfully! Lightning Speed ON 🚀")
