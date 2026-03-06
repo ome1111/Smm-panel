@@ -341,11 +341,14 @@ def auto_sync_orders_cron():
                         old_status = str(o.get('status', '')).lower()
                         remains = res.get('remains', 0)
                         
+
+
                         update_data = {"status": new_status, "remains": remains}
                         orders_col.update_one({"_id": o["_id"]}, {"$set": update_data})
                         
-                                                if new_status != old_status and new_status != 'error':
+                        if new_status != old_status and new_status != 'error':
                             # ডাবল রিফান্ড ব্লক করা হলো
+
                             if old_status in ['canceled', 'refunded', 'fail'] and new_status in ['canceled', 'refunded', 'fail']:
                                 continue
                                 
