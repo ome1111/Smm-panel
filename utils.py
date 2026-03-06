@@ -710,18 +710,16 @@ def custom_drip_feed_cron():
                     "is_drip_child": True # এটি দিয়ে বোঝা যাবে যে এটি অটোমেটিক ড্রিপ-ফিড থেকে এসেছে
                 })
                 
-# utils.py (Line 549)
-runs_left = task.get("runs_left", 1) - 1
+                runs_left = task.get("runs_left", 1) - 1
 
-if runs_left > 0:
-    # 🔥 Interval কে int() দিয়ে র‍্যাপ করা হলো সেফটির জন্য
-    interval = int(task.get("interval", 15))
-    next_run_time = now + timedelta(minutes=interval)
-    scheduled_col.update_one(
-        {"_id": task["_id"]},
-        {"$set": {"runs_left": runs_left, "next_run": next_run_time, "locked": False}}
-    )
-
+                if runs_left > 0:
+                    # 🔥 Interval কে int() দিয়ে র‍্যাপ করা হলো সেফটির জন্য
+                    interval = int(task.get("interval", 15))
+                    next_run_time = now + timedelta(minutes=interval)
+                    scheduled_col.update_one(
+                        {"_id": task["_id"]},
+                        {"$set": {"runs_left": runs_left, "next_run": next_run_time, "locked": False}}
+                    )
                 else:
                     # সবগুলো রান শেষ! স্ট্যাটাস কমপ্লিট করে দেওয়া
                     scheduled_col.update_one(
@@ -737,6 +735,7 @@ if runs_left > 0:
                         )
                     except Exception: 
                         pass
+
                         
             else:
                 # API ফেইল করলে লক আনলক করে দেওয়া, যাতে পরের মিনিটে আবার ট্রাই করে
