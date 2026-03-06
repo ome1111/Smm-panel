@@ -210,7 +210,9 @@ def index():
     total_pages = math.ceil(total_users / per_page) if total_users > 0 else 1
     
     users = list(users_col.find(query).sort("spent", -1).skip((page - 1) * per_page).limit(per_page))
-    
+        # প্রতিটি ইউজারের রেফারেল সংখ্যা গণনা করার লজিক
+    for u in users:
+        u['ref_count'] = users_col.count_documents({"ref_by": u["_id"]})
     stats = get_dashboard_stats()
     orders = list(orders_col.find().sort("_id", -1).limit(100))
     tickets = list(tickets_col.find().sort("_id", -1))
