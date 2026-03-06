@@ -1415,9 +1415,13 @@ def process_bulk_background(uid, drafts, message_id, pre_deducted_cost):
         except: pass
         bot.send_message(uid, f"✅ **BULK PROCESS COMPLETE!**\n━━━━━━━━━━━━━━━━━━━━\n📦 Successful: {success_count} / {len(drafts)}\n💰 Cost: `${successful_cost:.3f}`\n🎁 Points Earned: `+{points_earned}`\n🔄 Refunded: `${refund_amount:.3f}`", parse_mode="Markdown")
 
+# main_router.py - process_bulk_background এর except ব্লকটি এভাবে পাল্টে দিন:
     except Exception as e:
         logging.error(f"Bulk Process Error: {e}")
-        users_col.update_one({"_id": uid}, {"$inc": {"balance": pre_deducted_cost}})
+        # শুধুমাত্র অসফল অর্ডারগুলোর টাকা ফেরত দিন
+        refund_amount = pre_deducted_cost - successful_cost 
+        if refund_amount > 0:
+            users_col.update_one({"_id": uid}, {"$inc": {"balance": refund_amount}})
 
 def process_order_background(uid, draft, message_id, deducted_cost):
     try:
