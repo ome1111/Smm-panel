@@ -131,7 +131,10 @@ def start(message):
     
     if check_spam(uid) or check_maintenance(uid): return
     if not check_sub(uid):
-        return bot.send_message(uid, "🛑 **ACCESS RESTRICTED**\nআপনাকে প্রথমে আমাদের চ্যানেলগুলোতে জয়েন করতে হবে।", parse_mode="Markdown")
+        markup = types.InlineKeyboardMarkup()
+        for ch in get_settings().get("channels", []): markup.add(types.InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{ch.replace('@','')}"))
+        markup.add(types.InlineKeyboardButton("🟢 VERIFY ACCOUNT 🟢", callback_data="CHECK_SUB"))
+        return bot.send_message(uid, "🛑 **ACCESS RESTRICTED**\nবট ব্যবহার করতে আপনাকে প্রথমে নিচের চ্যানেলগুলোতে জয়েন করতে হবে।", reply_markup=markup, parse_mode="Markdown")
 
     
     hour = datetime.now().hour
@@ -139,9 +142,9 @@ def start(message):
     
     if not check_sub(uid):
         markup = types.InlineKeyboardMarkup()
-        for ch in get_settings().get("channels", []): markup.add(types.InlineKeyboardButton(f"📢 Join Channel", url=f"https://t.me/{ch.replace('@','')}"))
+        for ch in get_settings().get("channels", []): markup.add(types.InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{ch.replace('@','')}"))
         markup.add(types.InlineKeyboardButton("🟢 VERIFY ACCOUNT 🟢", callback_data="CHECK_SUB"))
-        return bot.send_message(uid, "🛑 **ACCESS RESTRICTED**\nYou must join our official channels to unlock the bot.", reply_markup=markup, parse_mode="Markdown")
+        return bot.send_message(uid, "🛑 **ACCESS RESTRICTED**\nবট ব্যবহার করতে আপনাকে প্রথমে নিচের চ্যানেলগুলোতে জয়েন করতে হবে।", reply_markup=markup, parse_mode="Markdown")
 
     process_new_user_bonuses(uid)
 
@@ -180,7 +183,10 @@ def new_order_start(message):
     clear_user_session(uid)
     if check_spam(uid) or check_maintenance(uid): return
     if not check_sub(uid):
-        return bot.send_message(uid, "🛑 **ACCESS RESTRICTED**\nআপনাকে প্রথমে আমাদের চ্যানেলগুলোতে জয়েন করতে হবে।", parse_mode="Markdown")
+        markup = types.InlineKeyboardMarkup()
+        for ch in get_settings().get("channels", []): markup.add(types.InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{ch.replace('@','')}"))
+        markup.add(types.InlineKeyboardButton("🟢 VERIFY ACCOUNT 🟢", callback_data="CHECK_SUB"))
+        return bot.send_message(uid, "🛑 **ACCESS RESTRICTED**\nবট ব্যবহার করতে আপনাকে প্রথমে নিচের চ্যানেলগুলোতে জয়েন করতে হবে।", reply_markup=markup, parse_mode="Markdown")
 
 
     services = get_cached_services()
@@ -744,7 +750,10 @@ def universal_buttons(message):
     
     if check_spam(uid) or check_maintenance(uid): return
     if not check_sub(uid):
-        return bot.send_message(uid, "🛑 **ACCESS RESTRICTED**\nআপনাকে প্রথমে আমাদের চ্যানেলগুলোতে জয়েন করতে হবে।", parse_mode="Markdown")
+        markup = types.InlineKeyboardMarkup()
+        for ch in get_settings().get("channels", []): markup.add(types.InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{ch.replace('@','')}"))
+        markup.add(types.InlineKeyboardButton("🟢 VERIFY ACCOUNT 🟢", callback_data="CHECK_SUB"))
+        return bot.send_message(uid, "🛑 **ACCESS RESTRICTED**\nবট ব্যবহার করতে আপনাকে প্রথমে নিচের চ্যানেলগুলোতে জয়েন করতে হবে।", reply_markup=markup, parse_mode="Markdown")
 
     u = get_cached_user(uid) or {}
     curr = u.get("currency", "BDT")
@@ -894,7 +903,10 @@ def universal_router(message):
 
     if check_spam(uid) or check_maintenance(uid): return
     if not check_sub(uid):
-        return bot.send_message(uid, "🛑 **ACCESS RESTRICTED**\nআপনাকে প্রথমে আমাদের চ্যানেলগুলোতে জয়েন করতে হবে।", parse_mode="Markdown")
+        markup = types.InlineKeyboardMarkup()
+        for ch in get_settings().get("channels", []): markup.add(types.InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{ch.replace('@','')}"))
+        markup.add(types.InlineKeyboardButton("🟢 VERIFY ACCOUNT 🟢", callback_data="CHECK_SUB"))
+        return bot.send_message(uid, "🛑 **ACCESS RESTRICTED**\nবট ব্যবহার করতে আপনাকে প্রথমে নিচের চ্যানেলগুলোতে জয়েন করতে হবে।", reply_markup=markup, parse_mode="Markdown")
 
     if text in ["🚀 New Order", "⭐ Favorites", "🔍 Smart Search", "📦 Orders", "💰 Deposit", "📝 Bulk Order", "🤝 Affiliate", "👤 Profile", "🎟️ Voucher", "🏆 Leaderboard", "💬 Live Chat"]:
         return universal_buttons(message)
