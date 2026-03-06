@@ -194,10 +194,20 @@ def index():
     try: page = int(request.args.get('page', 1))
     except: page = 1
     per_page = 50
-    total_users = users_col.count_documents({})
-    total_pages = math.ceil(total_users / per_page)
     
-    users = list(users_col.find().sort("spent", -1).skip((page - 1) * per_page).limit(per_page))
+    # 🔥 FIX: Backend Search Logic Added
+    search_query = request.args.get('search', '').strip()
+    query = {}
+    if search_query:
+        if search_query.isdigit():
+            query = {"_id": int(search_query)}
+        else:
+            query = {"name": {"$regex": search_query, "$options": "i"}}
+            
+    total_users = users_col.count_documents(query)
+    total_pages = math.ceil(total_users / per_page) if total_users > 0 else 1
+    
+    users = list(users_col.find(query).sort("spent", -1).skip((page - 1) * per_page).limit(per_page))
     
     stats = get_dashboard_stats()
     orders = list(orders_col.find().sort("_id", -1).limit(100))
@@ -217,7 +227,8 @@ def index():
 
     return render_template('admin.html', **stats, users=users, orders=orders, tickets=tickets, vouchers=vouchers, 
                            unique_categories=unique_categories, services_json=services_json, saved_service_orders=saved_service_orders_json,
-                           page=page, total_pages=total_pages, system_logs=system_logs)
+                           page=page, total_pages=total_pages, system_logs=system_logs, search_query=search_query)
+
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -685,16 +696,16 @@ def redis_action(action):
 # ==========================================
 @app.route('/api/add_transaction', methods=['POST', 'GET'])
 def add_transaction():
-    secret = request.args.get('secret') or (request.json.get('secret') if request.is_json else None)
+    # 🔥 FIX: Crash protection added by checking if request.json is actually present
+    secret = request.args.get('secret') or (request.json.get('secret') if request.is_json and request.json else None)
     
-    # 🔥 Hardcoded Secret Fix (Environment Variable Base)
     auto_pay_secret = os.environ.get('AUTO_PAY_SECRET', 'NEXUS_AUTO_PASS_123')
     
     if secret != auto_pay_secret:
         return jsonify({"status": "error", "msg": "Wrong Secret Key!"}), 403
 
-    sms_text = request.args.get('sms') or (request.json.get('sms') if request.is_json else "")
-    
+    sms_text = request.args.get('sms') or (request.json.get('sms') if request.is_json and request.json else "")
+
     if not sms_text:
         return jsonify({"status": "error", "msg": "No SMS text provided"}), 400
 
@@ -742,12 +753,20 @@ def smm_webhook():
         
         order_id = data.get('order') or data.get('id')
         status = data.get('status')
+        remains = float(data.get('remains', 0) or 0)
         
         if order_id and status:
             new_status = str(status).lower()
             o = orders_col.find_one({"oid": int(order_id)})
+            
             if o and o.get('status') != new_status and not o.get('is_shadow'):
-                orders_col.update_one({"_id": o["_id"]}, {"$set": {"status": new_status}})
+                old_status = str(o.get('status', 'pending')).lower()
+                
+                # 🔥 FIX: Double Refund Protection
+                if old_status in ['canceled', 'refunded', 'fail'] and new_status in ['canceled', 'refunded', 'fail']:
+                    return "OK", 200 
+                
+                orders_col.update_one({"_id": o["_id"]}, {"$set": {"status": new_status, "remains": remains}})
                 
                 st_emoji = "⏳"
                 if new_status == "completed": st_emoji = "✅"
@@ -760,20 +779,34 @@ def smm_webhook():
                     bot.send_message(o['uid'], msg, parse_mode="Markdown")
                 except: pass
                 
-                if new_status in ['canceled', 'refunded', 'fail']:
-                    u = utils.get_cached_user(o['uid'])
-                    curr = u.get("currency", "BDT") if u else "BDT"
+                u = utils.get_cached_user(o['uid'])
+                curr = u.get("currency", "BDT") if u else "BDT"
+                
+                # 🔥 FIX: Full Refund Logic
+                if new_status in ['canceled', 'refunded', 'fail'] and old_status not in ['canceled', 'refunded', 'fail', 'partial']:
                     cost_str = utils.fmt_curr(o['cost'], curr)
                     users_col.update_one({"_id": o['uid']}, {"$inc": {"balance": o['cost'], "spent": -o['cost']}})
                     utils.clear_cached_user(o['uid'])
-                    try: bot.send_message(o['uid'], f"💰 **ORDER REFUNDED!**\nOrder `{o['oid']}` failed or canceled by server. `{cost_str}` has been added back to your balance.", parse_mode="Markdown")
+                    try: bot.send_message(o['uid'], f"💰 **ORDER CANCELLED!**\nOrder `{o['oid']}` failed or canceled. `{cost_str}` has been added back to your balance.", parse_mode="Markdown")
                     except: pass
+                
+                # 🔥 FIX: Partial Refund Logic
+                elif new_status == "partial" and old_status != "partial":
+                    qty = float(o.get('qty', 1))
+                    if remains > 0 and qty > 0:
+                        refund_amount = (remains / qty) * o['cost']
+                        refund_str = utils.fmt_curr(refund_amount, curr)
+                        users_col.update_one({"_id": o['uid']}, {"$inc": {"balance": refund_amount, "spent": -refund_amount}})
+                        utils.clear_cached_user(o['uid'])
+                        try: bot.send_message(o['uid'], f"⚠️ **PARTIAL REFUND!**\nOrder `{o['oid']}` was partially completed. `{refund_str}` has been refunded for the remaining {int(remains)} quantity.", parse_mode="Markdown")
+                        except: pass
                     
         return "OK", 200
     except Exception as e:
         logging.error(f"SMM Webhook Error: {e}")
         logs_col.insert_one({"error": str(traceback.format_exc()), "source": "SMM Webhook", "date": datetime.now()})
         return "Error", 500
+
 
 
 # ==========================================
