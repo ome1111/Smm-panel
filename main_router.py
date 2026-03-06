@@ -125,7 +125,7 @@ def start(message):
     users_col.update_one({"_id": uid}, {"$set": {"last_active": datetime.now()}})
     clear_user_session(uid)
     
-        if check_spam(uid) or check_maintenance(uid): return
+    if check_spam(uid) or check_maintenance(uid): return
     if not check_sub(uid):
         return bot.send_message(uid, "🛑 **ACCESS RESTRICTED**\nআপনাকে প্রথমে আমাদের চ্যানেলগুলোতে জয়েন করতে হবে।", parse_mode="Markdown")
 
@@ -174,7 +174,7 @@ def sub_callback(call):
 def new_order_start(message):
     uid = message.chat.id
     clear_user_session(uid)
-            if check_spam(uid) or check_maintenance(uid): return
+    if check_spam(uid) or check_maintenance(uid): return
     if not check_sub(uid):
         return bot.send_message(uid, "🛑 **ACCESS RESTRICTED**\nআপনাকে প্রথমে আমাদের চ্যানেলগুলোতে জয়েন করতে হবে।", parse_mode="Markdown")
 
@@ -738,7 +738,7 @@ def universal_buttons(message):
     uid = message.chat.id
     clear_user_session(uid)
     
-        if check_spam(uid) or check_maintenance(uid): return
+    if check_spam(uid) or check_maintenance(uid): return
     if not check_sub(uid):
         return bot.send_message(uid, "🛑 **ACCESS RESTRICTED**\nআপনাকে প্রথমে আমাদের চ্যানেলগুলোতে জয়েন করতে হবে।", parse_mode="Markdown")
 
@@ -884,7 +884,7 @@ def universal_router(message):
             except Exception as e: 
                 pass
 
-        if check_spam(uid) or check_maintenance(uid): return
+    if check_spam(uid) or check_maintenance(uid): return
     if not check_sub(uid):
         return bot.send_message(uid, "🛑 **ACCESS RESTRICTED**\nআপনাকে প্রথমে আমাদের চ্যানেলগুলোতে জয়েন করতে হবে।", parse_mode="Markdown")
 
@@ -1411,7 +1411,7 @@ def process_bulk_background(uid, drafts, message_id, pre_deducted_cost):
         users_col.update_one({"_id": uid}, update_query)
         clear_cached_user(uid)
         
-                try: bot.delete_message(uid, message_id)
+        try: bot.delete_message(uid, message_id)
         except: pass
         bot.send_message(uid, f"✅ **BULK PROCESS COMPLETE!**\n━━━━━━━━━━━━━━━━━━━━\n📦 Successful: {success_count} / {len(drafts)}\n💰 Cost: `${successful_cost:.3f}`\n🎁 Points Earned: `+{points_earned}`\n🔄 Refunded: `${refund_amount:.3f}`", parse_mode="Markdown")
 
@@ -1436,9 +1436,10 @@ def process_order_background(uid, draft, message_id, deducted_cost):
             else: insert_data.update({"link": draft.get('link'), "qty": draft.get('total_qty', draft.get('qty'))})
             
             orders_col.insert_one(insert_data)
-                        try: bot.delete_message(uid, message_id)
+            try: bot.delete_message(uid, message_id)
             except: pass
             bot.send_message(uid, f"✅ **Order Placed Successfully!**\n🆔 Order ID: `{fake_oid}`\n🎁 Points Earned: `+{points_earned}`", parse_mode="Markdown")
+
 
             
             try:
@@ -1476,7 +1477,7 @@ def process_order_background(uid, draft, message_id, deducted_cost):
             users_col.update_one({"_id": uid}, {"$inc": {"spent": deducted_cost, "points": points_earned}})
             clear_cached_user(uid)
             
-                        try: bot.delete_message(uid, message_id)
+            try: bot.delete_message(uid, message_id)
             except: pass
             bot.send_message(uid, f"✅ **Auto-Repeat (Drip-Feed) Started!**\nআপনার অর্ডারটি আমাদের সিস্টেমে শিডিউল করা হয়েছে। প্রতি {draft['interval']} মিনিট পরপর {draft['qty']} কোয়ান্টিটি করে মোট {draft['runs']} বার স্বয়ংক্রিয়ভাবে অর্ডার পাঠানো হবে।\n🎁 Points Earned: `+{points_earned}`", parse_mode="Markdown")
 
@@ -1501,7 +1502,7 @@ def process_order_background(uid, draft, message_id, deducted_cost):
             else: insert_data.update({"link": draft['link'], "qty": draft.get('total_qty', draft['qty'])})
             
             orders_col.insert_one(insert_data)
-                        try: bot.delete_message(uid, message_id)
+            try: bot.delete_message(uid, message_id)
             except: pass
             bot.send_message(uid, f"✅ **Order Placed Successfully!**\n🆔 Order ID: `{res['order']}`\n🎁 Points Earned: `+{points_earned}`", parse_mode="Markdown")
 
@@ -1523,7 +1524,7 @@ def process_order_background(uid, draft, message_id, deducted_cost):
             users_col.update_one({"_id": uid}, {"$inc": {"balance": deducted_cost}})
             clear_cached_user(uid)
             err_msg = escape_md(res.get('error', 'API Timeout') if res else 'API Timeout')
-                        try: bot.delete_message(uid, message_id)
+            try: bot.delete_message(uid, message_id)
             except: pass
             bot.send_message(uid, f"❌ **API REJECTED THE ORDER!**\n\n**Reason:** `{err_msg}`\n\n_Your balance has been refunded._", parse_mode="Markdown")
 
@@ -1531,7 +1532,7 @@ def process_order_background(uid, draft, message_id, deducted_cost):
         logging.error(f"Order Background Error: {e}")
         users_col.update_one({"_id": uid}, {"$inc": {"balance": deducted_cost}})
         clear_cached_user(uid)
-                try: bot.delete_message(uid, message_id)
+        try: bot.delete_message(uid, message_id)
         except: pass
         bot.send_message(uid, "❌ **Internal Server Error!** Could not process order. Your balance has been refunded.", parse_mode="Markdown")
 
